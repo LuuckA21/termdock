@@ -95,7 +95,7 @@ cargo test -p termdock-core --test ssh_e2e
 
 I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi, chiave privata cifrata con passphrase, keyboard-interactive, chiusura sessione e **host key cambiata (simulazione MITM)**.
 
-Le release si creano con un tag `v*`: il workflow [`release.yml`](.github/workflows/release.yml) compila gli installer per tutte le piattaforme in una release in bozza. Per distribuire su macOS/Windows senza avvisi del sistema servono certificati di firma (vedi i commenti nel workflow).
+Le release si creano con un tag `v*`, oppure da *Actions → Release → Run workflow* indicando la versione (il tag viene creato dal workflow sul commit scelto). Il workflow [`release.yml`](.github/workflows/release.yml) verifica che la versione coincida con `tauri.conf.json` e compila gli installer per tutte le piattaforme in una release in bozza. Per distribuire su macOS/Windows senza avvisi del sistema servono certificati di firma (vedi i commenti nel workflow).
 
 ## Licenza
 
