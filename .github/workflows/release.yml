@@ -1,17 +1,76 @@
 name: Release
 
 # Builds installers for Windows (MSI/NSIS), macOS (DMG) and Linux
-# (AppImage/deb/rpm) when a version tag is pushed, as a draft release.
+# (AppImage/deb/rpm) as a draft release. Two ways to start it:
+#
+# * push a `v*` tag, or
+# * run it manually (Actions -> Release -> Run workflow) with the version:
+#   the `vX.Y.Z` tag is then created on the selected commit by this workflow.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the v (must match tauri.conf.json)"
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve and check the version
+        id: tag
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            if ! printf '%s' "$INPUT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+              echo "::error::'$INPUT_VERSION' is not a semantic version (e.g. 1.2.3)"
+              exit 1
+            fi
+            tag="v$INPUT_VERSION"
+          fi
+          app_version=$(jq -r .version src-tauri/tauri.conf.json)
+          if [ "$tag" != "v$app_version" ]; then
+            echo "::error::tag $tag does not match the app version $app_version in tauri.conf.json"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Create the tag (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::tag $TAG already exists"
+            exit 1
+          fi
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$TAG" -f message="Termdock $TAG" \
+            -f object="$GITHUB_SHA" -f type=commit --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$sha" >/dev/null
+          echo "Created $TAG on $GITHUB_SHA"
+
   build:
+    needs: prepare
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +84,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - name: Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -46,8 +107,8 @@ jobs:
           # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
           # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID (macOS notarization).
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Termdock ${{ github.ref_name }}
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: Termdock ${{ needs.prepare.outputs.tag }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
