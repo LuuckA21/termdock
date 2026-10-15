@@ -1,0 +1,12 @@
+# Reviewed advisories. Every entry needs a justification and is re-checked
+# on dependency updates.
+[advisories]
+ignore = [
+    # Marvin attack (timing side channel in the `rsa` crate, no fix released).
+    # Pulled in by russh to support RSA host keys and RSA user keys.
+    # Termdock is an SSH *client*: it never decrypts with RSA and only signs a
+    # single authentication challenge per login with the user's own RSA key,
+    # which gives a remote attacker no practical timing oracle. Ed25519 keys
+    # (recommended in the README) do not touch this code.
+    "RUSTSEC-2023-0071",
+]

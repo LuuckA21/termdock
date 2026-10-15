@@ -1,0 +1,28 @@
+[package]
+name = "termdock-core"
+description = "Connection profiles, credential vault, host-key store and terminal sessions (SSH + local PTY) for Termdock"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+russh = "0.64"
+keyring = "4"
+portable-pty = "0.9"
+directories = "6"
+tempfile = "3"
+hmac = "0.13"
+sha1 = "0.11"
+data-encoding = "2"
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

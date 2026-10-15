@@ -1,0 +1,91 @@
+// Mirrors of the Rust types exchanged over IPC (see crates/termdock-core).
+
+export type Uuid = string;
+
+export type SshAuth =
+  | { method: "auto" }
+  | { method: "agent" }
+  | { method: "key"; path: string }
+  | { method: "password" };
+
+export interface SshFields {
+  type: "ssh";
+  host: string;
+  port: number;
+  username: string;
+  auth: SshAuth;
+  keepaliveSecs: number;
+}
+
+export interface LocalFields {
+  type: "local";
+  program: string;
+  args: string[];
+  cwd?: string;
+}
+
+export type Profile = {
+  id: Uuid;
+  name: string;
+  color?: string;
+  group?: string;
+} & (SshFields | LocalFields);
+
+export interface ProfileList {
+  profiles: Profile[];
+  favorites: Uuid[];
+}
+
+export interface AppInfo {
+  version: string;
+  vaultAvailable: boolean;
+  platform: string;
+}
+
+export interface DetectedShell {
+  id: string;
+  name: string;
+  shell: { program: string; args: string[]; cwd?: string };
+  isDefault: boolean;
+}
+
+export interface TermSize {
+  cols: number;
+  rows: number;
+}
+
+export type OpenTarget =
+  | { kind: "profile"; id: Uuid }
+  | { kind: "quick"; address: string }
+  | { kind: "shell"; id: string };
+
+export interface HostKeyInfo {
+  host: string;
+  port: number;
+  algorithm: string;
+  fingerprint: string;
+}
+
+export type SecretPrompt =
+  | { kind: "password"; target: string; canRemember: boolean }
+  | { kind: "keyPassphrase"; path: string; canRemember: boolean }
+  | {
+      kind: "challenge";
+      target: string;
+      name: string;
+      instructions: string;
+      prompt: string;
+      echo: boolean;
+      canRemember: boolean;
+    };
+
+export type SessionNotice =
+  | { type: "hostKey"; promptId: Uuid; info: HostKeyInfo }
+  | { type: "secret"; promptId: Uuid; prompt: SecretPrompt }
+  | { type: "banner"; text: string }
+  | { type: "exit"; code: number | null; message: string | null };
+
+export type PromptAnswer =
+  | { kind: "hostKey"; accept: boolean }
+  | { kind: "secret"; secret: string; remember: boolean }
+  | { kind: "cancel" };

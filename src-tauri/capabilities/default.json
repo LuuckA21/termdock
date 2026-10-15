@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions of the main window. Only the commands listed here can be invoked from the UI.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-set-title",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
+    "allow-app-info",
+    "allow-list-profiles",
+    "allow-save-profile",
+    "allow-delete-profile",
+    "allow-set-favorite",
+    "allow-reorder-favorites",
+    "allow-forget-secrets",
+    "allow-forget-host-key",
+    "allow-list-shells",
+    "allow-open-session",
+    "allow-write-session",
+    "allow-resize-session",
+    "allow-close-session",
+    "allow-answer-prompt"
+  ]
+}
