@@ -500,3 +500,36 @@ async fn ssh_jump_and_forwards() {
     assert!(tokio::net::TcpStream::connect(("127.0.0.1", l_port)).await.is_err());
     assert!(tokio::net::TcpStream::connect(("127.0.0.1", d_port)).await.is_err());
 }
+
+/// A remembered password that no longer works is used once, then forgotten
+/// (replaying it on every login could lock the account) and the user is asked.
+#[tokio::test(flavor = "multi_thread")]
+async fn stale_saved_password_is_forgotten() {
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let kh = Arc::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let vault = Arc::new(MemoryVault::default());
+    let profile = Uuid::new_v4();
+    vault.set(profile, SecretKind::Password, "old-password").unwrap();
+
+    let ui = user(true, &[(&e.password, false)]);
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Password,
+        &kh,
+        &vault,
+        Some(profile),
+        ui.clone(),
+        out.sink.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(*ui.asked.lock().unwrap(), ["password"]);
+    assert!(vault.get(profile, SecretKind::Password).unwrap().is_none());
+    assert!(ui.infos.lock().unwrap().iter().any(|i| i.contains("rejected")));
+    run_and_exit(h, out, "stale").await;
+}

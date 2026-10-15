@@ -29,12 +29,6 @@ impl TermSize {
     }
 }
 
-impl Default for TermSize {
-    fn default() -> Self {
-        Self { cols: 80, rows: 24 }
-    }
-}
-
 /// Output of a session, delivered in order.
 #[derive(Debug)]
 pub enum SessionEvent {
@@ -80,10 +74,6 @@ impl SessionHandle {
 
     pub fn close(&self) {
         let _ = self.tx.send(Control::Close);
-    }
-
-    pub fn is_closed(&self) -> bool {
-        self.tx.is_closed()
     }
 }
 

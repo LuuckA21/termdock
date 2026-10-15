@@ -39,7 +39,7 @@ export const api = {
     notices.onmessage = onNotice;
     return invoke<number>("open_session", { target, size, onData: data, onNotice: notices });
   },
-  writeSession: (id: number, data: string) => invoke<void>("write_session", { id, data }),
+  writeSession: (id: number, data: string, binary = false) => invoke<void>("write_session", { id, data, binary }),
   resizeSession: (id: number, size: TermSize) => invoke<void>("resize_session", { id, size }),
   closeSession: (id: number) => invoke<void>("close_session", { id }),
   answerPrompt: (promptId: Uuid, answer: PromptAnswer) =>

@@ -18,7 +18,7 @@ const MAX_ARGS: usize = 64;
 const MAX_ARG_LEN: usize = 4096;
 const MAX_FORWARDS: usize = 32;
 /// Longest ProxyJump chain accepted (OpenSSH has no limit; this guards loops).
-pub const MAX_JUMPS: usize = 8;
+const MAX_JUMPS: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -40,6 +40,7 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - Secret buffers are `Zeroizing` and wiped after use; private key file contents are zeroized too.
 - A remembered password is deleted when the profile's host, port, user or authentication method changes.
 - Quick-connect sessions (no saved profile) never store anything.
+- A remembered password or passphrase that is rejected is deleted at once instead of being replayed on every login (which could trip MaxAuthTries or fail2ban).
 - Prompts expire after 3 minutes; an unanswered prompt is treated as "no".
 
 ### Desktop shell (Tauri 2)
@@ -47,6 +48,7 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - Strict Content-Security-Policy: scripts only from the app bundle, no `eval`, no remote origins, no frames/objects/workers.
 - Every IPC command must be allowed explicitly in `src-tauri/capabilities/default.json` (generated per-command permissions). No file-system, shell, HTTP or opener plugins are included; the only plugin is the clipboard (read/write text).
 - The UI builds DOM nodes with `textContent` only; profile colours are validated (`#rrggbb`) both in the backend and before use.
+- Text that is not session output but is shown in the terminal (server banner, exit signal, error and status messages) is stripped of control characters, so a server cannot inject escape sequences through it before the user has even authenticated.
 - Local shells can only be started from the detected list (by id) or from a saved profile.
 - `freezePrototype` is disabled because it breaks xterm.js; the UI does not merge untrusted objects, so prototype pollution has no entry point.
 
@@ -55,7 +57,8 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - Every hop of a ProxyJump chain is a full SSH session: its host key is verified against `known_hosts` and it authenticates with its own credentials. A bastion only sees encrypted traffic for the next hop; nothing is forwarded to it (no agent forwarding).
 - Forwards configured on a profile used as bastion are not opened when it is only a hop.
 - Local (`-L`) and SOCKS (`-D`) listeners bind to `127.0.0.1` unless the profile says otherwise; the editor warns when a non-loopback address is used. As with OpenSSH, other local users and processes can connect to a loopback listener while the session is open.
-- The SOCKS5 proxy implements CONNECT only (no BIND/UDP), without authentication, and validates requested names.
+- The SOCKS5 proxy implements CONNECT only (no BIND/UDP), without authentication, and validates requested names. Clients must complete the handshake within 10 s.
+- Each local listener serves at most 256 connections at a time; accept errors back off instead of spinning.
 - Remote (`-R`) connections are only accepted for forwards Termdock requested; any other `forwarded-tcpip` channel the server opens is refused.
 - Listeners are closed when the terminal session ends.
 - Chains are limited to 8 hops and loops are rejected; a profile used as jump host cannot be deleted while referenced.

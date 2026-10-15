@@ -99,13 +99,13 @@ pub fn save_profile(state: State<'_, AppState>, profile: Profile, favorite: Opti
 #[tauri::command]
 pub fn delete_profile(state: State<'_, AppState>, id: Uuid) -> CmdResult<()> {
     let mut store = state.store.lock().unwrap();
-    let users: Vec<_> = store
-        .profiles()
-        .iter()
-        .filter(|p| matches!(&p.kind, ProfileKind::Ssh(t) if t.jump == Some(id)))
-        .map(|p| p.name.clone())
-        .collect();
-    if !users.is_empty() {
+    if store.is_jump_host(id) {
+        let users: Vec<_> = store
+            .profiles()
+            .iter()
+            .filter(|p| matches!(&p.kind, ProfileKind::Ssh(t) if t.jump == Some(id)))
+            .map(|p| p.name.as_str())
+            .collect();
         return Err(CmdError(format!("used as jump host by: {}", users.join(", "))));
     }
     store.remove(id)?;
@@ -227,14 +227,23 @@ pub async fn open_session(
     Ok(id)
 }
 
+/// `binary`: `data` carries raw bytes, one per char (xterm.js `onBinary`),
+/// which must not be UTF-8 encoded.
 #[tauri::command]
-pub fn write_session(state: State<'_, AppState>, id: u32, data: String) -> CmdResult<()> {
+pub fn write_session(state: State<'_, AppState>, id: u32, data: String, binary: Option<bool>) -> CmdResult<()> {
     if data.len() > MAX_INPUT_CHUNK {
         return Err(CmdError("input too large".into()));
     }
+    let bytes = if binary.unwrap_or(false) {
+        data.chars()
+            .map(|c| u8::try_from(u32::from(c)).map_err(|_| CmdError("invalid binary input".into())))
+            .collect::<CmdResult<Vec<u8>>>()?
+    } else {
+        data.into_bytes()
+    };
     let handle = state.sessions.lock().unwrap().get(&id).cloned();
     match handle {
-        Some(h) => Ok(h.write(data.into_bytes())?),
+        Some(h) => Ok(h.write(bytes)?),
         None => Err(CoreError::SessionClosed.into()),
     }
 }

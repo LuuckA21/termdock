@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::profile::Profile;
+use crate::profile::{Profile, ProfileKind, resolve_jumps};
 
 const SCHEMA_VERSION: u32 = 1;
 const MAX_FILE_SIZE: u64 = 16 * 1024 * 1024;
@@ -63,10 +63,6 @@ impl ProfileStore {
         Ok(Self { path, doc })
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub fn profiles(&self) -> &[Profile] {
         &self.doc.profiles
     }
@@ -86,12 +82,40 @@ impl ProfileStore {
     /// Inserts or replaces a profile (matched by id) and persists the store.
     pub fn upsert(&mut self, mut profile: Profile) -> Result<Profile> {
         profile.validate()?;
+        // The jump chain must exist, be SSH only and loop free, with this
+        // profile as it is about to be saved.
+        if let ProfileKind::Ssh(target) = &profile.kind
+            && target.jump.is_some()
+        {
+            let mut all: Vec<Profile> = self
+                .doc
+                .profiles
+                .iter()
+                .filter(|p| p.id != profile.id)
+                .cloned()
+                .collect();
+            all.push(profile.clone());
+            resolve_jumps(&all, target)?;
+        }
+        if !matches!(profile.kind, ProfileKind::Ssh(_)) && self.is_jump_host(profile.id) {
+            return Err(Error::InvalidProfile(
+                "this connection is used as jump host and must stay SSH".into(),
+            ));
+        }
         match self.doc.profiles.iter_mut().find(|p| p.id == profile.id) {
             Some(existing) => *existing = profile.clone(),
             None => self.doc.profiles.push(profile.clone()),
         }
         self.save()?;
         Ok(profile)
+    }
+
+    /// Whether another profile connects through `id`.
+    pub fn is_jump_host(&self, id: Uuid) -> bool {
+        self.doc
+            .profiles
+            .iter()
+            .any(|p| matches!(&p.kind, ProfileKind::Ssh(t) if t.jump == Some(id)))
     }
 
     pub fn remove(&mut self, id: Uuid) -> Result<Profile> {
@@ -213,6 +237,46 @@ mod tests {
             let mode = fs::metadata(path.parent().unwrap()).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o700);
         }
+    }
+
+    #[test]
+    fn rejects_broken_jump_chains() {
+        use crate::profile::{SshAuth, SshTarget};
+        let ssh = |name: &str, jump| {
+            Profile::new(
+                name,
+                ProfileKind::Ssh(SshTarget {
+                    host: format!("{name}.example"),
+                    port: 22,
+                    username: "u".into(),
+                    auth: SshAuth::Auto,
+                    keepalive_secs: 30,
+                    jump,
+                    forwards: vec![],
+                }),
+            )
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = ProfileStore::open(dir.path().join("p.json")).unwrap();
+        let a = store.upsert(ssh("a", None)).unwrap();
+        let b = store.upsert(ssh("b", Some(a.id))).unwrap();
+        // Missing jump host.
+        assert!(store.upsert(ssh("c", Some(uuid::Uuid::new_v4()))).is_err());
+        // Local shell as jump host.
+        let shell = store.upsert(local("sh")).unwrap();
+        assert!(store.upsert(ssh("d", Some(shell.id))).is_err());
+        // a -> b -> a would loop.
+        let mut a2 = a.clone();
+        if let ProfileKind::Ssh(t) = &mut a2.kind {
+            t.jump = Some(b.id);
+        }
+        assert!(store.upsert(a2).is_err());
+        // A jump host cannot become a local shell.
+        let mut a3 = local("a");
+        a3.id = a.id;
+        assert!(store.upsert(a3).is_err());
+        assert!(store.is_jump_host(a.id) && !store.is_jump_host(b.id));
+        assert_eq!(store.profiles().len(), 3);
     }
 
     #[test]

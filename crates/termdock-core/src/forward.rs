@@ -15,6 +15,7 @@ use russh::ChannelOpenFailure;
 use russh::client::{ChannelOpenHandle, Msg};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 use tokio::task::AbortHandle;
 use tracing::debug;
 
@@ -23,6 +24,10 @@ use crate::session::Interaction;
 use crate::ssh::SshHandle;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// A SOCKS client must finish its request within this time.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Concurrent connections per local listener; more wait in the backlog.
+const MAX_CONNECTIONS: usize = 256;
 
 /// (bind address, port) as requested on the server.
 type RemoteBind = (String, u32);
@@ -120,21 +125,36 @@ pub(crate) async fn start(
 
 /// Accept loop of a `-L` (fixed destination) or `-D` (SOCKS5) listener.
 fn spawn_local(listener: TcpListener, handle: SshHandle, dest: Option<LocalDest>) -> AbortHandle {
+    let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     tokio::spawn(async move {
         loop {
-            let Ok((mut tcp, peer)) = listener.accept().await else {
-                continue;
+            let Ok(permit) = slots.clone().acquire_owned().await else {
+                return;
+            };
+            let (mut tcp, peer) = match listener.accept().await {
+                Ok(c) => c,
+                Err(e) => {
+                    // e.g. out of file descriptors: back off instead of spinning.
+                    debug!("accept failed: {e}");
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                }
             };
             let handle = handle.clone();
             let dest = dest.clone();
             tokio::spawn(async move {
+                let _permit = permit;
                 let _ = tcp.set_nodelay(true);
                 let (host, port, socks) = match dest {
                     Some((h, p)) => (h, p, false),
-                    None => match socks5_accept(&mut tcp).await {
-                        Ok((h, p)) => (h, p, true),
-                        Err(e) => {
+                    None => match tokio::time::timeout(HANDSHAKE_TIMEOUT, socks5_accept(&mut tcp)).await {
+                        Ok(Ok((h, p))) => (h, p, true),
+                        Ok(Err(e)) => {
                             debug!("SOCKS request from {peer} rejected: {e}");
+                            return;
+                        }
+                        Err(_) => {
+                            debug!("SOCKS client {peer} timed out");
                             return;
                         }
                     },

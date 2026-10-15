@@ -9,7 +9,6 @@ const it = {
   newTab: "Nuova scheda",
   closeTab: "Chiudi scheda",
   connecting: "Connessione a {target}…",
-  connected: "Connesso",
   sessionEnded: "Sessione terminata",
   exitCode: "codice {code}",
   pressEnterReconnect: "Premi Invio per riconnettere, Ctrl+Shift+W per chiudere.",
@@ -66,7 +65,6 @@ const it = {
   ok: "OK",
   copy: "Copia",
   paste: "Incolla",
-  shortcuts: "Scorciatoie",
   shortcutsBody:
     "Ctrl+Shift+T nuova shell · Ctrl+Shift+W chiudi scheda · Ctrl+Tab scheda successiva · Alt+1…9 vai alla scheda · Ctrl+Shift+1…9 apri preferito · Ctrl+Shift+K connessione rapida · Ctrl+Shift+M connessioni · Ctrl+Shift+C/V copia/incolla",
   errorTitle: "Errore",
@@ -111,7 +109,6 @@ const en: Dict = {
   newTab: "New tab",
   closeTab: "Close tab",
   connecting: "Connecting to {target}…",
-  connected: "Connected",
   sessionEnded: "Session ended",
   exitCode: "code {code}",
   pressEnterReconnect: "Press Enter to reconnect, Ctrl+Shift+W to close.",
@@ -168,7 +165,6 @@ const en: Dict = {
   ok: "OK",
   copy: "Copy",
   paste: "Paste",
-  shortcuts: "Shortcuts",
   shortcutsBody:
     "Ctrl+Shift+T new shell · Ctrl+Shift+W close tab · Ctrl+Tab next tab · Alt+1…9 go to tab · Ctrl+Shift+1…9 open favorite · Ctrl+Shift+K quick connect · Ctrl+Shift+M connections · Ctrl+Shift+C/V copy/paste",
   errorTitle: "Error",

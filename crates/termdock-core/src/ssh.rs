@@ -492,6 +492,24 @@ impl Authenticator<'_> {
         })
     }
 
+    /// A remembered secret the server (or the key file) rejected: forget it so
+    /// it is not replayed on every login, which could lock the account
+    /// (MaxAuthTries, fail2ban).
+    fn vault_forget(&self, kind: SecretKind) {
+        if let Some(id) = self.profile_id {
+            match self.vault.delete(id, kind) {
+                Ok(()) => self.ui.info(format!(
+                    "the saved {} was rejected and has been removed",
+                    match kind {
+                        SecretKind::Password => "password",
+                        SecretKind::KeyPassphrase => "key passphrase",
+                    }
+                )),
+                Err(e) => warn!("vault delete failed: {e}"),
+            }
+        }
+    }
+
     fn vault_store(&self, kind: SecretKind, answer: &SecretAnswer) {
         if let Some(id) = self.profile_id.filter(|_| answer.remember)
             && let Err(e) = self.vault.set(id, kind, &answer.secret)
@@ -593,10 +611,11 @@ impl Authenticator<'_> {
     }
 
     async fn unlock_key(&mut self, text: &str, path: &Path) -> Result<Option<PrivateKey>> {
-        if let Some(saved) = self.vault_get(SecretKind::KeyPassphrase)
-            && let Ok(k) = russh::keys::decode_secret_key(text, Some(&saved))
-        {
-            return Ok(Some(k));
+        if let Some(saved) = self.vault_get(SecretKind::KeyPassphrase) {
+            match russh::keys::decode_secret_key(text, Some(&saved)) {
+                Ok(k) => return Ok(Some(k)),
+                Err(_) => self.vault_forget(SecretKind::KeyPassphrase),
+            }
         }
         for _ in 0..MAX_PROMPTS {
             let prompt = SecretPrompt::KeyPassphrase {
@@ -628,6 +647,7 @@ impl Authenticator<'_> {
             if self.record(r) {
                 return Ok(true);
             }
+            self.vault_forget(SecretKind::Password);
         }
         for _ in 0..MAX_PROMPTS {
             if !self.allows(MethodKind::Password) {
@@ -658,6 +678,7 @@ impl Authenticator<'_> {
                 return Ok(false);
             }
             let mut remember: Option<SecretAnswer> = None;
+            let mut used_saved = false;
             let mut reply = self.handle.authenticate_keyboard_interactive_start(&user, None).await?;
             loop {
                 match reply {
@@ -669,6 +690,9 @@ impl Authenticator<'_> {
                     }
                     KeyboardInteractiveAuthResponse::Failure { remaining_methods, .. } => {
                         self.remaining = Some(remaining_methods);
+                        if used_saved {
+                            self.vault_forget(SecretKind::Password);
+                        }
                         break;
                     }
                     KeyboardInteractiveAuthResponse::InfoRequest {
@@ -681,6 +705,7 @@ impl Authenticator<'_> {
                             let looks_like_password = !p.echo && p.prompt.to_lowercase().contains("password");
                             if looks_like_password && let Some(pw) = saved_password.take() {
                                 responses.push(pw.to_string());
+                                used_saved = true;
                                 continue;
                             }
                             let prompt = SecretPrompt::Challenge {

@@ -112,18 +112,7 @@ fn parse_blocks(text: &str, warnings: &mut Vec<String>) -> Vec<Block> {
 }
 
 fn wildcard(pattern: &str, text: &str) -> bool {
-    fn rec(p: &[char], t: &[char]) -> bool {
-        match (p.first(), t.first()) {
-            (None, None) => true,
-            (Some('*'), _) => rec(&p[1..], t) || (!t.is_empty() && rec(p, &t[1..])),
-            (Some('?'), Some(_)) => rec(&p[1..], &t[1..]),
-            (Some(a), Some(b)) if a.eq_ignore_ascii_case(b) => rec(&p[1..], &t[1..]),
-            _ => false,
-        }
-    }
-    let p: Vec<char> = pattern.chars().collect();
-    let t: Vec<char> = text.chars().collect();
-    rec(&p, &t)
+    crate::hostkeys::wildcard_match(&pattern.to_lowercase(), &text.to_lowercase())
 }
 
 fn block_matches(patterns: &Option<Vec<String>>, alias: &str) -> bool {
