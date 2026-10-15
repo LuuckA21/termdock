@@ -16,6 +16,9 @@ const MAX_USER_LEN: usize = 128;
 const MAX_GROUP_LEN: usize = 64;
 const MAX_ARGS: usize = 64;
 const MAX_ARG_LEN: usize = 4096;
+const MAX_FORWARDS: usize = 32;
+/// Longest ProxyJump chain accepted (OpenSSH has no limit; this guards loops).
+pub const MAX_JUMPS: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +54,131 @@ pub struct SshTarget {
     /// Send a keepalive after this many idle seconds (0 disables it).
     #[serde(default = "default_keepalive")]
     pub keepalive_secs: u32,
+    /// Saved SSH profile to connect through (ProxyJump). That profile may have
+    /// its own jump, forming a chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump: Option<Uuid>,
+    /// Port forwards opened once the session is authenticated.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forwards: Vec<Forward>,
+}
+
+/// A port forward, as in OpenSSH's `-L`, `-R` and `-D`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Forward {
+    /// `-L`: listen on this machine, connections leave from the server.
+    #[serde(rename_all = "camelCase")]
+    Local {
+        #[serde(default = "loopback")]
+        bind_host: String,
+        bind_port: u16,
+        dest_host: String,
+        dest_port: u16,
+    },
+    /// `-R`: listen on the server, connections leave from this machine.
+    #[serde(rename_all = "camelCase")]
+    Remote {
+        #[serde(default = "remote_loopback")]
+        bind_host: String,
+        bind_port: u16,
+        dest_host: String,
+        dest_port: u16,
+    },
+    /// `-D`: local SOCKS5 proxy, connections leave from the server.
+    #[serde(rename_all = "camelCase")]
+    Dynamic {
+        #[serde(default = "loopback")]
+        bind_host: String,
+        bind_port: u16,
+    },
+}
+
+fn loopback() -> String {
+    "127.0.0.1".into()
+}
+
+fn remote_loopback() -> String {
+    "localhost".into()
+}
+
+impl Forward {
+    /// Short human readable form, e.g. `L 127.0.0.1:8080 -> db:5432`.
+    pub fn describe(&self) -> String {
+        match self {
+            Forward::Local {
+                bind_host,
+                bind_port,
+                dest_host,
+                dest_port,
+            } => format!(
+                "L {} -> {}",
+                host_port(bind_host, *bind_port),
+                host_port(dest_host, *dest_port)
+            ),
+            Forward::Remote {
+                bind_host,
+                bind_port,
+                dest_host,
+                dest_port,
+            } => format!(
+                "R {} -> {}",
+                host_port(bind_host, *bind_port),
+                host_port(dest_host, *dest_port)
+            ),
+            Forward::Dynamic { bind_host, bind_port } => format!("D {} (SOCKS5)", host_port(bind_host, *bind_port)),
+        }
+    }
+
+    fn validate(&mut self) -> Result<()> {
+        let (bind_host, bind_port, dest) = match self {
+            Forward::Local {
+                bind_host,
+                bind_port,
+                dest_host,
+                dest_port,
+            }
+            | Forward::Remote {
+                bind_host,
+                bind_port,
+                dest_host,
+                dest_port,
+            } => (bind_host, bind_port, Some((dest_host, dest_port))),
+            Forward::Dynamic { bind_host, bind_port } => (bind_host, bind_port, None),
+        };
+        *bind_host = bind_host.trim().to_owned();
+        validate_host(bind_host)?;
+        if *bind_port == 0 {
+            return Err(Error::InvalidProfile("forward ports must be 1-65535".into()));
+        }
+        if let Some((host, port)) = dest {
+            *host = host.trim().to_owned();
+            validate_host(host)?;
+            if *port == 0 {
+                return Err(Error::InvalidProfile("forward ports must be 1-65535".into()));
+            }
+        }
+        Ok(())
+    }
+
+    /// The local socket this forward listens on, if any.
+    pub fn local_bind(&self) -> Option<(&str, u16)> {
+        match self {
+            Forward::Local {
+                bind_host, bind_port, ..
+            }
+            | Forward::Dynamic { bind_host, bind_port } => Some((bind_host, *bind_port)),
+            Forward::Remote { .. } => None,
+        }
+    }
+}
+
+fn host_port(host: &str, port: u16) -> String {
+    if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,7 +247,12 @@ impl Profile {
         }
 
         match &mut self.kind {
-            ProfileKind::Ssh(t) => t.validate(),
+            ProfileKind::Ssh(t) => {
+                if t.jump == Some(self.id) {
+                    return Err(Error::InvalidProfile("a connection cannot jump through itself".into()));
+                }
+                t.validate()
+            }
             ProfileKind::Local(l) => l.validate(),
         }
     }
@@ -141,6 +274,18 @@ impl SshTarget {
         }
         if self.keepalive_secs > 3600 {
             return Err(Error::InvalidProfile("keepalive must be at most 3600 s".into()));
+        }
+        if self.forwards.len() > MAX_FORWARDS {
+            return Err(Error::InvalidProfile(format!("at most {MAX_FORWARDS} port forwards")));
+        }
+        let mut binds = std::collections::HashSet::new();
+        for f in &mut self.forwards {
+            f.validate()?;
+            if let Some((host, port)) = f.local_bind()
+                && !binds.insert((host.to_lowercase(), port))
+            {
+                return Err(Error::InvalidProfile(format!("{host}:{port} is used by two forwards")));
+            }
         }
         Ok(())
     }
@@ -251,9 +396,52 @@ pub fn parse_quick_connect(input: &str, default_user: &str) -> Result<SshTarget>
         username: user,
         auth: SshAuth::Auto,
         keepalive_secs: default_keepalive(),
+        jump: None,
+        forwards: Vec::new(),
     };
     target.validate()?;
     Ok(target)
+}
+
+/// One hop of a connection: the saved profile it comes from and its target.
+#[derive(Debug, Clone)]
+pub struct Hop {
+    pub profile_id: Option<Uuid>,
+    pub target: SshTarget,
+}
+
+/// Expands the ProxyJump chain of `target`: returns the hops to go through,
+/// outermost (first to connect) first, without `target` itself.
+pub fn resolve_jumps(profiles: &[Profile], target: &SshTarget) -> Result<Vec<Hop>> {
+    let mut chain = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut next = target.jump;
+    while let Some(id) = next {
+        if !seen.insert(id) {
+            return Err(Error::InvalidProfile("jump hosts form a loop".into()));
+        }
+        if chain.len() >= MAX_JUMPS {
+            return Err(Error::InvalidProfile(format!("more than {MAX_JUMPS} jump hosts")));
+        }
+        let profile = profiles.iter().find(|p| p.id == id).ok_or(Error::ProfileNotFound(id))?;
+        let ProfileKind::Ssh(hop) = &profile.kind else {
+            return Err(Error::InvalidProfile(format!(
+                "jump host '{}' is not an SSH connection",
+                profile.name
+            )));
+        };
+        next = hop.jump;
+        chain.push(Hop {
+            profile_id: Some(profile.id),
+            // Forwards of a bastion profile only apply when it is opened directly.
+            target: SshTarget {
+                forwards: Vec::new(),
+                ..hop.clone()
+            },
+        });
+    }
+    chain.reverse();
+    Ok(chain)
 }
 
 fn parse_port(p: &str) -> Result<u16> {
@@ -276,6 +464,8 @@ mod tests {
                 username: user.into(),
                 auth: SshAuth::Auto,
                 keepalive_secs: 30,
+                jump: None,
+                forwards: Vec::new(),
             }),
         )
     }
@@ -340,6 +530,105 @@ mod tests {
         assert_eq!(t.display(), "u@h:2222");
         let t = parse_quick_connect("u@[::1]:2", "x").unwrap();
         assert_eq!(t.display(), "u@[::1]:2");
+    }
+
+    fn ssh_mut(p: &mut Profile) -> &mut SshTarget {
+        match &mut p.kind {
+            ProfileKind::Ssh(t) => t,
+            ProfileKind::Local(_) => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn forwards_validation() {
+        let mut p = ssh("h", "u");
+        ssh_mut(&mut p).forwards = vec![
+            Forward::Local {
+                bind_host: " 127.0.0.1 ".into(),
+                bind_port: 8080,
+                dest_host: "db".into(),
+                dest_port: 5432,
+            },
+            Forward::Dynamic {
+                bind_host: "127.0.0.1".into(),
+                bind_port: 1080,
+            },
+            Forward::Remote {
+                bind_host: "localhost".into(),
+                bind_port: 8080,
+                dest_host: "127.0.0.1".into(),
+                dest_port: 3000,
+            },
+        ];
+        assert!(p.validate().is_ok());
+        assert_eq!(ssh_mut(&mut p).forwards[0].describe(), "L 127.0.0.1:8080 -> db:5432");
+
+        // Two local listeners on the same socket.
+        ssh_mut(&mut p).forwards.push(Forward::Dynamic {
+            bind_host: "127.0.0.1".into(),
+            bind_port: 8080,
+        });
+        assert!(p.validate().is_err());
+
+        let mut p = ssh("h", "u");
+        ssh_mut(&mut p).forwards = vec![Forward::Local {
+            bind_host: "127.0.0.1".into(),
+            bind_port: 0,
+            dest_host: "db".into(),
+            dest_port: 1,
+        }];
+        assert!(p.validate().is_err());
+        ssh_mut(&mut p).forwards = vec![Forward::Local {
+            bind_host: "127.0.0.1".into(),
+            bind_port: 1,
+            dest_host: "db;rm".into(),
+            dest_port: 1,
+        }];
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn jump_chain() {
+        let mut a = ssh("bastion-a", "u");
+        let mut b = ssh("bastion-b", "u");
+        let mut c = ssh("target", "u");
+        ssh_mut(&mut b).jump = Some(a.id);
+        ssh_mut(&mut c).jump = Some(b.id);
+        ssh_mut(&mut b).forwards.push(Forward::Dynamic {
+            bind_host: "127.0.0.1".into(),
+            bind_port: 1080,
+        });
+        let profiles = vec![a.clone(), b.clone(), c.clone()];
+
+        let target = ssh_mut(&mut c).clone();
+        let hops = resolve_jumps(&profiles, &target).unwrap();
+        let hosts: Vec<_> = hops.iter().map(|h| h.target.host.as_str()).collect();
+        assert_eq!(hosts, ["bastion-a", "bastion-b"]);
+        assert!(
+            hops[1].target.forwards.is_empty(),
+            "bastion forwards must not be opened"
+        );
+        assert_eq!(hops[0].profile_id, Some(a.id));
+
+        // Loop a -> c -> b -> a.
+        ssh_mut(&mut a).jump = Some(c.id);
+        let profiles = vec![a.clone(), b, c];
+        assert!(resolve_jumps(&profiles, &target).is_err());
+
+        // Missing profile.
+        assert!(resolve_jumps(&[], &target).is_err());
+
+        // Self jump is refused at save time.
+        ssh_mut(&mut a).jump = Some(a.id);
+        assert!(a.validate().is_err());
+    }
+
+    #[test]
+    fn old_profiles_still_load() {
+        let json = r#"{"id":"6f1c2a52-6f0e-4a8e-9d55-2d6f8a3c7b10","name":"x","type":"ssh","host":"h","port":22,"username":"u","auth":{"method":"auto"},"keepaliveSecs":30}"#;
+        let p: Profile = serde_json::from_str(json).unwrap();
+        let ProfileKind::Ssh(t) = p.kind else { panic!() };
+        assert!(t.jump.is_none() && t.forwards.is_empty());
     }
 
     #[test]

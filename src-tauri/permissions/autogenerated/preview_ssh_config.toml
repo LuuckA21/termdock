@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preview-ssh-config"
+description = "Enables the preview_ssh_config command without any pre-configured scope."
+commands.allow = ["preview_ssh_config"]
+
+[[permission]]
+identifier = "deny-preview-ssh-config"
+description = "Denies the preview_ssh_config command without any pre-configured scope."
+commands.deny = ["preview_ssh_config"]

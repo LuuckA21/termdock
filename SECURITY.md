@@ -50,6 +50,22 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - Local shells can only be started from the detected list (by id) or from a saved profile.
 - `freezePrototype` is disabled because it breaks xterm.js; the UI does not merge untrusted objects, so prototype pollution has no entry point.
 
+### Jump hosts and port forwarding (`ssh.rs`, `forward.rs`)
+
+- Every hop of a ProxyJump chain is a full SSH session: its host key is verified against `known_hosts` and it authenticates with its own credentials. A bastion only sees encrypted traffic for the next hop; nothing is forwarded to it (no agent forwarding).
+- Forwards configured on a profile used as bastion are not opened when it is only a hop.
+- Local (`-L`) and SOCKS (`-D`) listeners bind to `127.0.0.1` unless the profile says otherwise; the editor warns when a non-loopback address is used. As with OpenSSH, other local users and processes can connect to a loopback listener while the session is open.
+- The SOCKS5 proxy implements CONNECT only (no BIND/UDP), without authentication, and validates requested names.
+- Remote (`-R`) connections are only accepted for forwards Termdock requested; any other `forwarded-tcpip` channel the server opens is refused.
+- Listeners are closed when the terminal session ends.
+- Chains are limited to 8 hops and loops are rejected; a profile used as jump host cannot be deleted while referenced.
+
+### `~/.ssh/config` import (`sshconfig.rs`)
+
+- The backend reads only `~/.ssh/config`; the UI cannot choose another file.
+- `ProxyCommand`, `Match`, `Include`, unknown tokens and Unix-socket forwards are reported, never executed or guessed.
+- Imported profiles go through the same validation as manual ones.
+
 ### Storage
 
 - `profiles.json` and `known_hosts` contain no secrets; on Unix they are created `0600` in a `0700` directory and written atomically (temp file + rename) so a crash cannot leave a truncated file.
@@ -63,5 +79,5 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 ## Known limitations
 
 - Release builds are not code-signed until signing certificates are configured in the release workflow; verify downloads accordingly.
-- Agent forwarding, port forwarding, X11 forwarding and jump hosts are not implemented (and therefore cannot be abused).
+- Agent forwarding and X11 forwarding are not implemented (and therefore cannot be abused).
 - Typed secrets transit the web view's memory before reaching the backend; they are cleared from the input immediately after submission.

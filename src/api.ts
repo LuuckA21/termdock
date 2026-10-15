@@ -1,6 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   AppInfo,
+  ImportResult,
+  SshConfigPreview,
   DetectedShell,
   OpenTarget,
   Profile,
@@ -22,6 +24,8 @@ export const api = {
   forgetSecrets: (id: Uuid) => invoke<void>("forget_secrets", { id }),
   forgetHostKey: (host: string, port: number) => invoke<number>("forget_host_key", { host, port }),
   listShells: () => invoke<DetectedShell[]>("list_shells"),
+  previewSshConfig: () => invoke<SshConfigPreview>("preview_ssh_config"),
+  importSshConfig: (aliases: string[]) => invoke<ImportResult>("import_ssh_config", { aliases }),
 
   openSession: (
     target: OpenTarget,

@@ -8,6 +8,11 @@ export type SshAuth =
   | { method: "key"; path: string }
   | { method: "password" };
 
+export type Forward =
+  | { kind: "local"; bindHost: string; bindPort: number; destHost: string; destPort: number }
+  | { kind: "remote"; bindHost: string; bindPort: number; destHost: string; destPort: number }
+  | { kind: "dynamic"; bindHost: string; bindPort: number };
+
 export interface SshFields {
   type: "ssh";
   host: string;
@@ -15,6 +20,9 @@ export interface SshFields {
   username: string;
   auth: SshAuth;
   keepaliveSecs: number;
+  /** Saved SSH connection used as jump host (ProxyJump). */
+  jump?: Uuid;
+  forwards?: Forward[];
 }
 
 export interface LocalFields {
@@ -83,9 +91,29 @@ export type SessionNotice =
   | { type: "hostKey"; promptId: Uuid; info: HostKeyInfo }
   | { type: "secret"; promptId: Uuid; prompt: SecretPrompt }
   | { type: "banner"; text: string }
+  | { type: "info"; text: string }
   | { type: "exit"; code: number | null; message: string | null };
 
 export type PromptAnswer =
   | { kind: "hostKey"; accept: boolean }
   | { kind: "secret"; secret: string; remember: boolean }
   | { kind: "cancel" };
+
+export interface SshConfigPreview {
+  path: string;
+  found: boolean;
+  items: {
+    alias: string;
+    target: string;
+    jump: string | null;
+    forwards: string[];
+    warnings: string[];
+    existing: string | null;
+  }[];
+  warnings: string[];
+}
+
+export interface ImportResult {
+  imported: string[];
+  warnings: string[];
+}

@@ -123,4 +123,8 @@ pub trait Interaction: Send + Sync {
 
     /// Pre-authentication banner sent by the server.
     fn banner(&self, _text: String) {}
+
+    /// Progress information worth showing in the terminal (jump hops,
+    /// port forwards opened or failed).
+    fn info(&self, _text: String) {}
 }

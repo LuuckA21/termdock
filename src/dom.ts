@@ -59,6 +59,7 @@ const ICONS = {
   chevron: ["M6 9l6 6 6-6"],
   bolt: ["M13 2L4 14h7l-1 8 9-12h-7z"],
   keyboard: ["M3 6h18v12H3z", "M7 10h.01", "M11 10h.01", "M15 10h.01", "M7 14h10"],
+  download: ["M12 4v11", "M7 10l5 5 5-5", "M5 20h14"],
 } as const;
 
 export function clear(el: Element): void {

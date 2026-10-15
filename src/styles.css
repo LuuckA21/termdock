@@ -745,3 +745,78 @@ dialog.manager[open] {
 .tab.open .dot:not([style]) {
   background: var(--ok);
 }
+
+/* ---------- port forwards & import ---------- */
+
+.fwd-list {
+  display: grid;
+  gap: 6px;
+}
+
+.fwd-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 84px auto 1fr 84px auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.fwd-arrow {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-align: center;
+}
+
+.fwd-help {
+  margin: -2px 0 4px;
+  font-size: 11px;
+}
+
+.fwd-list > .btn {
+  justify-self: start;
+}
+
+.warn[hidden] {
+  display: none;
+}
+
+.warn {
+  margin: 0;
+  color: var(--star);
+  font-size: 12px;
+}
+
+dialog.import {
+  width: min(640px, 92vw);
+}
+
+.import-list {
+  display: grid;
+  gap: 4px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.import-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.import-row input {
+  margin-top: 3px;
+}
+
+.import-warnings {
+  display: grid;
+  gap: 2px;
+}
+
+@media (max-width: 760px) {
+  .fwd-row {
+    grid-template-columns: 1fr 1fr 70px;
+  }
+}

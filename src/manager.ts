@@ -2,6 +2,8 @@ import { api, errorText } from "./api";
 import { alertBox, confirmBox } from "./dialogs";
 import { clear, h, icon } from "./dom";
 import { describe, setDotColor } from "./favorites";
+import { forwardsEditor } from "./forwards";
+import { openImport } from "./importer";
 import { t } from "./i18n";
 import type { App } from "./main";
 import type { Profile, SshAuth, Uuid } from "./types";
@@ -120,6 +122,12 @@ export function openManager(app: App, opts: ManagerOptions): void {
     renderList();
     renderEditor(null);
   });
+  const importBtn = h("button", { class: "btn", type: "button", title: t("importSshConfig") }, icon("download"), h("span", {}, t("importShort")));
+  importBtn.addEventListener("click", async () => {
+    if (await openImport(app)) {
+      renderList();
+    }
+  });
   const closeBtn = h("button", { class: "icon-btn", type: "button", title: t("close"), "aria-label": t("close") }, icon("close"));
   closeBtn.addEventListener("click", close);
 
@@ -130,6 +138,7 @@ export function openManager(app: App, opts: ManagerOptions): void {
       h("h2", {}, t("connections")),
       h("div", { class: "spacer" }),
       h("span", { class: "mgr-saved", role: "status" }),
+      importBtn,
       newBtn,
       closeBtn,
     ),
@@ -195,6 +204,12 @@ function profileForm(app: App, existing: Profile | null, onSaved: (p: Profile | 
   auth.value = ssh?.auth.method ?? "auto";
   const keyPath = input(ssh?.auth.method === "key" ? ssh.auth.path : "", { placeholder: "~/.ssh/id_ed25519" });
   const keepalive = input(ssh?.keepaliveSecs ?? 30, { type: "number", min: "0", max: "3600" });
+  const jump = h("select", { class: "input" }, h("option", { value: "" }, t("noJump")));
+  for (const p of [...app.profiles].sort((a, b) => a.name.localeCompare(b.name))) {
+    if (p.type === "ssh" && p.id !== base.id) jump.append(h("option", { value: p.id }, `${p.name} (${describe(p)})`));
+  }
+  jump.value = ssh?.jump ?? "";
+  const forwards = forwardsEditor(ssh?.forwards ?? []);
   const program = input(local?.program ?? defaultShell?.shell.program ?? "");
   const args = h("textarea", { class: "input", rows: "3", spellcheck: "false" });
   args.value = (local?.args ?? defaultShell?.shell.args ?? []).join("\n");
@@ -231,6 +246,8 @@ function profileForm(app: App, existing: Profile | null, onSaved: (p: Profile | 
     field(t("auth"), auth, "span2"),
     field(t("keyPath"), keyPath, "span2 key-row"),
     field(t("keepalive"), keepalive),
+    field(t("jumpHost"), jump, "span2"),
+    h("div", { class: "field span2" }, h("span", {}, t("portForwards")), forwards.el),
   );
   const localBox = h("div", { class: "grid" }, field(t("program"), program, "span2"), field(t("args"), args, "span2"), field(t("cwd"), cwd, "span2"));
 
@@ -278,6 +295,8 @@ function profileForm(app: App, existing: Profile | null, onSaved: (p: Profile | 
       username: user.value.trim(),
       auth: a,
       keepaliveSecs: Math.max(0, Number(keepalive.value) || 0),
+      jump: jump.value || undefined,
+      forwards: forwards.value(),
     };
   };
 

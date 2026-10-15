@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use termdock_core::Error;
 use termdock_core::hostkeys::{HostKeyInfo, KnownHosts};
-use termdock_core::profile::{SshAuth, SshTarget};
+use termdock_core::profile::{Forward, Hop, SshAuth, SshTarget};
 use termdock_core::session::{
     BoxFuture, EventSink, Interaction, SecretAnswer, SecretPrompt, SessionEvent, SessionHandle, TermSize,
 };
@@ -52,6 +52,7 @@ struct ScriptedUser {
     answers: Mutex<Vec<(String, bool)>>,
     asked: Mutex<Vec<String>>,
     host_prompts: Mutex<Vec<HostKeyInfo>>,
+    infos: Mutex<Vec<String>>,
 }
 
 impl Interaction for ScriptedUser {
@@ -77,6 +78,10 @@ impl Interaction for ScriptedUser {
                 remember,
             })
         })
+    }
+
+    fn info(&self, text: String) {
+        self.infos.lock().unwrap().push(text);
     }
 }
 
@@ -128,7 +133,10 @@ async fn connect(
                 username: e.user.clone(),
                 auth,
                 keepalive_secs: 5,
+                jump: None,
+                forwards: Vec::new(),
             },
+            jumps: Vec::new(),
             size: TermSize { cols: 100, rows: 30 },
             known_hosts: kh.clone(),
             vault: vault.clone(),
@@ -352,4 +360,143 @@ async fn ssh_keyboard_interactive() {
     .unwrap();
     assert!(ui.asked.lock().unwrap().is_empty());
     run_and_exit(h, out, "kbd2").await;
+}
+
+async fn echo_server() -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        loop {
+            let (mut s, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let (mut r, mut w) = s.split();
+                let _ = tokio::io::copy(&mut r, &mut w).await;
+            });
+        }
+    });
+    port
+}
+
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+async fn assert_echo(stream: &mut tokio::net::TcpStream, msg: &[u8]) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    stream.write_all(msg).await.unwrap();
+    let mut buf = vec![0u8; msg.len()];
+    tokio::time::timeout(Duration::from_secs(10), stream.read_exact(&mut buf))
+        .await
+        .expect("no echo")
+        .unwrap();
+    assert_eq!(buf, msg);
+}
+
+/// Jump host + `-L`, `-D` and `-R` forwards. The bastion and the target are
+/// the same sshd, reached under two names so that each hop is verified on its own.
+#[tokio::test(flavor = "multi_thread")]
+async fn ssh_jump_and_forwards() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let kh = Arc::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let vault = Arc::new(MemoryVault::default());
+    let echo = echo_server().await;
+    let (l_port, d_port, r_port) = (free_port(), free_port(), free_port());
+
+    let bastion = SshTarget {
+        host: e.host.clone(),
+        port: e.port,
+        username: e.user.clone(),
+        auth: SshAuth::Password,
+        keepalive_secs: 5,
+        jump: None,
+        forwards: Vec::new(),
+    };
+    let target = SshTarget {
+        host: "localhost".into(),
+        forwards: vec![
+            Forward::Local {
+                bind_host: "127.0.0.1".into(),
+                bind_port: l_port,
+                dest_host: "127.0.0.1".into(),
+                dest_port: echo,
+            },
+            Forward::Dynamic {
+                bind_host: "127.0.0.1".into(),
+                bind_port: d_port,
+            },
+            Forward::Remote {
+                bind_host: "127.0.0.1".into(),
+                bind_port: r_port,
+                dest_host: "127.0.0.1".into(),
+                dest_port: echo,
+            },
+        ],
+        ..bastion.clone()
+    };
+
+    let ui = user(true, &[(&e.password, false), (&e.password, false)]);
+    let out = output();
+    let h = ssh::connect(
+        SshConnect {
+            profile_id: None,
+            target,
+            jumps: vec![Hop {
+                profile_id: Some(Uuid::new_v4()),
+                target: bastion,
+            }],
+            size: TermSize { cols: 100, rows: 30 },
+            known_hosts: kh.clone(),
+            vault: vault.clone(),
+            ui: ui.clone(),
+        },
+        out.sink.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Each hop verified its own host key and authenticated on its own.
+    let hosts: Vec<_> = ui.host_prompts.lock().unwrap().iter().map(|i| i.host.clone()).collect();
+    assert_eq!(hosts, [e.host.as_str(), "localhost"]);
+    assert_eq!(*ui.asked.lock().unwrap(), ["password", "password"]);
+    let infos = ui.infos.lock().unwrap().clone();
+    assert!(infos[0].starts_with("jump: "), "{infos:?}");
+    assert_eq!(infos.iter().filter(|i| i.ends_with(": active")).count(), 3, "{infos:?}");
+
+    // -L
+    let mut s = tokio::net::TcpStream::connect(("127.0.0.1", l_port)).await.unwrap();
+    assert_echo(&mut s, b"through -L\n").await;
+
+    // -D (SOCKS5 CONNECT to the echo server by name)
+    let mut s = tokio::net::TcpStream::connect(("127.0.0.1", d_port)).await.unwrap();
+    s.write_all(&[5, 1, 0]).await.unwrap();
+    let mut auth = [0u8; 2];
+    s.read_exact(&mut auth).await.unwrap();
+    assert_eq!(auth, [5, 0]);
+    let mut req = vec![5, 1, 0, 3, 9];
+    req.extend(b"localhost");
+    req.extend(echo.to_be_bytes());
+    s.write_all(&req).await.unwrap();
+    let mut reply = [0u8; 10];
+    s.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0, "SOCKS reply {reply:?}");
+    assert_echo(&mut s, b"through -D\n").await;
+
+    // -R: the server listens, we connect to the local echo server.
+    let mut s = tokio::net::TcpStream::connect(("127.0.0.1", r_port)).await.unwrap();
+    assert_echo(&mut s, b"through -R\n").await;
+
+    // The shell works too, and closing it tears the forwards down.
+    run_and_exit(h, out, "jump").await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(tokio::net::TcpStream::connect(("127.0.0.1", l_port)).await.is_err());
+    assert!(tokio::net::TcpStream::connect(("127.0.0.1", d_port)).await.is_err());
 }

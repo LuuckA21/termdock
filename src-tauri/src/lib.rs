@@ -35,6 +35,8 @@ pub fn run() {
             commands::resize_session,
             commands::close_session,
             commands::answer_prompt,
+            commands::preview_ssh_config,
+            commands::import_ssh_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Termdock");

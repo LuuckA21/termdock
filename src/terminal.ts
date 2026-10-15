@@ -37,6 +37,7 @@ const THEME = {
 
 const DIM = "\x1b[2m";
 const RED = "\x1b[31m";
+const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
 
 export interface TabOptions {
@@ -198,6 +199,9 @@ export class TerminalTab {
     switch (n.type) {
       case "banner":
         this.term.write(`${DIM}${n.text.replace(/\r?\n/g, "\r\n")}${RESET}\r\n`);
+        break;
+      case "info":
+        this.term.write(`${CYAN}» ${n.text.replace(/[\x00-\x1f\x7f]/g, " ")}${RESET}\r\n`);
         break;
       case "hostKey": {
         const accept = await confirmHostKey(n.info);
