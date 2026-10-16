@@ -1,20 +1,20 @@
 name: Release
 
-# Builds installers for Windows (MSI/NSIS), macOS (DMG) and Linux
-# (AppImage/deb/rpm) as a draft release. Two ways to start it:
+# Builds installers for Windows (MSI/NSIS), macOS (universal DMG) and Linux
+# (AppImage/deb/rpm) into a DRAFT release, to be tested and published by hand.
 #
-# * push a `v*` tag, or
-# * run it manually (Actions -> Release -> Run workflow) with the version:
-#   the `vX.Y.Z` tag is then created on the selected commit by this workflow.
+# Normal flow: a PR bumps the version with `node scripts/version.mjs set X.Y.Z`;
+# when it lands on main this workflow sees a version without a tag, creates the
+# `vX.Y.Z` tag on that commit and builds the release, using the CHANGELOG
+# section as release notes. Pushes to main that keep the version do nothing.
+#
+# Also possible: push a `v*` tag, or run it by hand (Actions -> Release).
 on:
   push:
+    branches: [main]
+    paths: [src-tauri/tauri.conf.json]
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to release, without the v (must match tauri.conf.json)"
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -29,39 +29,53 @@ jobs:
     permissions:
       contents: write
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+      tag: ${{ steps.version.outputs.tag }}
+      release: ${{ steps.version.outputs.release }}
     steps:
       - uses: actions/checkout@v7
-      - name: Resolve and check the version
-        id: tag
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            tag="$GITHUB_REF_NAME"
-          else
-            if ! printf '%s' "$INPUT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
-              echo "::error::'$INPUT_VERSION' is not a semantic version (e.g. 1.2.3)"
-              exit 1
-            fi
-            tag="v$INPUT_VERSION"
-          fi
-          app_version=$(jq -r .version src-tauri/tauri.conf.json)
-          if [ "$tag" != "v$app_version" ]; then
-            echo "::error::tag $tag does not match the app version $app_version in tauri.conf.json"
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Create the tag (manual runs)
-        if: github.event_name == 'workflow_dispatch'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Resolve the version
+        id: version
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
-            echo "::error::tag $TAG already exists"
-            exit 1
-          fi
+          node scripts/version.mjs check
+          tag="v$(node scripts/version.mjs get)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          exists=false
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then exists=true; fi
+
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF_TYPE" in
+            push:tag)
+              if [ "$GITHUB_REF_NAME" != "$tag" ]; then
+                echo "::error::tag $GITHUB_REF_NAME does not match the app version ($tag)"
+                exit 1
+              fi
+              release=true ;;
+            push:branch)
+              if [ "$exists" = true ]; then
+                echo "$tag already released, nothing to do"
+                release=false
+              else
+                release=true
+              fi ;;
+            *)
+              if [ "$exists" = true ]; then
+                echo "::error::$tag already exists; bump the version with scripts/version.mjs first"
+                exit 1
+              fi
+              release=true ;;
+          esac
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "create_tag=$([ "$release" = true ] && [ "$exists" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Create the tag
+        if: steps.version.outputs.create_tag == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
           sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$TAG" -f message="Termdock $TAG" \
             -f object="$GITHUB_SHA" -f type=commit --jq .sha)
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$sha" >/dev/null
@@ -69,6 +83,7 @@ jobs:
 
   build:
     needs: prepare
+    if: needs.prepare.outputs.release == 'true'
     permissions:
       contents: write
     strategy:
@@ -100,6 +115,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Release notes
+        shell: bash
+        run: node scripts/version.mjs changelog > "$RUNNER_TEMP/notes.md"
+      - name: Read release notes
+        id: notes
+        shell: bash
+        run: |
+          {
+            echo "body<<TERMDOCK_NOTES_EOF"
+            cat "$RUNNER_TEMP/notes.md"
+            echo "TERMDOCK_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -109,6 +136,7 @@ jobs:
         with:
           tagName: ${{ needs.prepare.outputs.tag }}
           releaseName: Termdock ${{ needs.prepare.outputs.tag }}
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
