@@ -1,6 +1,7 @@
 import { h, icon, clear } from "./dom";
 import { t } from "./i18n";
 import { showMenu, showMenuBelow } from "./menu";
+import { openSettings } from "./settings";
 import type { App } from "./main";
 import type { Profile } from "./types";
 
@@ -94,6 +95,13 @@ export class FavoritesBar {
     );
     managerBtn.addEventListener("click", () => this.app.openManager({}));
 
+    const settingsBtn = h(
+      "button",
+      { class: "icon-btn", type: "button", title: `${t("settings")} (Ctrl+,)`, "aria-label": t("settings") },
+      icon("settings"),
+    );
+    settingsBtn.addEventListener("click", () => void openSettings());
+
     this.root.append(
       h("span", { class: "fav-label", title: t("favorites") }, icon("star")),
       chips,
@@ -102,6 +110,7 @@ export class FavoritesBar {
       h("label", { class: "quick" }, icon("bolt"), quick),
       shellBtn,
       managerBtn,
+      settingsBtn,
     );
   }
 
