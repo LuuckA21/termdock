@@ -208,6 +208,7 @@ export class TerminalTab {
     }
     // Let the app-level shortcuts through (handled in main.ts).
     if (mod && e.shiftKey && /^(KeyT|KeyW|KeyK|KeyM|Digit\d)$/.test(e.code)) return false;
+    if (mod && !e.shiftKey && e.code === "Comma") return false;
     if (e.ctrlKey && e.code === "Tab") return false;
     if (e.altKey && !mod && /^Digit[1-9]$/.test(e.code)) return false;
     return true;

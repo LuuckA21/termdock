@@ -17,8 +17,9 @@ for the threat model; keep both up to date when behaviour changes.
   and PR descriptions are in **English only**. Documentation is kept in
   **English and Italian**: `README.md` / `README.it.md`, `SECURITY.md` /
   `SECURITY.it.md`, `CHANGELOG.md` / `CHANGELOG.it.md`; update both files
-  of a pair in the same PR. UI strings go through `src/i18n.ts` (both
-  languages).
+  of a pair in the same PR. UI strings go through `t()` from `src/i18n.ts`,
+  with one dictionary per language in `src/locales/` (every key in every
+  locale).
 
 ## Versioning and releases (owned by the agent, not the user)
 

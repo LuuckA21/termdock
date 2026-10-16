@@ -1,206 +1,83 @@
-const it = {
-  favorites: "Preferiti",
-  noFavorites: "Nessun preferito: aggiungi una connessione con ★",
-  addConnection: "Nuova connessione",
-  connections: "Connessioni",
-  quickConnectPlaceholder: "utente@host:porta",
-  quickConnectTitle: "Connessione rapida SSH (Invio)",
-  localShell: "Terminale locale",
-  newTab: "Nuova scheda",
-  closeTab: "Chiudi scheda",
-  connecting: "Connessione a {target}…",
-  sessionEnded: "Sessione terminata",
-  exitCode: "codice {code}",
-  pressEnterReconnect: "Premi Invio per riconnettere, Ctrl+Shift+W per chiudere.",
-  connectionFailed: "Connessione fallita: {error}",
-  edit: "Modifica",
-  delete: "Elimina",
-  connect: "Connetti",
-  save: "Salva",
-  cancel: "Annulla",
-  close: "Chiudi",
-  search: "Cerca…",
-  addToFavorites: "Aggiungi ai preferiti",
-  removeFromFavorites: "Rimuovi dai preferiti",
-  confirmDelete: "Eliminare la connessione “{name}”? Anche le password salvate verranno rimosse.",
-  name: "Nome",
-  type: "Tipo",
-  ssh: "SSH",
-  local: "Locale",
-  host: "Host",
-  port: "Porta",
-  username: "Utente",
-  auth: "Autenticazione",
-  authAuto: "Automatica (agent → chiavi ~/.ssh → password)",
-  authAgent: "Solo SSH agent / Pageant",
-  authKey: "Chiave privata",
-  authPassword: "Password",
-  keyPath: "Percorso chiave",
-  keepalive: "Keepalive (s, 0 = off)",
-  color: "Colore",
-  group: "Gruppo",
-  favorite: "Nei preferiti",
-  program: "Programma",
-  args: "Argomenti (uno per riga)",
-  cwd: "Cartella iniziale",
-  forgetSecrets: "Dimentica password salvate",
-  forgetHostKey: "Dimentica host key",
-  secretsForgotten: "Password e passphrase rimosse dal portachiavi.",
-  hostKeysForgotten: "{n} host key rimosse.",
-  newProfile: "Nuova connessione",
-  editProfile: "Modifica connessione",
-  noProfiles: "Nessuna connessione salvata.",
-  ungrouped: "Senza gruppo",
-  hostKeyTitle: "Host sconosciuto",
-  hostKeyBody:
-    "L'autenticità dell'host {host} non può essere verificata. Confronta l'impronta con quella fornita dall'amministratore del server prima di continuare.",
-  hostKeyAlgorithm: "Algoritmo",
-  hostKeyFingerprint: "Impronta",
-  trustAndConnect: "Considera attendibile e connetti",
-  passwordTitle: "Password per {target}",
-  passphraseTitle: "Passphrase per la chiave {path}",
-  challengeTitle: "Autenticazione {target}",
-  remember: "Ricorda nel portachiavi di sistema",
-  rememberUnavailable: "Portachiavi di sistema non disponibile: la password non verrà salvata.",
-  ok: "OK",
-  copy: "Copia",
-  paste: "Incolla",
-  shortcutsBody:
-    "Ctrl+Shift+T nuova shell · Ctrl+Shift+W chiudi scheda · Ctrl+Tab scheda successiva · Alt+1…9 vai alla scheda · Ctrl+Shift+1…9 apri preferito · Ctrl+Shift+K connessione rapida · Ctrl+Shift+M connessioni · Ctrl+Shift+C/V copia/incolla",
-  errorTitle: "Errore",
-  confirmTitle: "Conferma",
-  saved: "Salvato ✓",
-  jumpHost: "Jump host (ProxyJump)",
-  noJump: "— nessuno: connessione diretta —",
-  portForwards: "Port forwarding",
-  addForward: "Aggiungi forwarding",
-  removeForward: "Rimuovi forwarding",
-  fwdLocal: "Locale (-L)",
-  fwdRemote: "Remoto (-R)",
-  fwdDynamic: "SOCKS (-D)",
-  bindHost: "Indirizzo di ascolto",
-  bindPort: "Porta",
-  destHost: "Host destinazione",
-  destPort: "Porta",
-  fwdLocalHelp: "Ascolta su questo computer; le connessioni escono dal server verso la destinazione.",
-  fwdRemoteHelp: "Il server ascolta sulla porta indicata; le connessioni arrivano a questo computer verso la destinazione.",
-  fwdDynamicHelp: "Proxy SOCKS5 locale: le connessioni escono dal server verso qualsiasi destinazione richiesta.",
-  fwdPublicWarning: "Attenzione: l'indirizzo non è locale, altri computer della rete potranno usare questo tunnel.",
-  importSshConfig: "Importa da ~/.ssh/config",
-  importShort: "Importa",
-  importNotFound: "File non trovato: {path}",
-  importNone: "Nessun Host importabile nel file.",
-  importVia: "tramite {jump}",
-  importAlreadySaved: "già salvata come “{name}”",
-  importButton: "Importa selezionati",
-  importDone: "{n} connessioni importate.",
-};
+// UI translations. To add a language: create `src/locales/<code>.ts` typed
+// as `Dict` (the compiler then requires every key) and register it below.
+import en, { type Dict } from "./locales/en";
+import it from "./locales/it";
 
-type Dict = typeof it;
+export const LANGUAGES = [
+  { code: "en", name: "English", dict: en },
+  { code: "it", name: "Italiano", dict: it },
+] as const satisfies readonly { code: string; name: string; dict: Dict }[];
 
-const en: Dict = {
-  favorites: "Favorites",
-  noFavorites: "No favorites yet: star a connection with ★",
-  addConnection: "New connection",
-  connections: "Connections",
-  quickConnectPlaceholder: "user@host:port",
-  quickConnectTitle: "SSH quick connect (Enter)",
-  localShell: "Local terminal",
-  newTab: "New tab",
-  closeTab: "Close tab",
-  connecting: "Connecting to {target}…",
-  sessionEnded: "Session ended",
-  exitCode: "code {code}",
-  pressEnterReconnect: "Press Enter to reconnect, Ctrl+Shift+W to close.",
-  connectionFailed: "Connection failed: {error}",
-  edit: "Edit",
-  delete: "Delete",
-  connect: "Connect",
-  save: "Save",
-  cancel: "Cancel",
-  close: "Close",
-  search: "Search…",
-  addToFavorites: "Add to favorites",
-  removeFromFavorites: "Remove from favorites",
-  confirmDelete: "Delete connection “{name}”? Saved passwords will be removed too.",
-  name: "Name",
-  type: "Type",
-  ssh: "SSH",
-  local: "Local",
-  host: "Host",
-  port: "Port",
-  username: "User",
-  auth: "Authentication",
-  authAuto: "Automatic (agent → ~/.ssh keys → password)",
-  authAgent: "SSH agent / Pageant only",
-  authKey: "Private key",
-  authPassword: "Password",
-  keyPath: "Key path",
-  keepalive: "Keepalive (s, 0 = off)",
-  color: "Color",
-  group: "Group",
-  favorite: "In favorites",
-  program: "Program",
-  args: "Arguments (one per line)",
-  cwd: "Start directory",
-  forgetSecrets: "Forget saved passwords",
-  forgetHostKey: "Forget host key",
-  secretsForgotten: "Passwords and passphrases removed from the keychain.",
-  hostKeysForgotten: "{n} host keys removed.",
-  newProfile: "New connection",
-  editProfile: "Edit connection",
-  noProfiles: "No saved connections.",
-  ungrouped: "Ungrouped",
-  hostKeyTitle: "Unknown host",
-  hostKeyBody:
-    "The authenticity of host {host} can't be established. Compare the fingerprint with the one provided by the server administrator before continuing.",
-  hostKeyAlgorithm: "Algorithm",
-  hostKeyFingerprint: "Fingerprint",
-  trustAndConnect: "Trust and connect",
-  passwordTitle: "Password for {target}",
-  passphraseTitle: "Passphrase for key {path}",
-  challengeTitle: "Authentication {target}",
-  remember: "Remember in the system keychain",
-  rememberUnavailable: "System keychain not available: the password won't be saved.",
-  ok: "OK",
-  copy: "Copy",
-  paste: "Paste",
-  shortcutsBody:
-    "Ctrl+Shift+T new shell · Ctrl+Shift+W close tab · Ctrl+Tab next tab · Alt+1…9 go to tab · Ctrl+Shift+1…9 open favorite · Ctrl+Shift+K quick connect · Ctrl+Shift+M connections · Ctrl+Shift+C/V copy/paste",
-  errorTitle: "Error",
-  confirmTitle: "Confirm",
-  saved: "Saved ✓",
-  jumpHost: "Jump host (ProxyJump)",
-  noJump: "— none: direct connection —",
-  portForwards: "Port forwarding",
-  addForward: "Add forward",
-  removeForward: "Remove forward",
-  fwdLocal: "Local (-L)",
-  fwdRemote: "Remote (-R)",
-  fwdDynamic: "SOCKS (-D)",
-  bindHost: "Listen address",
-  bindPort: "Port",
-  destHost: "Destination host",
-  destPort: "Port",
-  fwdLocalHelp: "Listens on this computer; connections leave from the server to the destination.",
-  fwdRemoteHelp: "The server listens on the given port; connections reach this computer and go to the destination.",
-  fwdDynamicHelp: "Local SOCKS5 proxy: connections leave from the server to whatever destination is requested.",
-  fwdPublicWarning: "Warning: not a local address, other computers on the network will be able to use this tunnel.",
-  importSshConfig: "Import from ~/.ssh/config",
-  importShort: "Import",
-  importNotFound: "File not found: {path}",
-  importNone: "No importable Host in the file.",
-  importVia: "via {jump}",
-  importAlreadySaved: "already saved as “{name}”",
-  importButton: "Import selected",
-  importDone: "{n} connections imported.",
-};
-
-const dict: Dict = navigator.language.toLowerCase().startsWith("it") ? it : en;
-document.documentElement.lang = dict === it ? "it" : "en";
-
+export type LanguageCode = (typeof LANGUAGES)[number]["code"];
+/** What the user chose: a language, or "auto" to follow the system. */
+export type LanguageSetting = LanguageCode | "auto";
 export type MsgKey = keyof Dict;
 
+const STORAGE_KEY = "termdock.language";
+
+function isLanguage(value: unknown): value is LanguageCode {
+  return LANGUAGES.some((l) => l.code === value);
+}
+
+/** First system language Termdock speaks, English otherwise. */
+export function systemLanguage(): LanguageCode {
+  for (const tag of navigator.languages?.length ? navigator.languages : [navigator.language]) {
+    const base = tag.toLowerCase().split("-")[0];
+    if (isLanguage(base)) return base;
+  }
+  return "en";
+}
+
+function readSetting(): LanguageSetting {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "auto" || isLanguage(saved)) return saved;
+  } catch {
+    // Storage unavailable: fall back to the system language.
+  }
+  return "auto";
+}
+
+let setting: LanguageSetting = readSetting();
+let current: LanguageCode = "en";
+let dict: Dict = en;
+const listeners = new Set<() => void>();
+
+function apply(): void {
+  current = setting === "auto" ? systemLanguage() : setting;
+  dict = LANGUAGES.find((l) => l.code === current)?.dict ?? en;
+  document.documentElement.lang = current;
+}
+apply();
+
+export function languageSetting(): LanguageSetting {
+  return setting;
+}
+
+export function currentLanguage(): LanguageCode {
+  return current;
+}
+
+/** Switches language at once and remembers the choice. */
+export function setLanguage(next: LanguageSetting): void {
+  if (next === setting) return;
+  setting = next;
+  try {
+    localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    // Not persisted, but still applied for this run.
+  }
+  const before = current;
+  apply();
+  if (current !== before) listeners.forEach((fn) => fn());
+}
+
+/** Called after the language changes; returns an unsubscribe function. */
+export function onLanguageChange(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 export function t(key: MsgKey, params: Record<string, string | number> = {}): string {
-  return dict[key].replace(/\{(\w+)\}/g, (_, k: string) => String(params[k] ?? `{${k}}`));
+  return (dict[key] ?? en[key]).replace(/\{(\w+)\}/g, (_, k: string) => String(params[k] ?? `{${k}}`));
 }

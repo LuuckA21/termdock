@@ -17,7 +17,7 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 - **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti.
 - **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.
 - Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro).
-- Interfaccia in italiano o inglese in base alla lingua del sistema.
+- **Interfaccia multilingua** (English, Italiano): si sceglie nelle Impostazioni (`Ctrl+,`) oppure si lascia *Automatica* per seguire la lingua del sistema; il cambio è immediato e le sessioni aperte restano attive.
 
 ### Scorciatoie
 
@@ -31,6 +31,7 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 | `Ctrl+Shift+K` | connessione rapida |
 | `Ctrl+Shift+M` | gestore connessioni |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copia / incolla |
+| `Ctrl+,` | impostazioni (lingua) |
 | tasto destro nel terminale | copia la selezione, altrimenti incolla |
 
 ## Sicurezza
@@ -104,7 +105,9 @@ cargo test -p termdock-core --test ssh_e2e
 
 I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi ed eliminata se rifiutata, chiave privata cifrata con passphrase, keyboard-interactive, jump host con forwarding `-L` / `-R` / `-D`, chiusura sessione e **host key cambiata (simulazione MITM)**.
 
-Codice, commenti e messaggi di commit sono in inglese; la documentazione è mantenuta in inglese e in italiano (`*.md` e `*.it.md`); i testi dell'interfaccia stanno in [`src/i18n.ts`](src/i18n.ts) in entrambe le lingue.
+Codice, commenti e messaggi di commit sono in inglese; la documentazione è mantenuta in inglese e in italiano (`*.md` e `*.it.md`).
+
+I testi dell'interfaccia stanno in [`src/locales/`](src/locales), un file per lingua. Per aggiungere una lingua copia `en.ts` in `<codice>.ts`, traducilo (il tipo `Dict` fa fallire la build se manca una chiave) e registralo in `LANGUAGES` in [`src/i18n.ts`](src/i18n.ts); comparirà nelle Impostazioni.
 
 Versioni e release sono automatiche: ogni PR aggiorna [CHANGELOG.md](CHANGELOG.md) e [CHANGELOG.it.md](CHANGELOG.it.md); per rilasciare si usa `npm run version:set -- X.Y.Z`, che aggiorna la versione in tutti i file (`npm run version:check` lo verifica in CI). Quando la PR arriva su `main`, il workflow [`release.yml`](.github/workflows/release.yml) crea il tag `vX.Y.Z` e compila gli installer per tutte le piattaforme in una release in bozza, con le note prese dal changelog. Per distribuire su macOS/Windows senza avvisi del sistema servono certificati di firma (vedi i commenti nel workflow).
 

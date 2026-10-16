@@ -17,7 +17,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Connection manager**: groups, colors, search, star to pin to the favorites bar.
 - **Quick connect**: type `user@host:port` in the bar and press Enter.
 - Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click).
-- English or Italian interface, following the system language.
+- **Multilingual interface** (English, Italiano): choose it in Settings (`Ctrl+,`) or leave *Automatic* to follow the system language; the switch is immediate and open sessions keep running.
 
 ### Shortcuts
 
@@ -31,6 +31,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | `Ctrl+Shift+K` | quick connect |
 | `Ctrl+Shift+M` | connection manager |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
+| `Ctrl+,` | settings (language) |
 | right click in the terminal | copy the selection, otherwise paste |
 
 ## Security
@@ -104,7 +105,9 @@ cargo test -p termdock-core --test ssh_e2e
 
 The end-to-end tests cover: unknown host key refused, trust on first use, wrong password and retries, password remembered in the keychain and forgotten when rejected, encrypted private key with passphrase, keyboard-interactive, jump host with `-L` / `-R` / `-D` forwards, session close and **changed host key (MITM simulation)**.
 
-Code, comments and commit messages are in English; documentation is kept in English and Italian (`*.md` and `*.it.md`); UI strings live in [`src/i18n.ts`](src/i18n.ts) in both languages.
+Code, comments and commit messages are in English; documentation is kept in English and Italian (`*.md` and `*.it.md`).
+
+UI strings live in [`src/locales/`](src/locales), one file per language. To add a language, copy `en.ts` to `<code>.ts`, translate it (the `Dict` type makes the build fail if a key is missing) and register it in `LANGUAGES` in [`src/i18n.ts`](src/i18n.ts); it then appears in Settings.
 
 Versions and releases are automated: every PR updates [CHANGELOG.md](CHANGELOG.md) and [CHANGELOG.it.md](CHANGELOG.it.md); a release is prepared with `npm run version:set -- X.Y.Z`, which updates the version in every file (`npm run version:check` verifies it in CI). When the PR lands on `main`, the [`release.yml`](.github/workflows/release.yml) workflow creates the `vX.Y.Z` tag and builds the installers for every platform into a draft release, with the changelog section as notes. Distributing on macOS/Windows without system warnings requires signing certificates (see the comments in the workflow).
 

@@ -6,9 +6,10 @@ import { api, errorText } from "./api";
 import { alertBox } from "./dialogs";
 import { clear, h, icon } from "./dom";
 import { describe, FavoritesBar, setDotColor } from "./favorites";
-import { t } from "./i18n";
+import { onLanguageChange, t } from "./i18n";
 import { openManager, type ManagerOptions } from "./manager";
 import { showMenu } from "./menu";
+import { openSettings } from "./settings";
 import { TerminalTab } from "./terminal";
 import type { AppInfo, DetectedShell, OpenTarget, Profile, Uuid } from "./types";
 
@@ -31,6 +32,11 @@ export class App {
     [this.info, this.shells] = await Promise.all([api.appInfo(), api.listShells()]);
     await this.reload();
     document.addEventListener("keydown", (e) => this.onKey(e));
+    // Language switched in Settings: redraw the chrome; open terminals keep running.
+    onLanguageChange(() => {
+      this.favbar.render();
+      this.renderTabs();
+    });
     window.addEventListener("beforeunload", () => this.tabs.forEach((tab) => tab.dispose()));
     this.renderTabs();
     this.openDefaultShell();
@@ -186,6 +192,7 @@ export class App {
       if (this.active) this.closeTab(this.active);
     } else if (mod && e.shiftKey && e.code === "KeyK") document.getElementById("quick-connect")?.focus();
     else if (mod && e.shiftKey && e.code === "KeyM") this.openManager({});
+    else if (mod && !e.shiftKey && e.code === "Comma") void openSettings();
     else if (mod && e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
       const p = this.favoriteProfiles()[Number(e.code.slice(5)) - 1];
       if (p) this.openProfile(p);

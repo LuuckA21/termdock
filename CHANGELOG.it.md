@@ -7,6 +7,14 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-16
+
+### Aggiunto
+
+- Scelta della lingua nella nuova finestra Impostazioni (pulsante ingranaggio o `Ctrl+,`): Automatica (lingua del sistema), English o Italiano. Il cambio vale subito, senza chiudere le sessioni aperte, e viene ricordato.
+- Traduzioni organizzate con un file per lingua (`src/locales/`), così è semplice aggiungere nuove lingue.
+- Documentazione in inglese e in italiano.
+
 ## [0.2.0] - 2026-10-15
 
 ### Aggiunto
@@ -42,6 +50,7 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LuuckA21/termdock/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LuuckA21/termdock/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LuuckA21/termdock/releases/tag/v0.1.0

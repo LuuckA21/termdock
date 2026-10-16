@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-16
+
+### Added
+
+- Language selection in the new Settings dialog (gear button or `Ctrl+,`): Automatic (system language), English or Italiano. The change applies at once, without closing open sessions, and is remembered.
+- Translations are organised one file per language (`src/locales/`), so new languages can be added easily.
+- Documentation in English and Italian.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added
@@ -42,6 +50,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LuuckA21/termdock/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LuuckA21/termdock/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LuuckA21/termdock/releases/tag/v0.1.0
