@@ -1,6 +1,7 @@
 mod commands;
 mod prompts;
 mod state;
+mod updates;
 
 use tauri::{Manager, RunEvent};
 use tracing_subscriber::EnvFilter;
@@ -15,9 +16,11 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState::new(&dir)?);
+            app.manage(updates::PendingUpdate::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -37,6 +40,8 @@ pub fn run() {
             commands::answer_prompt,
             commands::preview_ssh_config,
             commands::import_ssh_config,
+            updates::check_update,
+            updates::install_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Termdock");

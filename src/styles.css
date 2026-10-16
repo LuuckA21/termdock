@@ -529,6 +529,51 @@ dialog.modal h2 {
   cursor: pointer;
 }
 
+.settings-group {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.settings-group legend {
+  padding: 0 4px;
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-group p:empty {
+  display: none;
+}
+
+.update-notes {
+  max-height: 40vh;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: 12px;
+}
+
+dialog.update-progress {
+  width: min(420px, 92vw);
+}
+
+dialog.update-progress progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
 .kv {
   display: grid;
   grid-template-columns: auto 1fr;

@@ -48,7 +48,7 @@ Viene annunciato `kex-strict-c-v00@openssh.com`, che mitiga l'attacco Terrapin (
 ### Applicazione desktop (Tauri 2)
 
 - Content-Security-Policy restrittiva: script solo dal bundle dell'app, niente `eval`, nessuna origine remota, niente frame/object/worker.
-- Ogni comando IPC deve essere autorizzato esplicitamente in `src-tauri/capabilities/default.json` (permessi generati per comando). Non sono inclusi plugin per file system, shell, HTTP o apertura di URL; l'unico plugin è quello degli appunti (lettura/scrittura testo).
+- Ogni comando IPC deve essere autorizzato esplicitamente in `src-tauri/capabilities/default.json` (permessi generati per comando). Non sono inclusi plugin per file system, shell, HTTP o apertura di URL. L'interfaccia può usare il plugin degli appunti (lettura/scrittura testo); il plugin di aggiornamento è usato solo dal backend e nessuno dei suoi comandi è autorizzato.
 - L'interfaccia costruisce i nodi DOM solo con `textContent`; i colori dei profili sono validati (`#rrggbb`) sia nel backend sia prima dell'uso.
 - Il testo mostrato nel terminale che non è output della sessione (banner del server, segnale di uscita, messaggi di errore e di stato) viene ripulito dai caratteri di controllo, così un server non può iniettare sequenze di escape attraverso di esso, nemmeno prima che l'utente si sia autenticato.
 - Le shell locali si possono avviare solo dall'elenco rilevato (per id) o da un profilo salvato.
@@ -70,6 +70,17 @@ Viene annunciato `kex-strict-c-v00@openssh.com`, che mitiga l'attacco Terrapin (
 - Il backend legge solo `~/.ssh/config`; l'interfaccia non può scegliere un altro file.
 - `ProxyCommand`, `Match`, `Include`, token sconosciuti e forwarding su socket Unix vengono segnalati, mai eseguiti o indovinati.
 - I profili importati passano per la stessa validazione di quelli creati a mano.
+
+### Aggiornamenti (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
+
+- L'app cerca aggiornamenti solo all'indirizzo HTTPS fissato in `tauri.conf.json` (il `latest.json` dell'ultima release GitHub *pubblicata*; le bozze non vengono mai proposte). Le build di release rifiutano HTTP in chiaro e l'interfaccia non può cambiare indirizzo, chiave o regole sulla versione: può solo chiedere "c'è un aggiornamento?" e "installa quello trovato".
+- Ogni pacchetto è verificato con minisign (Ed25519) usando la chiave pubblica inclusa nell'app, dopo il download e di nuovo subito prima dell'installazione. Un pacchetto che non supera il controllo non viene mai scritto al posto dell'app installata.
+- La firma copre anche la versione per cui è stata fatta (`requireSignedVersion`): un manifest che annuncia la versione X deve puntare a un pacchetto firmato per X, quindi un manifest manomesso non può spacciare una release più vecchia, firmata regolarmente, per una nuova. Sono accettate solo versioni più recenti (niente downgrade).
+- Niente viene scaricato o installato senza la conferma dell'utente. Le note di rilascio arrivano dal manifest, che non è firmato: sono mostrate come testo semplice e troncate.
+- Le installazioni deb e rpm non vengono aggiornate sul posto (servirebbe root, che il plugin otterrebbe passando la password dell'utente a `sudo`); l'app si limita ad annunciare la nuova versione.
+- La chiave privata esiste solo nei secret del repository e nel backup offline del proprietario. Il workflow di release si rifiuta di creare il tag se la chiave manca o non corrisponde alla chiave pubblica dell'app, e verifica ogni pacchetto caricato prima di allegare `latest.json`.
+- Privacy: un controllo è una richiesta HTTPS a github.com all'avvio e una volta al giorno (GitHub vede l'indirizzo IP); si può disattivare nelle Impostazioni.
+- Rischio residuo: chi possiede la chiave privata e può pubblicare release su questo repository può distribuire un aggiornamento. Se la chiave va persa, le copie installate non possono più aggiornarsi da sole e vanno reinstallate a mano una volta.
 
 ### Archiviazione
 

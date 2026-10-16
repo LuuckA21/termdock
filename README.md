@@ -17,6 +17,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Connection manager**: groups, colors, search, star to pin to the favorites bar.
 - **Quick connect**: type `user@host:port` in the bar and press Enter.
 - Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click).
+- **Automatic updates**: a new version is announced at start (and once a day), installed only after you confirm, and verified against the signing key built into the app; it can be turned off in Settings.
 - **Multilingual interface** (English, Italiano): choose it in Settings (`Ctrl+,`) or leave *Automatic* to follow the system language; the switch is immediate and open sessions keep running.
 
 ### Shortcuts
@@ -31,7 +32,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | `Ctrl+Shift+K` | quick connect |
 | `Ctrl+Shift+M` | connection manager |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
-| `Ctrl+,` | settings (language) |
+| `Ctrl+,` | settings (language, updates) |
 | right click in the terminal | copy the selection, otherwise paste |
 
 ## Security
@@ -47,6 +48,7 @@ The main choices (details in [SECURITY.md](SECURITY.md)):
 - Text coming from the server outside the session (banner, exit messages) is shown without control characters: no escape sequence injection.
 - **Least-privilege Tauri 2**: strict Content-Security-Policy (no inline or remote scripts), every IPC command explicitly allowed in [`capabilities/default.json`](src-tauri/capabilities/default.json), no file system or shell plugins. The UI builds the DOM with `textContent` only (no `innerHTML`).
 - Configuration files with `0600` permissions (`0700` folder) on Unix, atomic writes.
+- **Signed updates**: every update package is verified (Ed25519/minisign) against the public key built into the app and must be signed for the version it claims to be, so neither a tampered package nor an older release can be installed. Details in [SECURITY.md](SECURITY.md#updates-src-taurisrcupdatesrs-scriptsupdater-manifestmjs).
 - CI with `cargo audit`, `npm audit`, clippy with `-D warnings`, end-to-end tests against OpenSSH and weekly Dependabot.
 
 > Tip: use **Ed25519** keys (`ssh-keygen -t ed25519`) protected by a passphrase, ideally loaded in an SSH agent.
@@ -110,6 +112,14 @@ Code, comments and commit messages are in English; documentation is kept in Engl
 UI strings live in [`src/locales/`](src/locales), one file per language. To add a language, copy `en.ts` to `<code>.ts`, translate it (the `Dict` type makes the build fail if a key is missing) and register it in `LANGUAGES` in [`src/i18n.ts`](src/i18n.ts); it then appears in Settings.
 
 Versions and releases are automated: every PR updates [CHANGELOG.md](CHANGELOG.md) and [CHANGELOG.it.md](CHANGELOG.it.md); a release is prepared with `npm run version:set -- X.Y.Z`, which updates the version in every file (`npm run version:check` verifies it in CI). When the PR lands on `main`, the [`release.yml`](.github/workflows/release.yml) workflow creates the `vX.Y.Z` tag and builds the installers for every platform into a draft release, with the changelog section as notes. Distributing on macOS/Windows without system warnings requires signing certificates (see the comments in the workflow).
+
+In-app updates need the updater signing key, created once by the owner:
+
+```sh
+npm run tauri signer generate -- -w ~/.tauri/termdock.key
+```
+
+The public key (`~/.tauri/termdock.key.pub`) goes into `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`; the private key and its password go into the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and into an offline backup: without it, installed copies can no longer be updated. The release workflow checks the key before tagging, signs every package, verifies them with `scripts/updater-manifest.mjs` and attaches `latest.json`, which installed apps read once the release is published. deb/rpm installs are only notified (the package manager updates them).
 
 ## License
 

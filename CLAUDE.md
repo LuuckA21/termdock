@@ -39,3 +39,10 @@ for the threat model; keep both up to date when behaviour changes.
   publishes it.
 - Never push tags from an agent session (the session proxy refuses them);
   the release workflow creates them.
+- In-app updates: packages are signed with the updater key (secrets
+  `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD`, public key in
+  `plugins.updater.pubkey`). Never commit a private key, never relax
+  `plugins.updater` (https only, `requireSignedVersion`, no downgrades) and
+  never change the public key without a release signed by the old key that
+  ships the new one: installed copies only trust the key they were built with.
+  `scripts/updater-manifest.mjs check-config` guards the configuration.

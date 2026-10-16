@@ -9,6 +9,12 @@ name: Release
 # section as release notes. Pushes to main that keep the version do nothing.
 #
 # Also possible: push a `v*` tag, or run it by hand (Actions -> Release).
+#
+# In-app updates: every package is signed with the updater key (repository
+# secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD; the
+# public key is in tauri.conf.json). The last job verifies the uploaded packages
+# against that public key and attaches latest.json, which installed apps read
+# from the latest *published* release.
 on:
   push:
     branches: [main]
@@ -70,6 +76,24 @@ jobs:
           esac
           echo "release=$release" >> "$GITHUB_OUTPUT"
           echo "create_tag=$([ "$release" = true ] && [ "$exists" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      # Fail before tagging if the updater signing setup is incomplete or the
+      # private key does not match the public key built into the app.
+      - name: Check the updater signing key
+        if: steps.version.outputs.release == 'true'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::the TAURI_SIGNING_PRIVATE_KEY secret is not set (see README, Development)"
+            exit 1
+          fi
+          node scripts/updater-manifest.mjs check-config
+          npm ci --ignore-scripts --no-audit --no-fund
+          probe="$RUNNER_TEMP/key-probe"
+          echo "termdock updater key probe" > "$probe"
+          npx tauri signer sign "$probe" >/dev/null
+          node scripts/updater-manifest.mjs verify "$probe" "$probe.sig"
       - name: Create the tag
         if: steps.version.outputs.create_tag == 'true'
         env:
@@ -130,6 +154,8 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Optional code signing, configure these secrets to enable it:
           # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
           # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID (macOS notarization).
@@ -139,4 +165,31 @@ jobs:
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
+          # Written by the `updater` job once every platform is uploaded:
+          # parallel jobs updating one latest.json could overwrite each other.
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
+
+  updater:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Verify the packages and attach latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          dir="$RUNNER_TEMP/assets"
+          gh release download "$TAG" --dir "$dir" \
+            --pattern '*_x64-setup.exe*' --pattern '*_x64_en-US.msi*' \
+            --pattern '*.app.tar.gz*' --pattern '*_amd64.AppImage*'
+          node scripts/updater-manifest.mjs build "$TAG" "$dir"
+          gh release upload "$TAG" "$dir/latest.json" --clobber

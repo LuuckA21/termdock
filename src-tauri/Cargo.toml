@@ -21,8 +21,11 @@ termdock-core.workspace = true
 directories = "6"
 tokio.workspace = true
 serde.workspace = true
+# Needed by `generate_context!` for the plugin configuration.
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tauri-plugin-updater = { version = "2.14", default-features = false, features = ["rustls-tls", "system-proxy"] }

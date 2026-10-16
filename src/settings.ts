@@ -1,8 +1,10 @@
+import { api } from "./api";
 import { modal } from "./dialogs";
 import { h } from "./dom";
 import { LANGUAGES, languageSetting, setLanguage, systemLanguage, t, type LanguageSetting } from "./i18n";
+import { autoCheckEnabled, check, setAutoCheck } from "./updates";
 
-/** Settings dialog. The language is applied when the dialog is confirmed. */
+/** Settings dialog. Choices are applied when the dialog is confirmed. */
 export async function openSettings(): Promise<void> {
   const system = LANGUAGES.find((l) => l.code === systemLanguage())?.name ?? "English";
   const language = h(
@@ -13,17 +15,42 @@ export async function openSettings(): Promise<void> {
   );
   language.value = languageSetting();
 
-  const chosen = await modal<LanguageSetting | null>({
+  const autoUpdate = h("input", { type: "checkbox" });
+  autoUpdate.checked = autoCheckEnabled();
+  const version = h("span", { class: "muted" });
+  void api.appInfo().then((info) => (version.textContent = t("versionLabel", { version: info.version })));
+  const status = h("p", { class: "muted pre selectable", role: "status" });
+  const checkNow = h("button", { type: "button", class: "btn" }, t("updateCheckNow"));
+  checkNow.addEventListener("click", async () => {
+    checkNow.disabled = true;
+    status.textContent = t("updateChecking");
+    status.textContent = (await check(true)) ?? "";
+    checkNow.disabled = false;
+  });
+
+  const chosen = await modal<{ language: LanguageSetting; autoUpdate: boolean } | null>({
     title: t("settings"),
     className: "settings",
-    body: [h("label", { class: "field" }, h("span", {}, t("language")), language)],
+    body: [
+      h("label", { class: "field" }, h("span", {}, t("language")), language),
+      h(
+        "fieldset",
+        { class: "settings-group" },
+        h("legend", {}, t("updates")),
+        h("label", { class: "check" }, autoUpdate, h("span", {}, t("updateAuto"))),
+        h("div", { class: "settings-row" }, version, checkNow),
+        status,
+      ),
+    ],
     buttons: [
       { label: t("cancel"), value: null },
       { label: t("save"), value: null, kind: "primary" },
     ],
     cancelValue: null,
     initialFocus: language,
-    onSubmit: () => language.value as LanguageSetting,
+    onSubmit: () => ({ language: language.value as LanguageSetting, autoUpdate: autoUpdate.checked }),
   });
-  if (chosen) setLanguage(chosen);
+  if (!chosen) return;
+  setAutoCheck(chosen.autoUpdate);
+  setLanguage(chosen.language);
 }

@@ -17,6 +17,7 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 - **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti.
 - **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.
 - Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro).
+- **Aggiornamenti automatici**: una nuova versione viene segnalata all'avvio (e una volta al giorno), installata solo dopo la tua conferma e verificata con la chiave di firma inclusa nell'app; si può disattivare nelle Impostazioni.
 - **Interfaccia multilingua** (English, Italiano): si sceglie nelle Impostazioni (`Ctrl+,`) oppure si lascia *Automatica* per seguire la lingua del sistema; il cambio è immediato e le sessioni aperte restano attive.
 
 ### Scorciatoie
@@ -31,7 +32,7 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 | `Ctrl+Shift+K` | connessione rapida |
 | `Ctrl+Shift+M` | gestore connessioni |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copia / incolla |
-| `Ctrl+,` | impostazioni (lingua) |
+| `Ctrl+,` | impostazioni (lingua, aggiornamenti) |
 | tasto destro nel terminale | copia la selezione, altrimenti incolla |
 
 ## Sicurezza
@@ -47,6 +48,7 @@ Le scelte principali (dettagli in [SECURITY.it.md](SECURITY.it.md)):
 - Il testo che arriva dal server fuori dalla sessione (banner, messaggi di uscita) viene mostrato senza caratteri di controllo: nessuna iniezione di sequenze di escape.
 - **Tauri 2 con privilegi minimi**: Content-Security-Policy restrittiva (niente script inline o remoti), ogni comando IPC autorizzato esplicitamente in [`capabilities/default.json`](src-tauri/capabilities/default.json), nessun plugin per file system o shell. L'interfaccia costruisce il DOM solo con `textContent` (niente `innerHTML`).
 - File di configurazione con permessi `0600` (cartella `0700`) su Unix, scritture atomiche.
+- **Aggiornamenti firmati**: ogni pacchetto di aggiornamento viene verificato (Ed25519/minisign) con la chiave pubblica inclusa nell'app e deve essere firmato per la versione che dichiara, quindi non si possono installare né un pacchetto manomesso né una release più vecchia. Dettagli in [SECURITY.it.md](SECURITY.it.md#aggiornamenti-src-taurisrcupdatesrs-scriptsupdater-manifestmjs).
 - CI con `cargo audit`, `npm audit`, clippy con `-D warnings`, test end-to-end contro OpenSSH e Dependabot settimanale.
 
 > Consiglio: usa chiavi **Ed25519** (`ssh-keygen -t ed25519`) protette da passphrase, meglio se caricate in un SSH agent.
@@ -110,6 +112,14 @@ Codice, commenti e messaggi di commit sono in inglese; la documentazione è mant
 I testi dell'interfaccia stanno in [`src/locales/`](src/locales), un file per lingua. Per aggiungere una lingua copia `en.ts` in `<codice>.ts`, traducilo (il tipo `Dict` fa fallire la build se manca una chiave) e registralo in `LANGUAGES` in [`src/i18n.ts`](src/i18n.ts); comparirà nelle Impostazioni.
 
 Versioni e release sono automatiche: ogni PR aggiorna [CHANGELOG.md](CHANGELOG.md) e [CHANGELOG.it.md](CHANGELOG.it.md); per rilasciare si usa `npm run version:set -- X.Y.Z`, che aggiorna la versione in tutti i file (`npm run version:check` lo verifica in CI). Quando la PR arriva su `main`, il workflow [`release.yml`](.github/workflows/release.yml) crea il tag `vX.Y.Z` e compila gli installer per tutte le piattaforme in una release in bozza, con le note prese dal changelog. Per distribuire su macOS/Windows senza avvisi del sistema servono certificati di firma (vedi i commenti nel workflow).
+
+Gli aggiornamenti dall'app richiedono la chiave di firma degli aggiornamenti, creata una volta dal proprietario:
+
+```sh
+npm run tauri signer generate -- -w ~/.tauri/termdock.key
+```
+
+La chiave pubblica (`~/.tauri/termdock.key.pub`) va in `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`; la chiave privata e la sua password vanno nei secret del repository `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, e in un backup offline: senza, le copie installate non si possono più aggiornare. Il workflow di release controlla la chiave prima di creare il tag, firma ogni pacchetto, li verifica con `scripts/updater-manifest.mjs` e allega `latest.json`, che le app installate leggono quando la release viene pubblicata. Le installazioni deb/rpm ricevono solo l'avviso (le aggiorna il gestore di pacchetti).
 
 ## Licenza
 

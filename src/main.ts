@@ -11,6 +11,7 @@ import { openManager, type ManagerOptions } from "./manager";
 import { showMenu } from "./menu";
 import { openSettings } from "./settings";
 import { TerminalTab } from "./terminal";
+import { startUpdateChecks } from "./updates";
 import type { AppInfo, DetectedShell, OpenTarget, Profile, Uuid } from "./types";
 
 export class App {
@@ -40,6 +41,7 @@ export class App {
     window.addEventListener("beforeunload", () => this.tabs.forEach((tab) => tab.dispose()));
     this.renderTabs();
     this.openDefaultShell();
+    startUpdateChecks();
   }
 
   async reload(): Promise<void> {
