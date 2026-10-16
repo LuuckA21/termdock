@@ -117,7 +117,7 @@ jobs:
       - run: npm ci
       - name: Release notes
         shell: bash
-        run: node scripts/version.mjs changelog > "$RUNNER_TEMP/notes.md"
+        run: node scripts/version.mjs release-notes > "$RUNNER_TEMP/notes.md"
       - name: Read release notes
         id: notes
         shell: bash

@@ -1,5 +1,7 @@
 # Security
 
+**English** · [Italiano](SECURITY.it.md)
+
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately through GitHub's "Report a vulnerability" (Security advisories) on this repository rather than in a public issue.

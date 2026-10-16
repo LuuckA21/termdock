@@ -3,11 +3,15 @@
 // package.json (+ package-lock.json), Cargo.toml ([workspace.package]),
 // Cargo.lock and src-tauri/tauri.conf.json.
 //
-//   node scripts/version.mjs check          all files agree, CHANGELOG has the entry
-//   node scripts/version.mjs get            print the current version
-//   node scripts/version.mjs set 0.2.0      update every file and roll the
-//                                           CHANGELOG "Unreleased" section into 0.2.0
-//   node scripts/version.mjs changelog [v]  print the CHANGELOG section of a version
+// The changelog exists in English (CHANGELOG.md) and Italian (CHANGELOG.it.md);
+// both are kept in step.
+//
+//   node scripts/version.mjs check              all files agree, both changelogs have the entry
+//   node scripts/version.mjs get                print the current version
+//   node scripts/version.mjs set 0.2.0          update every file and roll the "Unreleased"
+//                                               section of both changelogs into 0.2.0
+//   node scripts/version.mjs changelog [v] [it] print one changelog section (English by default)
+//   node scripts/version.mjs release-notes [v]  English section followed by the Italian one
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -44,8 +48,10 @@ function current() {
   return JSON.parse(read("src-tauri/tauri.conf.json")).version;
 }
 
-function changelogSection(version) {
-  const lines = read("CHANGELOG.md").split("\n");
+const CHANGELOGS = { en: "CHANGELOG.md", it: "CHANGELOG.it.md" };
+
+function changelogSection(version, lang = "en") {
+  const lines = read(CHANGELOGS[lang]).split("\n");
   const start = lines.findIndex((l) => l.startsWith(`## [${version}]`));
   if (start < 0) return null;
   const end = lines.findIndex((l, i) => i > start && l.startsWith("## ["));
@@ -70,8 +76,16 @@ function check() {
     console.error(`✗ ${expected} is not a semantic version`);
     ok = false;
   }
-  if (!changelogSection(expected)) {
-    console.error(`✗ CHANGELOG.md has no "## [${expected}]" section`);
+  for (const [lang, name] of Object.entries(CHANGELOGS)) {
+    if (!changelogSection(expected, lang)) {
+      console.error(`✗ ${name} has no "## [${expected}]" section`);
+      ok = false;
+    }
+  }
+  // Both languages must list the same releases.
+  const headings = (name) => [...read(name).matchAll(/^## \[([^\]]+)\]/gm)].map((m) => m[1]).join(",");
+  if (headings(CHANGELOGS.en) !== headings(CHANGELOGS.it)) {
+    console.error(`✗ ${CHANGELOGS.en} and ${CHANGELOGS.it} list different versions`);
     ok = false;
   }
   if (!ok) process.exit(1);
@@ -88,9 +102,11 @@ function set(next) {
     console.error(`already at ${next}`);
     process.exit(1);
   }
-  if (!changelogSection("Unreleased")) {
-    console.error('CHANGELOG.md: describe the changes under "## [Unreleased]" before releasing');
-    process.exit(1);
+  for (const [lang, name] of Object.entries(CHANGELOGS)) {
+    if (!changelogSection("Unreleased", lang)) {
+      console.error(`${name}: describe the changes under "## [Unreleased]" before releasing`);
+      process.exit(1);
+    }
   }
 
   const tauri = JSON.parse(read("src-tauri/tauri.conf.json"));
@@ -107,20 +123,18 @@ function set(next) {
   execFileSync("npm", ["version", next, "--no-git-tag-version", "--allow-same-version"], { cwd: root, stdio: "inherit" });
   execFileSync("cargo", ["update", "--workspace", "--offline"], { cwd: root, stdio: "inherit" });
 
-  // CHANGELOG: "Unreleased" becomes the new version, a fresh empty one goes on top.
+  // Changelogs: "Unreleased" becomes the new version, a fresh empty one goes on top.
   const date = new Date().toISOString().slice(0, 10);
-  let changelog = read("CHANGELOG.md");
-  if (!/^## \[Unreleased\]/m.test(changelog)) {
-    console.error("CHANGELOG.md has no ## [Unreleased] section");
-    process.exit(1);
-  }
-  changelog = changelog.replace(/^## \[Unreleased\]\n/m, `## [Unreleased]\n\n## [${next}] - ${date}\n`);
   const repo = "https://github.com/LuuckA21/termdock";
-  changelog = changelog.replace(
-    /^\[Unreleased\]: .*$/m,
-    `[Unreleased]: ${repo}/compare/v${next}...HEAD\n[${next}]: ${repo}/compare/v${prev}...v${next}`,
-  );
-  writeFileSync(file("CHANGELOG.md"), changelog);
+  for (const name of Object.values(CHANGELOGS)) {
+    const changelog = read(name)
+      .replace(/^## \[Unreleased\]\n/m, `## [Unreleased]\n\n## [${next}] - ${date}\n`)
+      .replace(
+        /^\[Unreleased\]: .*$/m,
+        `[Unreleased]: ${repo}/compare/v${next}...HEAD\n[${next}]: ${repo}/compare/v${prev}...v${next}`,
+      );
+    writeFileSync(file(name), changelog);
+  }
 
   check();
 }
@@ -137,12 +151,20 @@ switch (cmd) {
     set(arg);
     break;
   case "changelog": {
-    const section = changelogSection(arg ?? current());
+    const section = changelogSection(arg ?? current(), process.argv[4] === "it" ? "it" : "en");
     if (section === null) process.exit(1);
     console.log(section);
     break;
   }
+  case "release-notes": {
+    const v = arg ?? current();
+    const en = changelogSection(v, "en");
+    const it = changelogSection(v, "it");
+    if (!en || !it) process.exit(1);
+    console.log(`${en}\n\n---\n\n**Italiano**\n\n${it.replace(/^### /gm, "#### ")}`);
+    break;
+  }
   default:
-    console.error("usage: version.mjs check | get | set X.Y.Z | changelog [X.Y.Z]");
+    console.error("usage: version.mjs check | get | set X.Y.Z | changelog [X.Y.Z] [it] | release-notes [X.Y.Z]");
     process.exit(2);
 }

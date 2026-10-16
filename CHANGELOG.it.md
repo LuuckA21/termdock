@@ -1,0 +1,47 @@
+# Changelog
+
+[English](CHANGELOG.md) · **Italiano**
+
+Tutte le modifiche rilevanti di Termdock sono documentate qui.
+Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
+
+## [Unreleased]
+
+## [0.2.0] - 2026-10-15
+
+### Aggiunto
+
+- Jump host (ProxyJump): connessione attraverso una o più connessioni SSH salvate; ogni salto verifica la propria host key e si autentica separatamente.
+- Port forwarding salvato nella connessione: locale (`-L`), remoto (`-R`) e dinamico SOCKS5 (`-D`), con lo stato mostrato nel terminale.
+- Import delle connessioni da `~/.ssh/config` con anteprima: Host, HostName, User, Port, IdentityFile, ProxyJump, LocalForward, RemoteForward, DynamicForward, ServerAliveInterval.
+
+### Modificato
+
+- Una connessione usata come jump host non può essere eliminata, né trasformata in shell locale, finché altre connessioni passano da essa; i jump host mancanti o in ciclo vengono rifiutati al salvataggio.
+
+### Corretto
+
+- L'input binario di xterm.js (alcuni report del mouse) veniva codificato in UTF-8 invece di essere inviato come byte.
+- Chiudendo una scheda con il dialogo della host key o della password aperto, il dialogo restava a schermo.
+
+### Sicurezza
+
+- I banner del server, i segnali di uscita e i messaggi di errore vengono ripuliti dai caratteri di controllo prima di essere mostrati nel terminale (nessuna iniezione di sequenze di escape).
+- Una password o passphrase salvata che viene rifiutata è eliminata invece di essere riprovata a ogni accesso.
+- Timeout dell'handshake SOCKS5, limite di connessioni per listener e attesa in caso di errori di accept nel port forwarding.
+
+## [0.1.0] - 2026-10-15
+
+### Aggiunto
+
+- Barra dei preferiti: connessioni con un clic, ordinamento con drag & drop, `Ctrl+Shift+1…9`.
+- Terminale SSH (russh) con autenticazione tramite agent, chiave privata, password e keyboard-interactive / 2FA.
+- Shell locali in un vero PTY: PowerShell, Windows PowerShell, cmd, WSL, Git Bash, bash, zsh, fish.
+- Gestore connessioni con gruppi, colori e ricerca; connessione rapida `utente@host:porta`.
+- Verifica delle host key con il `known_hosts` di Termdock e quello di OpenSSH (trust on first use, chiavi cambiate o revocate rifiutate).
+- Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
+- Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
+
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/LuuckA21/termdock/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/LuuckA21/termdock/releases/tag/v0.1.0
