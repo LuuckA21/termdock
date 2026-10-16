@@ -26,7 +26,7 @@ use crate::state::AppState;
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 /// Release notes come from an unsigned manifest: cap what reaches the UI.
-const MAX_NOTES_CHARS: usize = 8_000;
+const MAX_NOTES_CHARS: usize = 16_000;
 const PROGRESS_STEP: u64 = 256 * 1024;
 
 /// The update found by the last check, waiting for the user's consent.
@@ -75,7 +75,11 @@ pub async fn check_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> 
         .updater_builder()
         .timeout(CHECK_TIMEOUT)
         // Windows: the installer is started and the app exits right away.
-        .on_before_exit(move || close_sessions(&handle))
+        // This replaces the plugin's default hook, so do its cleanup too.
+        .on_before_exit(move || {
+            close_sessions(&handle);
+            handle.cleanup_before_exit();
+        })
         .build()?
         .check()
         .await?;
@@ -111,33 +115,34 @@ pub async fn install_update(
     };
     update.timeout = Some(DOWNLOAD_TIMEOUT);
 
-    let mut downloaded = 0u64;
+    let mut received = 0u64;
     let mut reported = 0u64;
-    let result = update
+    let downloaded = update
         .download(
             |chunk, total| {
-                downloaded += chunk as u64;
-                if downloaded - reported >= PROGRESS_STEP || Some(downloaded) == total {
-                    reported = downloaded;
-                    let _ = on_progress.send(UpdateProgress::Downloading { downloaded, total });
+                received += chunk as u64;
+                if received - reported >= PROGRESS_STEP || Some(received) == total {
+                    reported = received;
+                    let _ = on_progress.send(UpdateProgress::Downloading {
+                        downloaded: received,
+                        total,
+                    });
                 }
             },
             || {},
         )
         .await;
-    // `download` verified the signature and the signed version.
-    let bytes = match result {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            // Keep it for another attempt.
-            *pending.0.lock().unwrap() = Some(update);
-            return Err(e.into());
-        }
-    };
-
-    let _ = on_progress.send(UpdateProgress::Installing);
-    // Verifies again, then replaces the app (Windows: starts the installer and exits).
-    update.install(&bytes)?;
+    // `download` verified the signature and the signed version; `install`
+    // verifies again, then replaces the app (Windows: starts the installer and exits).
+    let installed = downloaded.and_then(|bytes| {
+        let _ = on_progress.send(UpdateProgress::Installing);
+        update.install(&bytes)
+    });
+    if let Err(e) = installed {
+        // Keep it for another attempt.
+        *pending.0.lock().unwrap() = Some(update);
+        return Err(e.into());
+    }
     close_sessions(&app);
     app.request_restart();
     Ok(())

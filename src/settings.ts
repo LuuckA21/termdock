@@ -18,7 +18,10 @@ export async function openSettings(): Promise<void> {
   const autoUpdate = h("input", { type: "checkbox" });
   autoUpdate.checked = autoCheckEnabled();
   const version = h("span", { class: "muted" });
-  void api.appInfo().then((info) => (version.textContent = t("versionLabel", { version: info.version })));
+  api
+    .appInfo()
+    .then((info) => (version.textContent = t("versionLabel", { version: info.version })))
+    .catch(() => undefined);
   const status = h("p", { class: "muted pre selectable", role: "status" });
   const checkNow = h("button", { type: "button", class: "btn" }, t("updateCheckNow"));
   checkNow.addEventListener("click", async () => {

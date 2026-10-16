@@ -119,7 +119,9 @@ Gli aggiornamenti dall'app richiedono la chiave di firma degli aggiornamenti, cr
 npm run tauri signer generate -- -w ~/.tauri/termdock.key
 ```
 
-La chiave pubblica (`~/.tauri/termdock.key.pub`) va in `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`; la chiave privata e la sua password vanno nei secret del repository `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, e in un backup offline: senza, le copie installate non si possono più aggiornare. Il workflow di release controlla la chiave prima di creare il tag, firma ogni pacchetto, li verifica con `scripts/updater-manifest.mjs` e allega `latest.json`, che le app installate leggono quando la release viene pubblicata. Le installazioni deb/rpm ricevono solo l'avviso (le aggiorna il gestore di pacchetti).
+La chiave pubblica (`~/.tauri/termdock.key.pub`) va in `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. La chiave privata va in un backup offline (senza, le copie installate non si possono più aggiornare) e su GitHub: *Settings → Environments → New environment* `release`, *Deployment branches and tags* limitato al branch `main` e ai tag `v*`, poi i secret dell'environment `TAURI_SIGNING_PRIVATE_KEY` (contenuto di `~/.tauri/termdock.key`) e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Non salvarli come secret del repository: quelli sono leggibili dai workflow di qualsiasi branch.
+
+Il workflow di release controlla la chiave prima di creare il tag, firma ogni pacchetto, li verifica con `scripts/updater-manifest.mjs` e allega `latest.json`, che le app installate leggono quando la release viene pubblicata. **Pubblica una bozza solo se contiene `latest.json`**: senza, le copie installate smettono di trovare aggiornamenti. Le installazioni deb/rpm ricevono solo l'avviso (le aggiorna il gestore di pacchetti).
 
 ## Licenza
 

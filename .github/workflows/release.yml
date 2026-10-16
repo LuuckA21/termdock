@@ -10,11 +10,13 @@ name: Release
 #
 # Also possible: push a `v*` tag, or run it by hand (Actions -> Release).
 #
-# In-app updates: every package is signed with the updater key (repository
-# secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD; the
-# public key is in tauri.conf.json). The last job verifies the uploaded packages
-# against that public key and attaches latest.json, which installed apps read
-# from the latest *published* release.
+# In-app updates: every package is signed with the updater key, kept as
+# secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD of
+# the `release` environment (deployments limited to main and v* tags, so
+# workflows on other branches cannot read them); the public key is in
+# tauri.conf.json. The last job verifies the uploaded packages against that
+# public key and attaches latest.json, which installed apps read from the
+# latest *published* release: never publish a draft without latest.json.
 on:
   push:
     branches: [main]
@@ -32,14 +34,15 @@ concurrency:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
+    environment: release
     permissions:
       contents: write
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       release: ${{ steps.version.outputs.release }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
       - name: Resolve the version
@@ -78,6 +81,9 @@ jobs:
           echo "create_tag=$([ "$release" = true ] && [ "$exists" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       # Fail before tagging if the updater signing setup is incomplete or the
       # private key does not match the public key built into the app.
+      - name: Install the Tauri CLI
+        if: steps.version.outputs.release == 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check the updater signing key
         if: steps.version.outputs.release == 'true'
         env:
@@ -85,14 +91,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "::error::the TAURI_SIGNING_PRIVATE_KEY secret is not set (see README, Development)"
+            echo "::error::the TAURI_SIGNING_PRIVATE_KEY secret is not set in the release environment (see README, Development)"
             exit 1
           fi
           node scripts/updater-manifest.mjs check-config
-          npm ci --ignore-scripts --no-audit --no-fund
           probe="$RUNNER_TEMP/key-probe"
           echo "termdock updater key probe" > "$probe"
-          npx tauri signer sign "$probe" >/dev/null
+          ./node_modules/.bin/tauri signer sign "$probe" >/dev/null
           node scripts/updater-manifest.mjs verify "$probe" "$probe.sig"
       - name: Create the tag
         if: steps.version.outputs.create_tag == 'true'
@@ -108,6 +113,7 @@ jobs:
   build:
     needs: prepare
     if: needs.prepare.outputs.release == 'true'
+    environment: release
     permissions:
       contents: write
     strategy:
@@ -122,7 +128,7 @@ jobs:
             args: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.tag }}
       - name: Linux system dependencies
@@ -130,11 +136,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libdbus-1-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v6
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: npm
@@ -151,7 +158,7 @@ jobs:
             cat "$RUNNER_TEMP/notes.md"
             echo "TERMDOCK_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -176,10 +183,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.tag }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
       - name: Verify the packages and attach latest.json

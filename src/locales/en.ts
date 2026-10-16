@@ -10,6 +10,7 @@ const en = {
   updateCheckNow: "Check now",
   updateChecking: "Checking…",
   updateUpToDate: "Termdock {version} is up to date.",
+  updateBusy: "An update check is already running.",
   updateCheckFailed: "Could not check for updates: {error}",
   updateTitle: "Update available",
   updateBody: "Termdock {version} is available (you have {current}).",

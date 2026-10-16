@@ -10,6 +10,7 @@ const it: Dict = {
   updateCheckNow: "Controlla ora",
   updateChecking: "Controllo in corso…",
   updateUpToDate: "Termdock {version} è aggiornato.",
+  updateBusy: "È già in corso un controllo degli aggiornamenti.",
   updateCheckFailed: "Impossibile controllare gli aggiornamenti: {error}",
   updateTitle: "Aggiornamento disponibile",
   updateBody: "È disponibile Termdock {version} (hai la {current}).",

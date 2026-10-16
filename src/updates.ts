@@ -8,7 +8,7 @@ import { h } from "./dom";
 import { currentLanguage, t } from "./i18n";
 import type { UpdateInfo, UpdateProgress } from "./types";
 
-export const RELEASES_URL = "https://github.com/LuuckA21/termdock/releases/latest";
+const RELEASES_URL = "https://github.com/LuuckA21/termdock/releases/latest";
 
 const AUTO_KEY = "termdock.updates.auto";
 const FIRST_CHECK_DELAY_MS = 10_000;
@@ -50,11 +50,11 @@ export function startUpdateChecks(): void {
  * every outcome and ignore earlier "Later" answers; automatic ones stay quiet
  * unless there is something to install.
  *
- * Returns a status line for the Settings dialog, or null when an update was offered
- * or another check was already running.
+ * Returns a status line for the Settings dialog, or null when an update was
+ * offered (or an automatic check found nothing to report).
  */
 export async function check(manual: boolean): Promise<string | null> {
-  if (busy) return null;
+  if (busy) return manual ? t("updateBusy") : null;
   busy = true;
   try {
     const update = await api.checkUpdate();
@@ -90,6 +90,9 @@ async function offer(update: UpdateInfo): Promise<void> {
           { label: t("ok"), value: "later", kind: "primary" },
         ],
     cancelValue: "later",
+    // The dialog can appear while the user is typing: a stray Enter must not
+    // install and restart, closing every session.
+    focusButton: 0,
   });
   if (choice === "install") {
     await installWithProgress();
@@ -154,7 +157,7 @@ async function copyReleasesLink(): Promise<void> {
  * Release notes hold the English changelog, then "---", "**Italiano**" and the
  * Italian one: keep the part in the UI language and drop Markdown markers.
  */
-export function localizedNotes(notes: string): string {
+function localizedNotes(notes: string): string {
   const [en, it] = notes.split(/\n-{3,}\s*\n\s*\*\*Italiano\*\*\s*\n/);
   const text = currentLanguage() === "it" && it ? it : en;
   return text
