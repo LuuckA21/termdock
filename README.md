@@ -8,6 +8,9 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 
 - **Barra preferiti** sempre visibile: un clic apre la connessione in una nuova scheda, trascina per riordinare, tasto destro per modificare o togliere dai preferiti, `Ctrl+Shift+1…9` per aprire i primi nove.
 - **SSH** con terminale completo (xterm-256color, truecolor, Unicode, ridimensionamento).
+- **Jump host (ProxyJump)**: una connessione può passare da un bastion, anche a catena; ogni salto verifica la propria host key e si autentica separatamente.
+- **Port forwarding** salvato nel profilo: locale (`-L`), remoto (`-R`) e dinamico SOCKS5 (`-D`); lo stato di ogni tunnel compare nel terminale.
+- **Import da `~/.ssh/config`**: anteprima con avvisi, poi importa Host, HostName, User, Port, IdentityFile, ProxyJump e i forwarding.
 - **Shell locali** in PTY reale: PowerShell 7, Windows PowerShell, cmd, WSL e Git Bash su Windows (ConPTY); bash, zsh, fish, pwsh… su macOS e Linux.
 - **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti.
 - **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.

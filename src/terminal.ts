@@ -36,7 +36,20 @@ const THEME = {
 };
 
 const DIM = "\x1b[2m";
+
+/**
+ * Text from the server or from errors (banner, exit signal, messages) is shown
+ * with all control characters removed except new lines, so it cannot inject
+ * escape sequences into the terminal (title, colours, cursor, hyperlinks…).
+ */
+function plain(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, "")
+    .replace(/\n/g, "\r\n");
+}
 const RED = "\x1b[31m";
+const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
 
 export interface TabOptions {
@@ -54,6 +67,8 @@ export class TerminalTab {
   state: TabState = "connecting";
   private readonly fit = new FitAddon();
   private sessionId: number | null = null;
+  /** Aborted when the tab closes or reconnects: closes its pending dialogs. */
+  private prompts = new AbortController();
   /** Bumped on every (re)connect so late events of an old session are ignored. */
   private generation = 0;
   private readonly resizeObserver: ResizeObserver;
@@ -79,8 +94,8 @@ export class TerminalTab {
     this.term.open(this.el);
 
     this.term.attachCustomKeyEventHandler((e) => this.handleKey(e));
-    this.term.onData((d) => this.input(d));
-    this.term.onBinary((d) => this.input(d));
+    this.term.onData((d) => this.input(d, false));
+    this.term.onBinary((d) => this.input(d, true));
     this.term.onResize(({ cols, rows }) => {
       if (this.sessionId !== null) void api.resizeSession(this.sessionId, { cols, rows }).catch(() => {});
     });
@@ -101,6 +116,8 @@ export class TerminalTab {
 
   async connect(): Promise<void> {
     const gen = ++this.generation;
+    this.prompts.abort();
+    this.prompts = new AbortController();
     this.setState("connecting");
     this.refit();
     if (this.opts.target.kind !== "shell") {
@@ -128,7 +145,7 @@ export class TerminalTab {
       void api.resizeSession(id, { cols: this.term.cols, rows: this.term.rows }).catch(() => {});
     } catch (e) {
       if (gen !== this.generation) return;
-      this.term.write(`\r\n${RED}${t("connectionFailed", { error: errorText(e) })}${RESET}\r\n`);
+      this.term.write(`\r\n${RED}${plain(t("connectionFailed", { error: errorText(e) }))}${RESET}\r\n`);
       this.ended();
     }
   }
@@ -150,6 +167,7 @@ export class TerminalTab {
   dispose(): void {
     this.disposed = true;
     this.generation++;
+    this.prompts.abort();
     this.resizeObserver.disconnect();
     if (this.sessionId !== null) void api.closeSession(this.sessionId);
     this.sessionId = null;
@@ -167,12 +185,13 @@ export class TerminalTab {
     if (text) this.term.paste(text);
   }
 
-  private input(data: string): void {
+  /** `binary`: xterm.js delivers raw bytes (some mouse reports) as one char per byte. */
+  private input(data: string, binary: boolean): void {
     if (this.state === "closed") {
       if (data === "\r") void this.connect();
       return;
     }
-    if (this.sessionId !== null) void api.writeSession(this.sessionId, data).catch(() => {});
+    if (this.sessionId !== null) void api.writeSession(this.sessionId, data, binary).catch(() => {});
   }
 
   private handleKey(e: KeyboardEvent): boolean {
@@ -197,21 +216,24 @@ export class TerminalTab {
   private async onNotice(n: SessionNotice): Promise<void> {
     switch (n.type) {
       case "banner":
-        this.term.write(`${DIM}${n.text.replace(/\r?\n/g, "\r\n")}${RESET}\r\n`);
+        this.term.write(`${DIM}${plain(n.text)}${RESET}\r\n`);
+        break;
+      case "info":
+        this.term.write(`${CYAN}» ${plain(n.text)}${RESET}\r\n`);
         break;
       case "hostKey": {
-        const accept = await confirmHostKey(n.info);
+        const accept = await confirmHostKey(n.info, this.prompts.signal);
         await api.answerPrompt(n.promptId, { kind: "hostKey", accept });
         break;
       }
       case "secret": {
-        const res = await askSecret(n.prompt, this.opts.vaultAvailable);
+        const res = await askSecret(n.prompt, this.opts.vaultAvailable, this.prompts.signal);
         const answer: PromptAnswer = res ? { kind: "secret", ...res } : { kind: "cancel" };
         await api.answerPrompt(n.promptId, answer);
         break;
       }
       case "exit": {
-        const detail = [n.code !== null ? t("exitCode", { code: n.code }) : null, n.message]
+        const detail = [n.code !== null ? t("exitCode", { code: n.code }) : null, n.message && plain(n.message)]
           .filter(Boolean)
           .join(", ");
         this.term.write(`\r\n${DIM}[${t("sessionEnded")}${detail ? `: ${detail}` : ""}] ${t("pressEnterReconnect")}${RESET}\r\n`);

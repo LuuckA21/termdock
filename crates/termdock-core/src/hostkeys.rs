@@ -270,7 +270,8 @@ fn hashed_match(hashed: &str, target: &str) -> bool {
     mac.chain_update(target.as_bytes()).verify_slice(&hash).is_ok()
 }
 
-fn wildcard_match(pattern: &str, text: &str) -> bool {
+/// `*` / `?` glob match, linear backtracking (no exponential blow-up).
+pub(crate) fn wildcard_match(pattern: &str, text: &str) -> bool {
     let p: Vec<char> = pattern.chars().collect();
     let t: Vec<char> = text.chars().collect();
     let (mut pi, mut ti) = (0, 0);

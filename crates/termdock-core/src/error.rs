@@ -40,6 +40,9 @@ pub enum Error {
     #[error("terminal error: {0}")]
     Pty(String),
 
+    #[error("jump host: {0}")]
+    Jump(String),
+
     #[error("connection timed out")]
     Timeout,
 

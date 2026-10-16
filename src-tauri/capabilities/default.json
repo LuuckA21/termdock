@@ -21,6 +21,8 @@
     "allow-write-session",
     "allow-resize-session",
     "allow-close-session",
-    "allow-answer-prompt"
+    "allow-answer-prompt",
+    "allow-preview-ssh-config",
+    "allow-import-ssh-config"
   ]
 }

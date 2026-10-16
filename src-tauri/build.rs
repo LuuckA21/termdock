@@ -13,6 +13,8 @@ const COMMANDS: &[&str] = &[
     "resize_session",
     "close_session",
     "answer_prompt",
+    "preview_ssh_config",
+    "import_ssh_config",
 ];
 
 fn main() {

@@ -29,12 +29,6 @@ impl TermSize {
     }
 }
 
-impl Default for TermSize {
-    fn default() -> Self {
-        Self { cols: 80, rows: 24 }
-    }
-}
-
 /// Output of a session, delivered in order.
 #[derive(Debug)]
 pub enum SessionEvent {
@@ -81,10 +75,6 @@ impl SessionHandle {
     pub fn close(&self) {
         let _ = self.tx.send(Control::Close);
     }
-
-    pub fn is_closed(&self) -> bool {
-        self.tx.is_closed()
-    }
 }
 
 /// A question the backend needs the user to answer while connecting.
@@ -123,4 +113,8 @@ pub trait Interaction: Send + Sync {
 
     /// Pre-authentication banner sent by the server.
     fn banner(&self, _text: String) {}
+
+    /// Progress information worth showing in the terminal (jump hops,
+    /// port forwards opened or failed).
+    fn info(&self, _text: String) {}
 }

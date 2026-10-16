@@ -18,19 +18,30 @@ export function modal<T>(opts: {
   buttons: Button<T>[];
   cancelValue: T;
   className?: string;
+  /** Element focused on open; otherwise the button at `focusButton` (default: last). */
   initialFocus?: HTMLElement;
+  focusButton?: number;
   onSubmit?: () => T | undefined;
+  /** Closes the dialog with `cancelValue`, e.g. when its terminal tab is closed. */
+  signal?: AbortSignal;
 }): Promise<T> {
   return new Promise((resolve) => {
+    if (opts.signal?.aborted) {
+      resolve(opts.cancelValue);
+      return;
+    }
     let done = false;
     const dlg = h("dialog", { class: `modal ${opts.className ?? ""}` });
+    const onAbort = () => finish(opts.cancelValue);
     const finish = (v: T) => {
       if (done) return;
       done = true;
+      opts.signal?.removeEventListener("abort", onAbort);
       dlg.close();
       dlg.remove();
       resolve(v);
     };
+    opts.signal?.addEventListener("abort", onAbort);
     const form = h("form", { method: "dialog" });
     form.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -48,7 +59,7 @@ export function modal<T>(opts: {
         b.label,
       );
       if (!(b.kind === "primary" && opts.onSubmit)) btn.addEventListener("click", () => finish(b.value));
-      if (i === opts.buttons.length - 1 && !opts.initialFocus) btn.autofocus = true;
+      if (!opts.initialFocus && i === (opts.focusButton ?? opts.buttons.length - 1)) btn.autofocus = true;
       footer.append(btn);
     });
     form.append(h("h2", {}, opts.title), h("div", { class: "modal-body" }, ...opts.body), footer);
@@ -85,9 +96,8 @@ export function confirmBox(message: string, okLabel: string, danger = false): Pr
 }
 
 /** Trust-on-first-use dialog. Defaults to "no". */
-export function confirmHostKey(info: HostKeyInfo): Promise<boolean> {
+export function confirmHostKey(info: HostKeyInfo, signal?: AbortSignal): Promise<boolean> {
   const target = info.port === 22 ? info.host : `[${info.host}]:${info.port}`;
-  const cancel = h("button", { type: "button", class: "btn" }, t("cancel"));
   return modal({
     title: t("hostKeyTitle"),
     className: "hostkey",
@@ -107,13 +117,16 @@ export function confirmHostKey(info: HostKeyInfo): Promise<boolean> {
       { label: t("trustAndConnect"), value: true, kind: "danger" },
     ],
     cancelValue: false,
-    initialFocus: cancel,
+    // "Cancel" is the default: trusting a key must be a deliberate click.
+    focusButton: 0,
+    signal,
   });
 }
 
 export function askSecret(
   prompt: SecretPrompt,
   vaultAvailable: boolean,
+  signal?: AbortSignal,
 ): Promise<{ secret: string; remember: boolean } | null> {
   const input = h("input", {
     type: prompt.kind === "challenge" && prompt.echo ? "text" : "password",
@@ -139,8 +152,8 @@ export function askSecret(
       if (prompt.instructions) body.push(h("p", { class: "pre" }, prompt.instructions));
       break;
   }
-  const label = prompt.kind === "challenge" ? prompt.prompt : t(prompt.kind === "password" ? "authPassword" : "keyPath");
-  body.push(h("label", { class: "field" }, h("span", {}, prompt.kind === "keyPassphrase" ? "Passphrase" : label), input));
+  const label = prompt.kind === "challenge" ? prompt.prompt : prompt.kind === "password" ? t("authPassword") : "Passphrase";
+  body.push(h("label", { class: "field" }, h("span", {}, label), input));
   if (prompt.canRemember) {
     body.push(
       vaultAvailable
@@ -158,6 +171,7 @@ export function askSecret(
     ],
     cancelValue: null,
     initialFocus: input,
+    signal,
     onSubmit: () => {
       const result = { secret: input.value, remember: vaultAvailable && remember.checked };
       input.value = "";

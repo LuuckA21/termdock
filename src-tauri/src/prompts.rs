@@ -50,6 +50,9 @@ pub enum SessionNotice {
     Banner {
         text: String,
     },
+    Info {
+        text: String,
+    },
     #[serde(rename_all = "camelCase")]
     Exit {
         code: Option<u32>,
@@ -126,5 +129,9 @@ impl Interaction for UiInteraction {
 
     fn banner(&self, text: String) {
         let _ = self.notices.send(SessionNotice::Banner { text });
+    }
+
+    fn info(&self, text: String) {
+        let _ = self.notices.send(SessionNotice::Info { text });
     }
 }

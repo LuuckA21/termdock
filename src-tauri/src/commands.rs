@@ -14,6 +14,7 @@ use termdock_core::profile::{self, Profile, ProfileKind};
 use termdock_core::session::{EventSink, SessionEvent, TermSize};
 use termdock_core::shells::{self, DetectedShell};
 use termdock_core::ssh::{self, SshConnect};
+use termdock_core::sshconfig;
 use termdock_core::vault::OsVault;
 use termdock_core::{Error as CoreError, local};
 use uuid::Uuid;
@@ -97,7 +98,18 @@ pub fn save_profile(state: State<'_, AppState>, profile: Profile, favorite: Opti
 
 #[tauri::command]
 pub fn delete_profile(state: State<'_, AppState>, id: Uuid) -> CmdResult<()> {
-    state.store.lock().unwrap().remove(id)?;
+    let mut store = state.store.lock().unwrap();
+    if store.is_jump_host(id) {
+        let users: Vec<_> = store
+            .profiles()
+            .iter()
+            .filter(|p| matches!(&p.kind, ProfileKind::Ssh(t) if t.jump == Some(id)))
+            .map(|p| p.name.as_str())
+            .collect();
+        return Err(CmdError(format!("used as jump host by: {}", users.join(", "))));
+    }
+    store.remove(id)?;
+    drop(store);
     state.vault.delete_all(id)?;
     Ok(())
 }
@@ -166,9 +178,14 @@ pub async fn open_session(
         }
     });
 
+    let mut jumps = Vec::new();
     let (profile_id, kind) = match target {
         OpenTarget::Profile { id } => {
-            let p = state.store.lock().unwrap().get(id)?.clone();
+            let store = state.store.lock().unwrap();
+            let p = store.get(id)?.clone();
+            if let ProfileKind::Ssh(t) = &p.kind {
+                jumps = profile::resolve_jumps(store.profiles(), t)?;
+            }
             (Some(p.id), p.kind)
         }
         OpenTarget::Quick { address } => (
@@ -195,6 +212,7 @@ pub async fn open_session(
                 SshConnect {
                     profile_id,
                     target,
+                    jumps,
                     size,
                     known_hosts: state.known_hosts.clone(),
                     vault: state.vault.clone(),
@@ -209,14 +227,23 @@ pub async fn open_session(
     Ok(id)
 }
 
+/// `binary`: `data` carries raw bytes, one per char (xterm.js `onBinary`),
+/// which must not be UTF-8 encoded.
 #[tauri::command]
-pub fn write_session(state: State<'_, AppState>, id: u32, data: String) -> CmdResult<()> {
+pub fn write_session(state: State<'_, AppState>, id: u32, data: String, binary: Option<bool>) -> CmdResult<()> {
     if data.len() > MAX_INPUT_CHUNK {
         return Err(CmdError("input too large".into()));
     }
+    let bytes = if binary.unwrap_or(false) {
+        data.chars()
+            .map(|c| u8::try_from(u32::from(c)).map_err(|_| CmdError("invalid binary input".into())))
+            .collect::<CmdResult<Vec<u8>>>()?
+    } else {
+        data.into_bytes()
+    };
     let handle = state.sessions.lock().unwrap().get(&id).cloned();
     match handle {
-        Some(h) => Ok(h.write(data.into_bytes())?),
+        Some(h) => Ok(h.write(bytes)?),
         None => Err(CoreError::SessionClosed.into()),
     }
 }
@@ -239,6 +266,69 @@ pub fn close_session(state: State<'_, AppState>, id: u32) {
 #[tauri::command]
 pub fn answer_prompt(state: State<'_, AppState>, prompt_id: Uuid, answer: PromptAnswer) -> bool {
     state.prompts.answer(prompt_id, answer)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConfigPreview {
+    path: String,
+    found: bool,
+    items: Vec<sshconfig::PreviewItem>,
+    warnings: Vec<String>,
+}
+
+fn read_ssh_config() -> CmdResult<(std::path::PathBuf, Option<sshconfig::Parsed>)> {
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_owned())
+        .ok_or_else(|| CmdError("home directory not found".into()))?;
+    let path = home.join(".ssh").join("config");
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok((path, Some(sshconfig::parse(&text, &home, &default_user())))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((path, None)),
+        Err(e) => Err(CmdError(format!("{}: {e}", path.display()))),
+    }
+}
+
+/// Reads `~/.ssh/config` (fixed path: the UI cannot choose which file the
+/// backend reads) and lists what could be imported.
+#[tauri::command]
+pub fn preview_ssh_config(state: State<'_, AppState>) -> CmdResult<SshConfigPreview> {
+    let (path, parsed) = read_ssh_config()?;
+    let store = state.store.lock().unwrap();
+    Ok(match parsed {
+        Some(parsed) => SshConfigPreview {
+            path: path.display().to_string(),
+            found: true,
+            items: sshconfig::preview(&parsed, store.profiles()),
+            warnings: parsed.warnings,
+        },
+        None => SshConfigPreview {
+            path: path.display().to_string(),
+            found: false,
+            items: Vec::new(),
+            warnings: Vec::new(),
+        },
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    imported: Vec<String>,
+    warnings: Vec<String>,
+}
+
+#[tauri::command]
+pub fn import_ssh_config(state: State<'_, AppState>, aliases: Vec<String>) -> CmdResult<ImportResult> {
+    let (_, parsed) = read_ssh_config()?;
+    let parsed = parsed.ok_or_else(|| CmdError("~/.ssh/config not found".into()))?;
+    let mut store = state.store.lock().unwrap();
+    let (profiles, warnings) = sshconfig::plan_import(&parsed, store.profiles(), &aliases);
+    let mut imported = Vec::new();
+    for p in profiles {
+        imported.push(store.upsert(p)?.name);
+    }
+    Ok(ImportResult { imported, warnings })
 }
 
 fn default_user() -> String {

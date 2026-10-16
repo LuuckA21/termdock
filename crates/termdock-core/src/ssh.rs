@@ -20,14 +20,16 @@ use russh::keys::agent::AgentIdentity;
 use russh::keys::agent::client::AgentClient;
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{ChannelMsg, Disconnect, MethodKind, MethodSet, Preferred, cipher, compression, kex, mac};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::error::{Error, Result};
+use crate::forward::{self, RemoteForwards};
 use crate::hostkeys::{HostKeyInfo, HostKeyStatus, KnownHosts};
-use crate::profile::{SshAuth, SshTarget};
+use crate::profile::{Hop, SshAuth, SshTarget};
 use crate::session::{
     Control, EventSink, Interaction, SecretAnswer, SecretPrompt, SessionEvent, SessionHandle, TermSize,
 };
@@ -113,19 +115,25 @@ pub struct SshConnect {
     /// nothing is ever stored in the vault).
     pub profile_id: Option<Uuid>,
     pub target: SshTarget,
+    /// Bastions to go through, outermost first (see [`crate::profile::resolve_jumps`]).
+    pub jumps: Vec<Hop>,
     pub size: TermSize,
     pub known_hosts: Arc<KnownHosts>,
     pub vault: Arc<dyn Vault>,
     pub ui: Arc<dyn Interaction>,
 }
 
-struct ClientHandler {
+pub(crate) type SshHandle = Arc<Handle<ClientHandler>>;
+
+pub(crate) struct ClientHandler {
     host: String,
     port: u16,
     known_hosts: Arc<KnownHosts>,
     ui: Arc<dyn Interaction>,
     /// Why the host key was refused, reported after the handshake fails.
     refusal: Arc<Mutex<Option<Error>>>,
+    /// `-R` forwards this connection asked the server for.
+    remote_forwards: RemoteForwards,
 }
 
 impl ClientHandler {
@@ -173,69 +181,199 @@ impl client::Handler for ClientHandler {
         self.ui.banner(banner.to_owned());
         Ok(())
     }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        originator_address: &str,
+        originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        match self.remote_forwards.lookup(connected_address, connected_port) {
+            Some((host, port)) => {
+                debug!(
+                    "remote forward {connected_address}:{connected_port} from {originator_address}:{originator_port}"
+                );
+                forward::serve_remote(channel, reply, host, port);
+            }
+            // Never requested by us: refuse instead of connecting anywhere.
+            None => {
+                reply
+                    .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                    .await
+            }
+        }
+        Ok(())
+    }
 }
 
-pub async fn connect(params: SshConnect, sink: EventSink) -> Result<SessionHandle> {
-    let SshConnect {
-        profile_id,
-        target,
-        size,
-        known_hosts,
-        vault,
-        ui,
-    } = params;
-    info!("connecting to {}", target.display());
+struct Context {
+    known_hosts: Arc<KnownHosts>,
+    vault: Arc<dyn Vault>,
+    ui: Arc<dyn Interaction>,
+}
 
-    let stream = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((target.host.as_str(), target.port)))
-        .await
-        .map_err(|_| Error::Timeout)??;
-    stream.set_nodelay(true)?;
-
+/// SSH handshake, host key check and authentication of one hop over any
+/// transport: a TCP socket, or a `direct-tcpip` channel of the previous hop.
+async fn establish<S>(
+    hop: &Hop,
+    stream: S,
+    ctx: &Context,
+    remote_forwards: RemoteForwards,
+) -> Result<Handle<ClientHandler>>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let target = &hop.target;
     let refusal = Arc::new(Mutex::new(None));
     let handler = ClientHandler {
         host: target.host.clone(),
         port: target.port,
-        known_hosts,
-        ui: ui.clone(),
+        known_hosts: ctx.known_hosts.clone(),
+        ui: ctx.ui.clone(),
         refusal: refusal.clone(),
+        remote_forwards,
     };
-    let mut handle = match client::connect_stream(Arc::new(client_config(&target)), stream, handler).await {
+    let mut handle = match client::connect_stream(Arc::new(client_config(target)), stream, handler).await {
         Ok(h) => h,
         Err(e) => return Err(refusal.lock().unwrap().take().unwrap_or(Error::Ssh(e))),
     };
 
     let authenticated = Authenticator {
         handle: &mut handle,
-        target: &target,
-        profile_id,
-        vault: vault.as_ref(),
-        ui: ui.as_ref(),
+        target,
+        profile_id: hop.profile_id,
+        vault: ctx.vault.as_ref(),
+        ui: ctx.ui.as_ref(),
         remaining: None,
     }
     .run()
     .await;
     match authenticated {
-        Ok(true) => {}
+        Ok(true) => {
+            info!("authenticated to {}", target.display());
+            Ok(handle)
+        }
         Ok(false) => {
             let _ = handle.disconnect(Disconnect::ByApplication, "", "en").await;
-            return Err(Error::AuthFailed(target.display()));
+            Err(Error::AuthFailed(target.display()))
         }
         Err(e) => {
             let _ = handle.disconnect(Disconnect::ByApplication, "", "en").await;
-            return Err(e);
+            Err(e)
         }
     }
-    info!("authenticated to {}", target.display());
+}
 
-    let channel = handle.channel_open_session().await?;
-    let size = size.clamped();
-    channel
-        .request_pty(false, TERM, size.cols.into(), size.rows.into(), 0, 0, &[])
-        .await?;
-    channel.request_shell(false).await?;
+async fn disconnect_all(handles: &[SshHandle]) {
+    // Innermost first, so each tunnel closes before the one carrying it.
+    for h in handles.iter().rev() {
+        let _ = h.disconnect(Disconnect::ByApplication, "", "en").await;
+    }
+}
+
+/// Connects through every jump host, then to the target.
+async fn connect_chain(hops: &[Hop], ctx: &Context, remote_forwards: RemoteForwards) -> Result<Vec<SshHandle>> {
+    let mut handles: Vec<SshHandle> = Vec::with_capacity(hops.len());
+    for (i, hop) in hops.iter().enumerate() {
+        let last = i + 1 == hops.len();
+        let forwards = if last {
+            remote_forwards.clone()
+        } else {
+            RemoteForwards::default()
+        };
+        let result = match handles.last() {
+            None => {
+                info!("connecting to {}", hop.target.display());
+                let addr = (hop.target.host.as_str(), hop.target.port);
+                match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
+                    Err(_) => Err(Error::Timeout),
+                    Ok(Err(e)) => Err(e.into()),
+                    Ok(Ok(stream)) => {
+                        stream.set_nodelay(true)?;
+                        establish(hop, stream, ctx, forwards).await
+                    }
+                }
+            }
+            Some(via) => {
+                let from = &hops[i - 1].target;
+                ctx.ui
+                    .info(format!("jump: {} -> {}", from.display(), hop.target.display()));
+                let channel = tokio::time::timeout(
+                    CONNECT_TIMEOUT,
+                    via.channel_open_direct_tcpip(hop.target.host.clone(), hop.target.port.into(), "127.0.0.1", 0),
+                )
+                .await;
+                match channel {
+                    Err(_) => Err(Error::Timeout),
+                    Ok(Err(e)) => Err(Error::Jump(format!(
+                        "{} could not open a tunnel to {}:{}: {e}",
+                        from.display(),
+                        hop.target.host,
+                        hop.target.port
+                    ))),
+                    Ok(Ok(channel)) => establish(hop, channel.into_stream(), ctx, forwards).await,
+                }
+            }
+        };
+        match result {
+            Ok(handle) => handles.push(Arc::new(handle)),
+            Err(e) => {
+                disconnect_all(&handles).await;
+                return Err(e);
+            }
+        }
+    }
+    Ok(handles)
+}
+
+pub async fn connect(params: SshConnect, sink: EventSink) -> Result<SessionHandle> {
+    let SshConnect {
+        profile_id,
+        target,
+        jumps,
+        size,
+        known_hosts,
+        vault,
+        ui,
+    } = params;
+    let ctx = Context {
+        known_hosts,
+        vault,
+        ui: ui.clone(),
+    };
+    let forwards = target.forwards.clone();
+    let mut hops = jumps;
+    hops.push(Hop { profile_id, target });
+
+    let remote_forwards = RemoteForwards::default();
+    let handles = connect_chain(&hops, &ctx, remote_forwards.clone()).await?;
+    let handle = handles.last().expect("at least the target").clone();
+
+    let opened = async {
+        let channel = handle.channel_open_session().await?;
+        let size = size.clamped();
+        channel
+            .request_pty(false, TERM, size.cols.into(), size.rows.into(), 0, 0, &[])
+            .await?;
+        channel.request_shell(false).await?;
+        Ok::<_, Error>(channel)
+    }
+    .await;
+    let channel = match opened {
+        Ok(c) => c,
+        Err(e) => {
+            disconnect_all(&handles).await;
+            return Err(e);
+        }
+    };
+
+    let forward_tasks = forward::start(&handle, &forwards, &ui, &remote_forwards).await;
 
     let (mut read_half, write_half) = channel.split();
-    let handle = Arc::new(handle);
     let (session, mut rx) = SessionHandle::new();
 
     // Input side.
@@ -260,7 +398,7 @@ pub async fn connect(params: SshConnect, sink: EventSink) -> Result<SessionHandl
             .await;
     });
 
-    // Output side.
+    // Output side; also owns the connection chain and the forwards.
     tokio::spawn(async move {
         let mut code = None;
         let mut message = None;
@@ -284,7 +422,10 @@ pub async fn connect(params: SshConnect, sink: EventSink) -> Result<SessionHandl
                 _ => {}
             }
         }
-        let _ = handle.disconnect(Disconnect::ByApplication, "", "en").await;
+        for task in forward_tasks {
+            task.abort();
+        }
+        disconnect_all(&handles).await;
         sink(SessionEvent::Exit { code, message });
     });
 
@@ -349,6 +490,24 @@ impl Authenticator<'_> {
             warn!("vault read failed: {e}");
             None
         })
+    }
+
+    /// A remembered secret the server (or the key file) rejected: forget it so
+    /// it is not replayed on every login, which could lock the account
+    /// (MaxAuthTries, fail2ban).
+    fn vault_forget(&self, kind: SecretKind) {
+        if let Some(id) = self.profile_id {
+            match self.vault.delete(id, kind) {
+                Ok(()) => self.ui.info(format!(
+                    "the saved {} was rejected and has been removed",
+                    match kind {
+                        SecretKind::Password => "password",
+                        SecretKind::KeyPassphrase => "key passphrase",
+                    }
+                )),
+                Err(e) => warn!("vault delete failed: {e}"),
+            }
+        }
     }
 
     fn vault_store(&self, kind: SecretKind, answer: &SecretAnswer) {
@@ -452,10 +611,11 @@ impl Authenticator<'_> {
     }
 
     async fn unlock_key(&mut self, text: &str, path: &Path) -> Result<Option<PrivateKey>> {
-        if let Some(saved) = self.vault_get(SecretKind::KeyPassphrase)
-            && let Ok(k) = russh::keys::decode_secret_key(text, Some(&saved))
-        {
-            return Ok(Some(k));
+        if let Some(saved) = self.vault_get(SecretKind::KeyPassphrase) {
+            match russh::keys::decode_secret_key(text, Some(&saved)) {
+                Ok(k) => return Ok(Some(k)),
+                Err(_) => self.vault_forget(SecretKind::KeyPassphrase),
+            }
         }
         for _ in 0..MAX_PROMPTS {
             let prompt = SecretPrompt::KeyPassphrase {
@@ -487,6 +647,7 @@ impl Authenticator<'_> {
             if self.record(r) {
                 return Ok(true);
             }
+            self.vault_forget(SecretKind::Password);
         }
         for _ in 0..MAX_PROMPTS {
             if !self.allows(MethodKind::Password) {
@@ -517,6 +678,7 @@ impl Authenticator<'_> {
                 return Ok(false);
             }
             let mut remember: Option<SecretAnswer> = None;
+            let mut used_saved = false;
             let mut reply = self.handle.authenticate_keyboard_interactive_start(&user, None).await?;
             loop {
                 match reply {
@@ -528,6 +690,9 @@ impl Authenticator<'_> {
                     }
                     KeyboardInteractiveAuthResponse::Failure { remaining_methods, .. } => {
                         self.remaining = Some(remaining_methods);
+                        if used_saved {
+                            self.vault_forget(SecretKind::Password);
+                        }
                         break;
                     }
                     KeyboardInteractiveAuthResponse::InfoRequest {
@@ -540,6 +705,7 @@ impl Authenticator<'_> {
                             let looks_like_password = !p.echo && p.prompt.to_lowercase().contains("password");
                             if looks_like_password && let Some(pw) = saved_password.take() {
                                 responses.push(pw.to_string());
+                                used_saved = true;
                                 continue;
                             }
                             let prompt = SecretPrompt::Challenge {
