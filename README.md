@@ -1,105 +1,113 @@
 # Termdock
 
-Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nello spirito di PuTTY / Windows Terminal, con una **barra dei preferiti** per aprire le connessioni che usi più spesso con un clic.
+**English** · [Italiano](README.it.md)
+
+Cross-platform terminal and connection manager (Windows, macOS, Linux), in the spirit of PuTTY / Windows Terminal, with a **favorites bar** to open the connections you use most with one click.
 
 ![Termdock](docs/screenshot.png)
 
-## Funzionalità
+## Features
 
-- **Barra preferiti** sempre visibile: un clic apre la connessione in una nuova scheda, trascina per riordinare, tasto destro per modificare o togliere dai preferiti, `Ctrl+Shift+1…9` per aprire i primi nove.
-- **SSH** con terminale completo (xterm-256color, truecolor, Unicode, ridimensionamento).
-- **Jump host (ProxyJump)**: una connessione può passare da un bastion, anche a catena; ogni salto verifica la propria host key e si autentica separatamente.
-- **Port forwarding** salvato nel profilo: locale (`-L`), remoto (`-R`) e dinamico SOCKS5 (`-D`); lo stato di ogni tunnel compare nel terminale.
-- **Import da `~/.ssh/config`**: anteprima con avvisi, poi importa Host, HostName, User, Port, IdentityFile, ProxyJump e i forwarding.
-- **Shell locali** in PTY reale: PowerShell 7, Windows PowerShell, cmd, WSL e Git Bash su Windows (ConPTY); bash, zsh, fish, pwsh… su macOS e Linux.
-- **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti.
-- **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.
-- Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro).
-- Interfaccia in italiano o inglese in base alla lingua del sistema.
+- **Favorites bar**, always visible: one click opens the connection in a new tab, drag to reorder, right click to edit or unpin, `Ctrl+Shift+1…9` opens the first nine.
+- **SSH** with a full terminal (xterm-256color, truecolor, Unicode, resizing).
+- **Jump hosts (ProxyJump)**: a connection can go through a bastion, even a chain of them; every hop verifies its own host key and authenticates separately.
+- **Port forwarding** saved in the connection: local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`); the status of each tunnel is shown in the terminal.
+- **Import from `~/.ssh/config`**: preview with warnings, then imports Host, HostName, User, Port, IdentityFile, ProxyJump and the forwards.
+- **Local shells** in a real PTY: PowerShell 7, Windows PowerShell, cmd, WSL and Git Bash on Windows (ConPTY); bash, zsh, fish, pwsh… on macOS and Linux.
+- **Connection manager**: groups, colors, search, star to pin to the favorites bar.
+- **Quick connect**: type `user@host:port` in the bar and press Enter.
+- Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click).
+- English or Italian interface, following the system language.
 
-### Scorciatoie
+### Shortcuts
 
-| Tasti | Azione |
+| Keys | Action |
 | --- | --- |
-| `Ctrl+Shift+T` | nuova shell locale (predefinita) |
-| `Ctrl+Shift+W` | chiudi scheda |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | scheda successiva / precedente |
-| `Alt+1…9` | vai alla scheda N |
-| `Ctrl+Shift+1…9` | apri il preferito N |
-| `Ctrl+Shift+K` | connessione rapida |
-| `Ctrl+Shift+M` | gestore connessioni |
-| `Ctrl+Shift+C` / `Ctrl+Shift+V` | copia / incolla |
-| tasto destro nel terminale | copia la selezione, altrimenti incolla |
+| `Ctrl+Shift+T` | new local shell (default one) |
+| `Ctrl+Shift+W` | close tab |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | next / previous tab |
+| `Alt+1…9` | go to tab N |
+| `Ctrl+Shift+1…9` | open favorite N |
+| `Ctrl+Shift+K` | quick connect |
+| `Ctrl+Shift+M` | connection manager |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
+| right click in the terminal | copy the selection, otherwise paste |
 
-## Sicurezza
+## Security
 
-Le scelte principali (dettagli in [SECURITY.md](SECURITY.md)):
+The main choices (details in [SECURITY.md](SECURITY.md)):
 
-- **Backend in Rust** (memory-safe), SSH implementato in Rust puro con [russh](https://github.com/Eugeny/russh): nessun processo `ssh` esterno, nessuna shell intermedia.
-- **Solo algoritmi moderni**: scambio chiavi ibrido post-quantistico `mlkem768x25519-sha256` come prima scelta, poi `curve25519-sha256`; cifrari AEAD (`chacha20-poly1305`, `aes-gcm`); MAC SHA-2 encrypt-then-MAC; *strict KEX* (mitigazione Terrapin). Esclusi SHA-1, CBC, DSA, `ssh-rsa`, compressione.
-- **Verifica host key** prima di qualsiasi autenticazione: al primo collegamento viene mostrata l'impronta SHA-256 da confermare (predefinito: *Annulla*); se la chiave cambia la connessione viene **rifiutata** senza possibilità di forzarla dal dialogo. Supporta il formato OpenSSH, incluse voci hashate, wildcard, `@revoked`, e legge anche `~/.ssh/known_hosts`.
-- **Nessun segreto su disco**: password e passphrase sono salvate solo se lo chiedi, e solo nel portachiavi del sistema operativo (Windows Credential Manager, macOS Keychain, Secret Service su Linux). In memoria sono azzerate dopo l'uso (`zeroize`). L'interfaccia non riceve mai i segreti salvati.
-- Se cambi host, porta, utente o metodo di autenticazione di una connessione, la password salvata viene eliminata per non inviarla a un server diverso.
-- Autenticazione: SSH agent (ssh-agent, agent OpenSSH di Windows, Pageant), chiavi private (anche cifrate), password, keyboard-interactive/2FA.
-- **Tauri 2 con privilegi minimi**: Content-Security-Policy restrittiva (niente script inline o remoti), ogni comando IPC autorizzato esplicitamente in [`capabilities/default.json`](src-tauri/capabilities/default.json), nessun plugin per file system o shell. L'interfaccia costruisce il DOM solo con `textContent` (niente `innerHTML`).
-- File di configurazione con permessi `0600` (cartella `0700`) su Unix, scritture atomiche.
-- CI con `cargo audit`, `npm audit`, clippy con `-D warnings` e Dependabot settimanale.
+- **Rust backend** (memory safe), SSH implemented in pure Rust with [russh](https://github.com/Eugeny/russh): no external `ssh` process, no intermediate shell.
+- **Modern algorithms only**: hybrid post-quantum key exchange `mlkem768x25519-sha256` first, then `curve25519-sha256`; AEAD ciphers (`chacha20-poly1305`, `aes-gcm`); encrypt-then-MAC SHA-2 MACs; *strict KEX* (Terrapin mitigation). SHA-1, CBC, DSA, `ssh-rsa` and compression are excluded.
+- **Host key verification** before any authentication: on first connection the SHA-256 fingerprint is shown for confirmation (default: *Cancel*); if the key changes the connection is **refused** and the dialog offers no way to force it. Supports the OpenSSH format, including hashed entries, wildcards and `@revoked`, and also reads `~/.ssh/known_hosts`.
+- **No secrets on disk**: passwords and passphrases are stored only if you ask, and only in the operating system keychain (Windows Credential Manager, macOS Keychain, Secret Service on Linux). They are wiped from memory after use (`zeroize`), never sent back to the UI, and deleted if the server rejects them.
+- Changing a connection's host, port, user or authentication method deletes its saved password, so it is never sent to a different server.
+- Authentication: SSH agent (ssh-agent, Windows OpenSSH agent, Pageant), private keys (also encrypted), password, keyboard-interactive / 2FA.
+- Text coming from the server outside the session (banner, exit messages) is shown without control characters: no escape sequence injection.
+- **Least-privilege Tauri 2**: strict Content-Security-Policy (no inline or remote scripts), every IPC command explicitly allowed in [`capabilities/default.json`](src-tauri/capabilities/default.json), no file system or shell plugins. The UI builds the DOM with `textContent` only (no `innerHTML`).
+- Configuration files with `0600` permissions (`0700` folder) on Unix, atomic writes.
+- CI with `cargo audit`, `npm audit`, clippy with `-D warnings`, end-to-end tests against OpenSSH and weekly Dependabot.
 
-> Consiglio: usa chiavi **Ed25519** (`ssh-keygen -t ed25519`) protette da passphrase, meglio se caricate in un SSH agent.
+> Tip: use **Ed25519** keys (`ssh-keygen -t ed25519`) protected by a passphrase, ideally loaded in an SSH agent.
 
-## Architettura
+## Architecture
 
 ```
-crates/termdock-core   logica senza UI, testata in isolamento
-  ├─ profile.rs         modello connessioni + validazione + parser "utente@host:porta"
-  ├─ store.rs           profiles.json (atomico, 0600) e ordine dei preferiti
-  ├─ vault.rs           portachiavi di sistema (keyring)
-  ├─ hostkeys.rs        known_hosts: TOFU, chiavi cambiate/revocate
-  ├─ ssh.rs             client SSH (russh), algoritmi, autenticazione
-  ├─ local.rs           shell locali via PTY (portable-pty / ConPTY)
-  └─ shells.rs          rilevamento shell disponibili
-src-tauri/             app desktop Tauri 2: comandi IPC, prompt, stato
-src/                   interfaccia TypeScript + xterm.js (nessun framework)
+crates/termdock-core   UI-independent logic, tested in isolation
+  ├─ profile.rs         connection model, validation, "user@host:port" parser, jump chains
+  ├─ store.rs           profiles.json (atomic, 0600) and favorites order
+  ├─ vault.rs           OS keychain (keyring)
+  ├─ hostkeys.rs        known_hosts: TOFU, changed/revoked keys
+  ├─ ssh.rs             SSH client (russh): algorithms, authentication, jump hosts
+  ├─ forward.rs         port forwarding -L / -R / -D (SOCKS5)
+  ├─ sshconfig.rs       ~/.ssh/config import
+  ├─ local.rs           local shells through a PTY (portable-pty / ConPTY)
+  └─ shells.rs          detection of the available shells
+src-tauri/             Tauri 2 desktop app: IPC commands, prompts, state
+src/                   TypeScript + xterm.js UI (no framework)
 ```
 
-I dati del terminale viaggiano su canali IPC binari di Tauri; le domande che richiedono l'utente (host key, password, OTP) passano da un canale separato e scadono dopo 3 minuti.
+Terminal data travels on binary Tauri IPC channels; questions for the user (host key, password, OTP) use a separate channel and expire after 3 minutes.
 
-I dati sono salvati in:
+Data is stored in:
 
-| Sistema | Percorso |
+| System | Path |
 | --- | --- |
 | Windows | `%APPDATA%\dev.termdock.app\` |
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json` e `known_hosts`; le password stanno solo nel portachiavi.)
+(`profiles.json` and `known_hosts`; passwords live only in the keychain.)
 
-## Sviluppo
+## Development
 
-Requisiti: [Rust](https://rustup.rs) stabile (≥ 1.90), Node.js ≥ 22 e i [prerequisiti di Tauri](https://tauri.app/start/prerequisites/) per il tuo sistema (su Linux: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libdbus-1-dev`).
+Requirements: stable [Rust](https://rustup.rs) (≥ 1.90), Node.js ≥ 22 and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system (on Linux: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libdbus-1-dev`).
 
 ```sh
 npm ci
-npm run tauri dev        # avvia l'app in modalità sviluppo
-npm run tauri build      # crea gli installer (MSI/NSIS, DMG, AppImage/deb/rpm)
+npm run tauri dev        # run the app in development mode
+npm run tauri build      # build the installers (MSI/NSIS, DMG, AppImage/deb/rpm)
 ```
 
-Test e controlli:
+Tests and checks:
 
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 npm run typecheck
+npm run version:check
 
-# test end-to-end contro un vero OpenSSH (Linux, richiede root e openssh-server)
+# end-to-end tests against a real OpenSSH (Linux, needs root and openssh-server)
 eval "$(sudo scripts/e2e-sshd.sh)"
 cargo test -p termdock-core --test ssh_e2e
 ```
 
-I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi, chiave privata cifrata con passphrase, keyboard-interactive, chiusura sessione e **host key cambiata (simulazione MITM)**.
+The end-to-end tests cover: unknown host key refused, trust on first use, wrong password and retries, password remembered in the keychain and forgotten when rejected, encrypted private key with passphrase, keyboard-interactive, jump host with `-L` / `-R` / `-D` forwards, session close and **changed host key (MITM simulation)**.
 
-Versioni e release sono automatiche: ogni PR aggiorna [CHANGELOG.md](CHANGELOG.md); per rilasciare si usa `npm run version:set -- X.Y.Z`, che aggiorna la versione in tutti i file (`npm run version:check` lo verifica in CI). Quando la PR arriva su `main`, il workflow [`release.yml`](.github/workflows/release.yml) crea il tag `vX.Y.Z` e compila gli installer per tutte le piattaforme in una release in bozza, con le note prese dal changelog. Per distribuire su macOS/Windows senza avvisi del sistema servono certificati di firma (vedi i commenti nel workflow).
+Code, comments and commit messages are in English; documentation is kept in English and Italian (`*.md` and `*.it.md`); UI strings live in [`src/i18n.ts`](src/i18n.ts) in both languages.
 
-## Licenza
+Versions and releases are automated: every PR updates [CHANGELOG.md](CHANGELOG.md) and [CHANGELOG.it.md](CHANGELOG.it.md); a release is prepared with `npm run version:set -- X.Y.Z`, which updates the version in every file (`npm run version:check` verifies it in CI). When the PR lands on `main`, the [`release.yml`](.github/workflows/release.yml) workflow creates the `vX.Y.Z` tag and builds the installers for every platform into a draft release, with the changelog section as notes. Distributing on macOS/Windows without system warnings requires signing certificates (see the comments in the workflow).
+
+## License
 
 [MIT](LICENSE)

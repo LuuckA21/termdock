@@ -13,7 +13,12 @@ for the threat model; keep both up to date when behaviour changes.
   `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, `npm run typecheck`, `npm run version:check`.
   SSH changes: also the end-to-end suite (`scripts/e2e-sshd.sh`, see README).
-- UI strings go through `src/i18n.ts` (Italian and English).
+- Languages: code, comments, identifiers, log/error messages, commit messages
+  and PR descriptions are in **English only**. Documentation is kept in
+  **English and Italian**: `README.md` / `README.it.md`, `SECURITY.md` /
+  `SECURITY.it.md`, `CHANGELOG.md` / `CHANGELOG.it.md`; update both files
+  of a pair in the same PR. UI strings go through `src/i18n.ts` (both
+  languages).
 
 ## Versioning and releases (owned by the agent, not the user)
 
@@ -21,12 +26,15 @@ for the threat model; keep both up to date when behaviour changes.
   fixes only -> patch (0.2.0 -> 0.2.1). Breaking changes to stored data must
   keep a migration path (see `store.rs` schema version).
 - Every PR with user-visible changes adds lines under `## [Unreleased]` in
-  CHANGELOG.md (Added / Changed / Fixed / Security).
+  CHANGELOG.md (Added / Changed / Fixed / Security) and the same lines in
+  CHANGELOG.it.md (Aggiunto / Modificato / Corretto / Sicurezza).
 - A PR that should ship runs `npm run version:set -- X.Y.Z`: it updates
   package.json, package-lock.json, Cargo.toml, Cargo.lock, tauri.conf.json and
-  turns `[Unreleased]` into the `[X.Y.Z]` section. Do not edit versions by hand.
+  turns `[Unreleased]` into the `[X.Y.Z]` section in both changelogs. Do not
+  edit versions by hand.
 - When such a PR lands on main, `.github/workflows/release.yml` creates the
-  `vX.Y.Z` tag and builds a **draft** release with the CHANGELOG section as
-  notes; the owner tests and publishes it.
+  `vX.Y.Z` tag and builds a **draft** release whose notes are the English
+  changelog section followed by the Italian one; the owner tests and
+  publishes it.
 - Never push tags from an agent session (the session proxy refuses them);
   the release workflow creates them.
