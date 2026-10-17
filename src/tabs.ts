@@ -54,6 +54,10 @@ export class Tab {
     return this.current.state;
   }
 
+  get count(): number {
+    return this.nodes.size;
+  }
+
   get panes(): TerminalPane[] {
     return [...this.nodes.keys()];
   }
@@ -191,6 +195,7 @@ export class Tab {
   }
 
   private drag(split: SplitNode, divider: HTMLElement, start: PointerEvent): void {
+    if (start.button !== 0) return;
     start.preventDefault();
     divider.setPointerCapture(start.pointerId);
     divider.classList.add("dragging");

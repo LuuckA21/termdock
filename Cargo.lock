@@ -5472,7 +5472,7 @@ dependencies = [
 
 [[package]]
 name = "termdock"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "directories",
  "serde",
@@ -5492,7 +5492,7 @@ dependencies = [
 
 [[package]]
 name = "termdock-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "data-encoding",
  "directories",

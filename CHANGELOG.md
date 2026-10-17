@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-17
+
+### Fixed
+
+- The active tab was unreadable when the terminal colours and the app theme differ in brightness (for example the light theme with Dracula); it now uses the terminal's own text colour.
+- Clearing a number in Settings (font size, line height, scrollback) and saving set it to the minimum, for example scrollback 0; the current value is now kept.
+- Shortcuts no longer act on the tabs behind an open dialog, and holding one down no longer opens or closes a burst of panes.
+- `Alt+arrows` move between panes only from a terminal, so text fields keep word movement.
+- Dragging a divider reacts only to the left mouse button; the tab's × tooltip no longer suggests `Ctrl+Shift+W`, which now closes a pane.
+
 ## [0.5.0] - 2026-10-17
 
 ### Added
@@ -78,7 +88,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/LuuckA21/termdock/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/LuuckA21/termdock/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/LuuckA21/termdock/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/LuuckA21/termdock/compare/v0.3.0...v0.4.0

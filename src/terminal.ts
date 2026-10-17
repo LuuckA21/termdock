@@ -49,7 +49,7 @@ export class TerminalPane {
   state: PaneState = "connecting";
   private readonly fit = new FitAddon();
   private sessionId: number | null = null;
-  /** Aborted when the tab closes or reconnects: closes its pending dialogs. */
+  /** Aborted when the pane closes or reconnects: closes its pending dialogs. */
   private prompts = new AbortController();
   /** Bumped on every (re)connect so late events of an old session are ignored. */
   private generation = 0;

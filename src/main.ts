@@ -41,8 +41,6 @@ export class App {
       this.renderTabs();
     });
     window.addEventListener("beforeunload", () => this.tabs.forEach((tab) => tab.dispose()));
-    // A pane that gets the focus (click, Alt+arrow) becomes the active one.
-    this.terminals.addEventListener("focusin", () => this.renderTabs());
     this.renderTabs();
     this.openDefaultShell();
     startUpdateChecks();
@@ -104,11 +102,12 @@ export class App {
       target,
       vaultAvailable: this.info.vaultAvailable,
       onStateChange: () => this.renderTabs(),
+      // A pane that gets the focus (click, Alt+arrow) becomes the active one.
       onFocus: (pane) => {
         const tab = this.tabs.find((x) => x.has(pane));
         if (!tab) return;
         tab.setActive(pane, false);
-        if (tab === this.active) this.updateWindowTitle();
+        this.renderTabs();
       },
       isAppShortcut: (e) => this.shortcut(e) !== null,
     });
@@ -196,7 +195,7 @@ export class App {
     for (const tab of this.tabs) {
       const closeBtn = h(
         "button",
-        { class: "tab-close", type: "button", title: `${t("closeTab")} (Ctrl+Shift+W)`, "aria-label": t("closeTab") },
+        { class: "tab-close", type: "button", title: t("closeTab"), "aria-label": t("closeTab") },
         icon("close"),
       );
       closeBtn.addEventListener("click", (e) => {
@@ -205,7 +204,7 @@ export class App {
       });
       const dot = h("span", { class: "dot" });
       setDotColor(dot, tab.active.opts.color);
-      const count = tab.panes.length;
+      const count = tab.count;
       const el = h(
         "div",
         {
@@ -253,26 +252,32 @@ export class App {
   /** The app shortcut for this key press, if any. Terminals pass these keys through. */
   private shortcut(e: KeyboardEvent): (() => void) | null {
     if (e.type !== "keydown") return null;
+    // Dialogs (settings, host key, password…) keep their keys: nothing may
+    // act on the tabs behind them.
+    if (document.querySelector("dialog[open]")) return null;
     const mod = e.ctrlKey || e.metaKey;
     const ctrlShift = mod && e.shiftKey && !e.altKey;
+    // A held key must not open or close a burst of panes and sessions; the
+    // repeats are still swallowed so they do not reach the terminal.
+    const once = (action: () => void) => (e.repeat ? () => {} : action);
     if (ctrlShift) {
       switch (e.code) {
         case "KeyT":
-          return () => this.openDefaultShell();
+          return once(() => this.openDefaultShell());
         case "KeyW":
-          return () => this.closePane();
+          return once(() => this.closePane());
         case "KeyK":
           return () => document.getElementById("quick-connect")?.focus();
         case "KeyM":
-          return () => this.openManager({});
+          return once(() => this.openManager({}));
         case "KeyE":
-          return () => this.split("right");
+          return once(() => this.split("right"));
         case "KeyO":
-          return () => this.split("down");
+          return once(() => this.split("down"));
       }
       if (/^Digit[1-9]$/.test(e.code)) {
         const p = this.favoriteProfiles()[Number(e.code.slice(5)) - 1];
-        return p ? () => this.openProfile(p) : null;
+        return p ? once(() => this.openProfile(p)) : null;
       }
     }
     if (mod && !e.shiftKey && !e.altKey && e.code === "Comma") return () => void openSettings();
@@ -286,12 +291,13 @@ export class App {
         const tab = this.tabs[Number(e.code.slice(5)) - 1];
         return tab ? () => this.activate(tab) : null;
       }
-      // Alt+arrows move between panes, only when there are several:
-      // otherwise the shell gets them (word movement in many shells).
+      // Alt+arrows move between panes, only inside a terminal and when there
+      // are several: otherwise the shell or text field gets them (word movement).
       const dir = ({ ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" } as const)[
         e.code as "ArrowLeft"
       ];
-      if (dir && this.active && this.active.panes.length > 1) return () => this.moveFocus(dir);
+      const inTerminal = e.target instanceof Node && this.terminals.contains(e.target);
+      if (dir && inTerminal && this.active && this.active.count > 1) return () => this.moveFocus(dir);
     }
     return null;
   }

@@ -44,7 +44,9 @@ export const DEFAULTS: Prefs = {
 const STORAGE_KEY = "termdock.prefs";
 
 function clamp(value: unknown, min: number, max: number, fallback: number, step = 1): number {
-  const n = typeof value === "number" ? value : Number(value);
+  // Number("") is 0: an emptied field must not become the minimum.
+  if (typeof value === "string" ? !value.trim() : typeof value !== "number") return fallback;
+  const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Number(Math.min(max, Math.max(min, Math.round(n / step) * step)).toFixed(2));
 }
@@ -110,24 +112,29 @@ export function onPrefsChange(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-export function isDarkTheme(): boolean {
-  return prefs.theme === "system" ? systemDark.matches : prefs.theme === "dark";
+export function isDarkTheme(p: Prefs = prefs): boolean {
+  return p.theme === "system" ? systemDark.matches : p.theme === "dark";
 }
 
-export function terminalScheme(): Scheme {
-  if (prefs.scheme !== "auto") return SCHEMES[prefs.scheme];
-  return isDarkTheme() ? SCHEMES["termdock-dark"] : SCHEMES["termdock-light"];
+export function terminalScheme(p: Prefs = prefs): Scheme {
+  if (p.scheme !== "auto") return SCHEMES[p.scheme];
+  return isDarkTheme(p) ? SCHEMES["termdock-dark"] : SCHEMES["termdock-light"];
 }
 
-export function fontStack(): string {
-  return prefs.fontFamily ? `"${prefs.fontFamily}", ${DEFAULT_FONT_STACK}` : DEFAULT_FONT_STACK;
+export function fontStack(p: Prefs = prefs): string {
+  return p.fontFamily ? `"${p.fontFamily}", ${DEFAULT_FONT_STACK}` : DEFAULT_FONT_STACK;
 }
 
-/** App chrome colours follow the theme; the terminal area follows the scheme. */
+/**
+ * App chrome colours follow the theme; the terminal area (and the active tab
+ * joined to it) follows the colour scheme, which may be light on a dark theme.
+ */
 function applyTheme(): void {
   const root = document.documentElement;
+  const { colors } = terminalScheme();
   root.dataset.theme = isDarkTheme() ? "dark" : "light";
-  root.style.setProperty("--bg-term", terminalScheme().colors.background ?? "");
+  root.style.setProperty("--bg-term", colors.background ?? "");
+  root.style.setProperty("--fg-term", colors.foreground ?? "");
 }
 
 systemDark.addEventListener("change", () => {
