@@ -373,16 +373,16 @@ fn editor_file_name(name: &str) -> String {
     }
 }
 
-/// Opens `path` in the system's text editor: Notepad (full path) on Windows,
-/// the default text editor on macOS (`open -t`). On Linux, the application
-/// registered for text/plain is started on it (`gtk-launch`), or GIO opens
-/// it by its `.txt` name; anything that would pick the program from the
-/// file's content is not used.
+/// Opens `path` in the system's text editor: Notepad by its full path on
+/// Windows (see `windows_notepad`), the default text editor on macOS
+/// (`open -t`). On Linux, the application registered for text/plain is
+/// started on it (`gtk-launch`), or GIO opens it by its `.txt` name; anything
+/// that would pick the program from the file's content is not used.
 fn open_in_text_editor(path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     let mut cmd = {
-        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
-        let mut c = std::process::Command::new(PathBuf::from(root).join("System32").join("notepad.exe"));
+        let notepad = windows_notepad().ok_or_else(|| "Notepad was not found: download the file instead".to_owned())?;
+        let mut c = std::process::Command::new(notepad);
         c.arg(path);
         c
     };
@@ -401,6 +401,30 @@ fn open_in_text_editor(path: &Path) -> Result<(), String> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+/// Notepad's full path: the classic one in the Windows folder, or, where only
+/// the Store version is installed (recent Windows 11), its app alias.
+#[cfg(windows)]
+fn windows_notepad() -> Option<PathBuf> {
+    let root = PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()));
+    let alias = std::env::var_os("LOCALAPPDATA").map(|d| {
+        PathBuf::from(d)
+            .join("Microsoft")
+            .join("WindowsApps")
+            .join("notepad.exe")
+    });
+    [
+        Some(root.join("System32").join("notepad.exe")),
+        Some(root.join("notepad.exe")),
+        alias,
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|p| p.is_absolute())
+    // An app alias is a reparse point that cannot be followed: check the
+    // entry itself.
+    .find(|p| std::fs::symlink_metadata(p).is_ok())
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]

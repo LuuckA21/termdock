@@ -7,6 +7,12 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-17
+
+### Corretto
+
+- File browser: *Modifica* falliva su Windows 11 con "impossibile trovare il file specificato" quando è installata solo la versione dello Store di Notepad; ora trova anche quel Notepad.
+
 ## [0.9.1] - 2026-10-17
 
 ### Aggiunto
@@ -143,7 +149,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.1
 [0.9.0]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/LuuckA21/termdock/compare/v0.7.0...v0.8.0
