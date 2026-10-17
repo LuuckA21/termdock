@@ -8,6 +8,7 @@ import { api, errorText } from "./api";
 import { askSecret, confirmHostKey } from "./dialogs";
 import { h } from "./dom";
 import { t } from "./i18n";
+import { actionFor, keyHint } from "./keys";
 import { fontStack, getPrefs, onPrefsChange, terminalScheme } from "./prefs";
 import type { Pane, PaneOptions, PaneState } from "./pane";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./search";
@@ -195,7 +196,7 @@ export class TerminalPane implements Pane {
     this.term.blur();
   }
 
-  /** Opens the find bar (Ctrl+Shift+F). */
+  /** Opens the find bar. */
   find(): void {
     this.searchBar.open();
   }
@@ -254,12 +255,12 @@ export class TerminalPane implements Pane {
 
   private handleKey(e: KeyboardEvent): boolean {
     if (e.type !== "keydown") return true;
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.shiftKey && e.code === "KeyC") {
+    const action = actionFor(e);
+    if (action === "copy") {
       void this.copy();
       return false;
     }
-    if (mod && e.shiftKey && e.code === "KeyV") {
+    if (action === "paste") {
       void this.paste();
       e.preventDefault();
       return false;
@@ -291,7 +292,7 @@ export class TerminalPane implements Pane {
         const detail = [n.code !== null ? t("exitCode", { code: n.code }) : null, n.message && plain(n.message)]
           .filter(Boolean)
           .join(", ");
-        this.term.write(`\r\n${DIM}[${t("sessionEnded")}${detail ? `: ${detail}` : ""}] ${t("pressEnterReconnect")}${RESET}\r\n`);
+        this.term.write(`\r\n${DIM}[${t("sessionEnded")}${detail ? `: ${detail}` : ""}] ${keyHint("closePane") ? t("pressEnterReconnect", { key: keyHint("closePane") }) : t("pressEnterReconnectOnly")}${RESET}\r\n`);
         this.ended();
         break;
       }

@@ -905,6 +905,70 @@ dialog.settings .modal-body {
   margin: 0;
 }
 
+.keys-group {
+  display: grid;
+  gap: 4px;
+}
+
+.keys-group h4 {
+  margin: 6px 0 4px;
+}
+
+.keys-row {
+  display: grid;
+  grid-template-columns: 1fr minmax(180px, auto) 28px 28px;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+}
+
+.keys-row .keys-digits {
+  grid-column: 2 / span 3;
+}
+
+.keys-label {
+  min-width: 0;
+}
+
+.keys-binding {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.keys-binding:hover {
+  border-color: var(--accent-2);
+}
+
+.keys-binding.recording {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.keys-binding kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  font-family: var(--font);
+  font-size: 12px;
+}
+
+.keys-status {
+  color: var(--danger);
+}
+
 .editor-row {
   padding: 10px 12px;
   border: 1px solid var(--line);

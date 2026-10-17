@@ -43,8 +43,10 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 | `Ctrl+Shift+M` | gestore connessioni |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copia / incolla |
 | `Ctrl` + `+` / `-` / `0` | carattere più grande / più piccolo / predefinito |
-| `Ctrl+,` | impostazioni (lingua, aspetto, aggiornamenti) |
+| `Ctrl+,` | impostazioni (lingua, aspetto, tasti, file, aggiornamenti) |
 | tasto destro nel terminale | copia la selezione, altrimenti incolla |
+
+Questi sono i tasti predefiniti (su macOS `Cmd` funziona al posto di `Ctrl`). Ogni scorciatoia si può cambiare o disattivare in **Impostazioni → Tasti**: fai clic e premi i nuovi tasti; una combinazione già usata viene spostata solo dopo conferma, e per i tasti che servono ai programmi nel terminale o alla digitazione con AltGr compare prima un avviso.
 
 ## Sicurezza
 

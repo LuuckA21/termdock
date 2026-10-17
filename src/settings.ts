@@ -1,6 +1,8 @@
 import { api, errorText } from "./api";
 import { modal } from "./dialogs";
 import { h, icon, type IconName } from "./dom";
+import { getKeyMap, setKeyMap } from "./keys";
+import { keysPanel } from "./keysui";
 import { LANGUAGES, languageSetting, setLanguage, systemLanguage, t, type LanguageSetting } from "./i18n";
 import {
   DEFAULTS,
@@ -48,12 +50,13 @@ function field(label: string, control: HTMLElement): HTMLElement {
   return h("label", { class: "field" }, h("span", {}, label), control);
 }
 
-type TabId = "general" | "appearance" | "files" | "updates";
+type TabId = "general" | "appearance" | "keys" | "files" | "updates";
 
 /** Tabs in order; each id is also the label's translation key. */
 const TABS: { id: TabId; icon: IconName }[] = [
   { id: "general", icon: "settings" },
   { id: "appearance", icon: "palette" },
+  { id: "keys", icon: "keyboard" },
   { id: "files", icon: "folder" },
   { id: "updates", icon: "download" },
 ];
@@ -215,6 +218,9 @@ export async function openSettings(): Promise<void> {
     }),
   );
 
+  // ---- keyboard shortcuts (a copy, saved with the rest)
+  const keyMap = getKeyMap();
+
   // ---- tabs
   const panel = (id: TabId, ...children: Node[]) =>
     h("section", { class: "settings-panel", id: `settings-panel-${id}`, role: "tabpanel", "aria-labelledby": `settings-tab-${id}` }, ...children);
@@ -237,6 +243,7 @@ export async function openSettings(): Promise<void> {
       h("div", { class: "field" }, h("span", {}, t("preview")), preview),
       h("div", { class: "settings-row" }, h("span"), restore),
     ),
+    keys: panel("keys", ...keysPanel(keyMap)),
     files: panel(
       "files",
       h("h4", {}, t("editorGroup")),
@@ -306,5 +313,6 @@ export async function openSettings(): Promise<void> {
   if (!chosen) return;
   setAutoCheck(chosen.autoUpdate);
   setPrefs(chosen.prefs);
+  setKeyMap(keyMap);
   setLanguage(chosen.language);
 }

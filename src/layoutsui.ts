@@ -3,6 +3,7 @@
 import { confirmBox, modal } from "./dialogs";
 import { clear, h, icon } from "./dom";
 import { t } from "./i18n";
+import { keyHint } from "./keys";
 import { deleteLayout, getLayouts, MAX_NAME, paneCount, renameLayout, setStartup, startupLayout } from "./layouts";
 
 /**
@@ -74,7 +75,7 @@ export function manageLayouts(open: (id: string) => void): Promise<void> {
         ),
       );
     }
-    if (!getLayouts().length) list.append(h("p", { class: "muted" }, t("layoutNone")));
+    if (!getLayouts().length) list.append(h("p", { class: "muted" }, keyHint("saveLayout") ? t("layoutNone", { key: keyHint("saveLayout") }) : t("layoutNoneMenu")));
   };
   render();
   return modal<void>({

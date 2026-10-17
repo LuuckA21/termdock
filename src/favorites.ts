@@ -1,5 +1,6 @@
 import { h, icon, clear } from "./dom";
 import { t } from "./i18n";
+import { digitHint, keyHint, withKey } from "./keys";
 import { showMenu, showMenuBelow } from "./menu";
 import { openSettings } from "./settings";
 import type { App } from "./main";
@@ -71,7 +72,7 @@ export class FavoritesBar {
 
     const shellBtn = h(
       "button",
-      { class: "btn btn-ghost", type: "button", title: `${t("localShell")} (Ctrl+Shift+T)` },
+      { class: "btn btn-ghost", type: "button", title: withKey(t("localShell"), "newShell") },
       icon("terminal"),
       h("span", {}, t("localShell")),
       icon("chevron"),
@@ -82,7 +83,7 @@ export class FavoritesBar {
         this.app.shells.map((s) => ({
           label: s.name,
           icon: icon("terminal"),
-          hint: s.isDefault ? "Ctrl+Shift+T" : "",
+          hint: s.isDefault ? keyHint("newShell") : "",
           action: () => this.app.openShell(s),
         })),
       ),
@@ -99,7 +100,7 @@ export class FavoritesBar {
 
     const managerBtn = h(
       "button",
-      { class: "btn btn-ghost", type: "button", title: `${t("connections")} (Ctrl+Shift+M)` },
+      { class: "btn btn-ghost", type: "button", title: withKey(t("connections"), "connections") },
       icon("list"),
       h("span", {}, t("connections")),
     );
@@ -107,7 +108,7 @@ export class FavoritesBar {
 
     const settingsBtn = h(
       "button",
-      { class: "icon-btn", type: "button", title: `${t("settings")} (Ctrl+,)`, "aria-label": t("settings") },
+      { class: "icon-btn", type: "button", title: withKey(t("settings"), "settings"), "aria-label": t("settings") },
       icon("settings"),
     );
     settingsBtn.addEventListener("click", () => void openSettings());
@@ -134,7 +135,7 @@ export class FavoritesBar {
         class: "fav-chip",
         type: "button",
         "data-id": p.id,
-        title: `${describe(p)}${index < 9 ? `  (Ctrl+Shift+${index + 1})` : ""}`,
+        title: index < 9 && digitHint("openFavorite", index + 1) ? `${describe(p)}  (${digitHint("openFavorite", index + 1)})` : describe(p),
       },
       dot,
       icon(p.type === "ssh" ? "server" : "terminal"),

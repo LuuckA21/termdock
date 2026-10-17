@@ -1,4 +1,4 @@
-// Find bar of a terminal (Ctrl+Shift+F): searches the scrollback with
+// Find bar of a terminal: searches the scrollback with
 // highlights, next/previous, match case and regular expressions.
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 import type { Terminal } from "@xterm/xterm";
