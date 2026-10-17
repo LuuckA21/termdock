@@ -161,15 +161,17 @@ export class FavoritesBar {
     // window takes file drops from the system for the file browser).
     chip.addEventListener("pointerdown", (start) => {
       if (start.button !== 0) return;
+      // Captured at once, so the release is always seen here.
+      chip.setPointerCapture(start.pointerId);
       let dragging = false;
       let target: { id: string; after: boolean } | null = null;
       const clear = () =>
         this.root.querySelectorAll(".drop-before,.drop-after").forEach((el) => el.classList.remove("drop-before", "drop-after"));
       const move = (e: PointerEvent) => {
-        if (!dragging && Math.abs(e.clientX - start.clientX) < 6) return;
+        if (!(e.buttons & 1)) return end();
+        if (!dragging && Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) < 6) return;
         if (!dragging) {
           dragging = true;
-          chip.setPointerCapture(e.pointerId);
           chip.classList.add("dragging");
         }
         clear();
@@ -182,7 +184,8 @@ export class FavoritesBar {
         over.classList.add(after ? "drop-after" : "drop-before");
         target = { id, after };
       };
-      const end = () => {
+      const self = this;
+      function end(): void {
         chip.removeEventListener("pointermove", move);
         chip.removeEventListener("pointerup", end);
         chip.removeEventListener("pointercancel", end);
@@ -190,13 +193,13 @@ export class FavoritesBar {
         clear();
         if (!dragging) return;
         // The click that follows a drag must not open the connection.
-        this.suppressClick = true;
-        setTimeout(() => (this.suppressClick = false), 0);
+        self.suppressClick = true;
+        setTimeout(() => (self.suppressClick = false), 0);
         if (!target) return;
-        const order = this.app.favorites.filter((id) => id !== p.id);
+        const order = self.app.favorites.filter((id) => id !== p.id);
         order.splice(order.indexOf(target.id) + (target.after ? 1 : 0), 0, p.id);
-        void this.app.reorderFavorites(order);
-      };
+        void self.app.reorderFavorites(order);
+      }
       chip.addEventListener("pointermove", move);
       chip.addEventListener("pointerup", end);
       chip.addEventListener("pointercancel", end);

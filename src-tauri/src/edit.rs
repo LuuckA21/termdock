@@ -1,8 +1,8 @@
 //! "Edit" in the file browser: a remote text file is copied to a private
 //! temporary folder, opened in the system's *text editor* (never run, never
-//! opened with whatever program its extension names), and uploaded back each
-//! time it is saved there. If the file changed on the server meanwhile, the
-//! user is asked before it is overwritten.
+//! opened with whatever program its content or extension suggests), and
+//! uploaded back each time it is saved there. If the file changed on the
+//! server meanwhile, the user is asked before it is overwritten.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 use tauri::State;
 use tauri::ipc::Channel;
-use termdock_core::sftp::{CancellationToken, Sftp};
+use termdock_core::sftp::{CancellationToken, FileType, Sftp, validate_name};
 
 use crate::commands::{CmdError, CmdResult};
 use crate::sftp::SftpState;
@@ -22,7 +22,9 @@ use crate::sftp::SftpState;
 const MAX_EDIT_SIZE: u64 = 5 * 1024 * 1024;
 const MAX_EDITS: usize = 20;
 /// How often the local copy is checked for a save.
-const POLL: Duration = Duration::from_millis(800);
+const POLL: Duration = Duration::from_millis(700);
+/// Copies left by a run that did not exit cleanly are removed after this.
+const STALE: Duration = Duration::from_secs(7 * 24 * 3600);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -38,17 +40,17 @@ pub enum EditEvent {
 struct Edit {
     browser: u32,
     sftp: Arc<Sftp>,
+    /// The file edited (a link is resolved to its target when opened).
     dir: String,
     name: String,
     path: PathBuf,
-    /// Removed (with the copy) when the edit ends.
-    _folder: tempfile::TempDir,
-    /// The server's size and time when last read or written.
-    remote: (u64, Option<u32>),
-    /// The local copy as last uploaded (or downloaded).
+    folder: tempfile::TempDir,
+    /// The content last read from or written to the server.
     synced: Vec<u8>,
-    /// Local copy's (time, length) at the last check.
+    /// Local copy's (time, length) at the last upload or download.
     seen: Option<(SystemTime, u64)>,
+    /// A change seen at the previous poll: uploaded once it stops changing.
+    settling: Option<(SystemTime, u64)>,
     /// Waiting for the user after a conflict.
     paused: bool,
     events: Channel<EditEvent>,
@@ -58,29 +60,50 @@ struct Edit {
 pub struct EditState {
     next: AtomicU32,
     edits: Mutex<HashMap<u32, Edit>>,
+    /// Folders of finished edits: the editor may still have the file open,
+    /// so they are only deleted when Termdock exits.
+    finished: Mutex<Vec<tempfile::TempDir>>,
 }
 
 impl EditState {
-    /// Ends every edit (the app is closing): copies are deleted.
+    /// Ends every edit (the app is closing): all copies are deleted.
     pub fn clear(&self) {
         self.edits.lock().unwrap().clear();
+        self.finished.lock().unwrap().clear();
     }
 
-    /// Ends the edits of a closed browser (their copies are deleted).
+    /// Stops watching the edits of a closed browser.
     pub fn forget_browser(&self, browser: u32) {
-        self.edits.lock().unwrap().retain(|_, e| e.browser != browser);
+        let ended: Vec<u32> = {
+            let edits = self.edits.lock().unwrap();
+            edits
+                .iter()
+                .filter(|(_, e)| e.browser == browser)
+                .map(|(id, _)| *id)
+                .collect()
+        };
+        for id in ended {
+            self.stop(id);
+        }
+    }
+
+    fn stop(&self, edit: u32) {
+        let removed = self.edits.lock().unwrap().remove(&edit);
+        if let Some(e) = removed {
+            self.finished.lock().unwrap().push(e.folder);
+        }
     }
 }
 
 /// Copies left by an earlier run that did not exit cleanly (crash, killed):
-/// deleted when more than a day old, so a second running instance keeps its own.
+/// deleted after a week, only this user's, so another running Termdock keeps
+/// its own.
 pub fn remove_stale_copies() {
     let Ok(dir) = std::fs::read_dir(std::env::temp_dir()) else {
         return;
     };
     for entry in dir.flatten() {
-        let name = entry.file_name();
-        if !name.to_string_lossy().starts_with("termdock-edit-") {
+        if !entry.file_name().to_string_lossy().starts_with("termdock-edit-") {
             continue;
         }
         // DirEntry::metadata does not follow links.
@@ -90,7 +113,7 @@ pub fn remove_stale_copies() {
             .filter(|m| m.is_dir() && !m.file_type().is_symlink() && owned_by_us(m))
             .and_then(|m| m.modified().ok())
             .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age > Duration::from_secs(24 * 3600));
+            .is_some_and(|age| age > STALE);
         if old {
             let _ = std::fs::remove_dir_all(entry.path());
         }
@@ -126,113 +149,150 @@ pub async fn sftp_edit(
     on_event: Channel<EditEvent>,
 ) -> CmdResult<u32> {
     let fs = sftp.browser(id)?;
+    // A name that could not be saved back is refused now, not at the first save.
+    validate_name(&name)?;
     if edits.edits.lock().unwrap().len() >= MAX_EDITS {
-        return Err(CmdError::msg(
-            "too many files are open for editing: close a file browser first",
-        ));
+        return Err(too_many());
     }
-    let (size, mtime, kind) = fs.file_info(&dir, &name).await?;
-    if kind != termdock_core::sftp::FileType::File {
+    // A link is edited at its target (saving would otherwise replace the link).
+    let (dir, name) = fs.resolve(&dir, &name).await?;
+    validate_name(&name)?;
+    let (_, _, kind) = fs.file_info(&dir, &name).await?;
+    if kind != FileType::File {
         return Err(CmdError::msg("only regular files can be edited"));
     }
-    if size > MAX_EDIT_SIZE {
+    let folder = private_folder()?;
+    let path = folder.path().join(editor_file_name(&name));
+    let downloaded = fs
+        .download_at_most(&dir, &name, &path, MAX_EDIT_SIZE, &CancellationToken::new(), |_, _| {})
+        .await;
+    if let Err(termdock_core::Error::TooLarge) = downloaded {
         return Err(CmdError::msg(
             "the file is too large to edit here (more than 5 MB): download it instead",
         ));
     }
-    // Private folder (0700 on Unix, set below); the copy is written 0600.
-    let folder = tempfile::Builder::new()
-        .prefix("termdock-edit-")
-        .tempdir()
-        .map_err(termdock_core::Error::from)?;
-    // Only this user may even list it.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(folder.path(), std::fs::Permissions::from_mode(0o700))
-            .map_err(termdock_core::Error::from)?;
-    }
-    let path = folder.path().join(editor_file_name(&name));
-    fs.download(&dir, &name, &path, &CancellationToken::new(), |_, _| {})
-        .await?;
+    downloaded?;
     let content = std::fs::read(&path).map_err(termdock_core::Error::from)?;
     if content.iter().take(64 * 1024).any(|&b| b == 0) {
         return Err(CmdError::msg("this is not a text file: download it instead"));
     }
-    open_in_text_editor(&path).map_err(|e| CmdError::msg(format!("could not open a text editor: {e}")))?;
 
     let edit_id = edits.next.fetch_add(1, Ordering::Relaxed) + 1;
-    let seen = stamp(&path);
-    edits.edits.lock().unwrap().insert(
-        edit_id,
-        Edit {
-            browser: id,
-            sftp: fs,
-            dir,
-            name,
-            path,
-            _folder: folder,
-            remote: (size, mtime),
-            synced: content,
-            seen,
-            paused: false,
-            events: on_event,
-        },
-    );
-    tauri::async_runtime::spawn(watch(edits.inner().clone(), edit_id));
+    {
+        // Checked again now: other edits may have started, or the browser
+        // closed, while this one was downloading.
+        let mut map = edits.edits.lock().unwrap();
+        if map.len() >= MAX_EDITS {
+            return Err(too_many());
+        }
+        if sftp.browser(id).is_err() {
+            return Err(CmdError::msg("the file browser was closed"));
+        }
+        map.insert(
+            edit_id,
+            Edit {
+                browser: id,
+                sftp: fs,
+                dir,
+                name,
+                seen: stamp(&path),
+                path: path.clone(),
+                folder,
+                synced: content,
+                settling: None,
+                paused: false,
+                events: on_event,
+            },
+        );
+    }
+    if let Err(e) = open_in_text_editor(&path) {
+        edits.stop(edit_id);
+        return Err(CmdError::msg(e));
+    }
+    tauri::async_runtime::spawn(watch(edits.inner().clone(), sftp.inner().clone(), edit_id));
     Ok(edit_id)
 }
 
 /// After a conflict: `overwrite` uploads the local copy anyway; otherwise the
 /// edit stops (the server's version stays).
 #[tauri::command]
-pub async fn sftp_edit_resolve(edits: State<'_, Arc<EditState>>, edit: u32, overwrite: bool) -> CmdResult<()> {
+pub async fn sftp_edit_resolve(
+    sftp: State<'_, SftpState>,
+    edits: State<'_, Arc<EditState>>,
+    edit: u32,
+    overwrite: bool,
+) -> CmdResult<()> {
     if !overwrite {
-        edits.edits.lock().unwrap().remove(&edit);
+        edits.stop(edit);
         return Ok(());
     }
+    push(&edits, &sftp, edit, true).await;
     if let Some(e) = edits.edits.lock().unwrap().get_mut(&edit) {
         e.paused = false;
     }
-    push(&edits, edit, true).await;
     Ok(())
 }
 
-/// Stops watching a file (its local copy is deleted).
+/// Stops watching a file.
 #[tauri::command]
 pub fn sftp_edit_stop(edits: State<'_, Arc<EditState>>, edit: u32) {
-    edits.edits.lock().unwrap().remove(&edit);
+    edits.stop(edit);
 }
 
-async fn watch(edits: Arc<EditState>, edit: u32) {
+fn too_many() -> CmdError {
+    CmdError::msg("too many files are open for editing: close a file browser first")
+}
+
+/// A new folder only this user can open (0700 on Unix from the start).
+fn private_folder() -> CmdResult<tempfile::TempDir> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("termdock-edit-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    Ok(builder.tempdir().map_err(termdock_core::Error::from)?)
+}
+
+/// Polls the local copy; a change is uploaded once it has stopped changing
+/// (so a file the editor is still writing is not sent half done).
+async fn watch(edits: Arc<EditState>, sftp: SftpState, edit: u32) {
     loop {
         tokio::time::sleep(POLL).await;
-        let changed = {
+        let ready = {
             let mut map = edits.edits.lock().unwrap();
             let Some(e) = map.get_mut(&edit) else { return };
             let now = stamp(&e.path);
-            let changed = now.is_some() && now != e.seen && !e.paused;
-            if changed {
+            if e.paused || now.is_none() || now == e.seen {
+                e.settling = None;
+                false
+            } else if now == e.settling {
                 e.seen = now;
+                e.settling = None;
+                true
+            } else {
+                e.settling = now;
+                false
             }
-            changed
         };
-        if changed {
-            push(&edits, edit, false).await;
+        if ready {
+            push(&edits, &sftp, edit, false).await;
         }
     }
 }
 
 /// Uploads the local copy if its content changed. Unless `force`, first
-/// checks that the server's copy is still the one that was opened.
-async fn push(edits: &EditState, edit: u32, force: bool) {
-    let Some((sftp, dir, name, path, remote, synced, events)) = edits.edits.lock().unwrap().get(&edit).map(|e| {
+/// checks that the server still has the content that was opened (or last
+/// saved); otherwise reports a conflict and waits for the user.
+async fn push(edits: &EditState, sftp_state: &SftpState, edit: u32, force: bool) {
+    let Some((browser, sftp, dir, name, path, synced, events)) = edits.edits.lock().unwrap().get(&edit).map(|e| {
         (
+            e.browser,
             e.sftp.clone(),
             e.dir.clone(),
             e.name.clone(),
             e.path.clone(),
-            e.remote,
             e.synced.clone(),
             e.events.clone(),
         )
@@ -243,27 +303,42 @@ async fn push(edits: &EditState, edit: u32, force: bool) {
     if content == synced && !force {
         return;
     }
+    if content.len() as u64 > MAX_EDIT_SIZE {
+        let _ = events.send(EditEvent::Failed {
+            edit,
+            message: "the file is larger than 5 MB".into(),
+        });
+        return;
+    }
+    // A tracked transfer: closing the browser cancels it and waits for it.
+    let (transfer, cancel) = sftp_state.track(browser);
     let result = async {
         if !force {
-            let (size, mtime, _) = sftp.file_info(&dir, &name).await?;
-            if (size, mtime) != remote {
+            let remote = sftp.read_at_most(&dir, &name, MAX_EDIT_SIZE).await;
+            if !matches!(remote, Ok(ref r) if *r == synced) {
                 return Ok::<_, termdock_core::Error>(false);
             }
         }
-        let file = std::fs::File::open(&path)?;
-        sftp.upload(file, None, &dir, &name, true, &CancellationToken::new(), |_, _| {})
-            .await?;
+        // Exactly the bytes read above (the editor may write again meanwhile).
+        sftp.upload_from(
+            &content[..],
+            content.len() as u64,
+            None,
+            &dir,
+            &name,
+            true,
+            &cancel,
+            |_, _| {},
+        )
+        .await?;
         Ok(true)
     }
     .await;
+    sftp_state.untrack(transfer);
     match result {
         Ok(true) => {
-            let after = sftp.file_info(&dir, &name).await.ok();
             if let Some(e) = edits.edits.lock().unwrap().get_mut(&edit) {
                 e.synced = content;
-                if let Some((size, mtime, _)) = after {
-                    e.remote = (size, mtime);
-                }
             }
             let _ = events.send(EditEvent::Saved { edit });
         }
@@ -298,9 +373,12 @@ fn editor_file_name(name: &str) -> String {
     }
 }
 
-/// Opens `path` in the system's text editor: Notepad on Windows, the
-/// default text editor on macOS (`open -t`), the text/plain handler on Linux.
-fn open_in_text_editor(path: &Path) -> std::io::Result<()> {
+/// Opens `path` in the system's text editor: Notepad (full path) on Windows,
+/// the default text editor on macOS (`open -t`). On Linux, the application
+/// registered for text/plain is started on it (`gtk-launch`), or GIO opens
+/// it by its `.txt` name; anything that would pick the program from the
+/// file's content is not used.
+fn open_in_text_editor(path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     let mut cmd = {
         let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
@@ -315,15 +393,49 @@ fn open_in_text_editor(path: &Path) -> std::io::Result<()> {
         c
     };
     #[cfg(all(unix, not(target_os = "macos")))]
-    let mut cmd = {
-        let mut c = std::process::Command::new("xdg-open");
-        c.arg(path);
-        c
-    };
-    let mut child = cmd.spawn()?;
-    // Reap it when it exits (xdg-open/open return at once; Notepad later).
+    let mut cmd = linux_text_editor(path)
+        .ok_or_else(|| "no text editor found (gtk-launch or gio is needed): download the file instead".to_owned())?;
+    let mut child = cmd.spawn().map_err(|e| format!("could not open a text editor: {e}"))?;
+    // Reap it when it exits (open/gio return at once; editors later).
     std::thread::spawn(move || {
         let _ = child.wait();
     });
     Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn linux_text_editor(path: &Path) -> Option<std::process::Command> {
+    // The desktop's text/plain application, started explicitly.
+    let handler = std::process::Command::new("xdg-mime")
+        .args(["query", "default", "text/plain"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_owned())
+        .filter(|id| {
+            id.ends_with(".desktop")
+                && id.len() < 256
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+        });
+    if let Some(id) = handler
+        && on_path("gtk-launch")
+    {
+        let mut c = std::process::Command::new("gtk-launch");
+        c.arg(id.trim_end_matches(".desktop")).arg(path);
+        return Some(c);
+    }
+    // GIO picks the application from the name first: a .txt name is text.
+    if on_path("gio") {
+        let mut c = std::process::Command::new("gio");
+        c.arg("open").arg(path);
+        return Some(c);
+    }
+    None
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
 }

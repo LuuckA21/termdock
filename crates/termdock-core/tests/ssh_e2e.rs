@@ -916,6 +916,27 @@ async fn sftp_streamed_upload() {
         "original kept, no temporary files"
     );
 
+    // Size caps: reading or downloading more than allowed fails.
+    let read = fs
+        .read_at_most(&remote_dir, "dropped.bin", data.len() as u64)
+        .await
+        .unwrap();
+    assert_eq!(read, data);
+    assert!(matches!(
+        fs.read_at_most(&remote_dir, "dropped.bin", 1000).await,
+        Err(Error::TooLarge)
+    ));
+    let local = dir.path().join("capped.bin");
+    assert!(matches!(
+        fs.download_at_most(&remote_dir, "dropped.bin", &local, 1000, &none, |_, _| {})
+            .await,
+        Err(Error::TooLarge)
+    ));
+    assert_eq!(
+        fs.resolve(&remote_dir, "dropped.bin").await.unwrap(),
+        (remote_dir.clone(), "dropped.bin".to_owned())
+    );
+
     fs.remove(&remote_dir, "dropped.bin").await.unwrap();
     fs.remove(&home, &work).await.unwrap();
     run_and_exit(h, out, "stream").await;

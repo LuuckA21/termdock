@@ -582,6 +582,37 @@ impl Sftp {
         Ok(self.inner.rename(join(dir, from), join(dir, to)).await?)
     }
 
+    /// The content of the regular file at `dir/name`, refused if larger than
+    /// `max` bytes (at most `max + 1` bytes are ever read).
+    pub async fn read_at_most(&self, dir: &str, name: &str, max: u64) -> Result<Vec<u8>> {
+        check_component(name)?;
+        let mut src = self.inner.open(join(dir, name)).await?;
+        if src.metadata().await?.file_type() != FileType::File {
+            return Err(Error::NotRegular(name.chars().take(64).collect()));
+        }
+        let mut out = Vec::new();
+        (&mut src)
+            .take(max + 1)
+            .read_to_end(&mut out)
+            .await
+            .map_err(remote_io)?;
+        let _ = src.shutdown().await;
+        if out.len() as u64 > max {
+            return Err(Error::TooLarge);
+        }
+        Ok(out)
+    }
+
+    /// The canonical path of `dir/name` with its directory and name apart
+    /// (for a link: where it points).
+    pub async fn resolve(&self, dir: &str, name: &str) -> Result<(String, String)> {
+        check_component(name)?;
+        let real = self.inner.canonicalize(join(dir, name)).await?;
+        let (d, n) = real.rsplit_once('/').ok_or_else(|| Error::InvalidName(real.clone()))?;
+        check_component(n)?;
+        Ok((if d.is_empty() { "/".to_owned() } else { d.to_owned() }, n.to_owned()))
+    }
+
     /// Size and modification time (seconds) of the file at `dir/name`.
     pub async fn file_info(&self, dir: &str, name: &str) -> Result<(u64, Option<u32>, FileType)> {
         check_component(name)?;
@@ -610,6 +641,21 @@ impl Sftp {
         name: &str,
         local: &Path,
         cancel: &CancellationToken,
+        progress: impl FnMut(u64, Option<u64>),
+    ) -> Result<u64> {
+        self.download_at_most(dir, name, local, u64::MAX, cancel, progress)
+            .await
+    }
+
+    /// Like [`Sftp::download`], refusing files larger than `max` bytes
+    /// (whatever size the server claims, at most `max` bytes are read).
+    pub async fn download_at_most(
+        &self,
+        dir: &str,
+        name: &str,
+        local: &Path,
+        max: u64,
+        cancel: &CancellationToken,
         mut progress: impl FnMut(u64, Option<u64>),
     ) -> Result<u64> {
         check_component(name)?;
@@ -620,6 +666,9 @@ impl Sftp {
             let meta = src.metadata().await?;
             if meta.file_type() != FileType::File {
                 return Err(Error::NotRegular(name.chars().take(64).collect()));
+            }
+            if meta.size.is_some_and(|s| s > max) {
+                return Err(Error::TooLarge);
             }
             Ok((src, meta.size))
         })
@@ -646,8 +695,11 @@ impl Sftp {
             if n == 0 {
                 break;
             }
-            out.write_all(&buf[..n]).await?;
             done += n as u64;
+            if done > max {
+                return Err(Error::TooLarge);
+            }
+            out.write_all(&buf[..n]).await?;
             progress(done, total);
         }
         out.flush().await?;
@@ -695,16 +747,27 @@ impl Sftp {
         mut progress: impl FnMut(u64, Option<u64>),
     ) -> Result<u64> {
         validate_name(name)?;
-        let target = join(dir, name);
-        let existing = match self.inner.symlink_metadata(target.as_str()).await {
+        let link = match self.inner.symlink_metadata(join(dir, name)).await {
             Ok(meta) => Some(meta),
             Err(SftpError::Status(s)) if s.status_code == StatusCode::NoSuchFile => None,
             Err(e) => return Err(e.into()),
         };
-        if existing.is_some() && !overwrite {
+        if link.is_some() && !overwrite {
             return Err(Error::Exists(name.to_owned()));
         }
-        if existing.as_ref().is_some_and(|m| m.file_type() == FileType::Dir) {
+        // Replacing a link writes the file it points to (like cp), so the
+        // link itself stays.
+        let (dir, name) = match &link {
+            Some(m) if m.file_type() == FileType::Symlink => self.resolve(dir, name).await?,
+            _ => (dir.to_owned(), name.to_owned()),
+        };
+        let (dir, name) = (dir.as_str(), name.as_str());
+        let target = join(dir, name);
+        let existing = match &link {
+            Some(m) if m.file_type() == FileType::Symlink => Some(self.inner.metadata(target.as_str()).await?),
+            other => other.clone(),
+        };
+        if existing.as_ref().is_some_and(|m| m.file_type() != FileType::File) {
             return Err(Error::Exists(name.to_owned()));
         }
         let total = Some(size);
@@ -752,29 +815,38 @@ impl Sftp {
         let done = match copied {
             Ok(done) => done,
             Err(e) => {
+                // Closed first: some servers (Windows) cannot delete an open file.
+                let _ = dst.shutdown().await;
+                drop(dst);
                 let _ = self.inner.remove_file(tmp).await;
                 return Err(e);
             }
         };
+        drop(dst);
 
-        // Keep the replaced file's permissions (for a link, those of its target).
-        let existing_mode = match &existing {
-            Some(m) if m.file_type() == FileType::Symlink => self
-                .inner
-                .metadata(target.as_str())
-                .await
-                .ok()
-                .and_then(|t| t.permissions),
-            Some(m) => m.permissions,
-            None => None,
-        };
-        let mode = existing_mode.or(local_mode).unwrap_or(0o644) & 0o7777;
+        // Keep the replaced file's permissions, and its owner when allowed
+        // (as root, e.g. through sudo; otherwise it is already ours).
+        let mode = existing
+            .as_ref()
+            .and_then(|m| m.permissions)
+            .or(local_mode)
+            .unwrap_or(0o644)
+            & 0o7777;
         let attrs = FileAttributes {
             permissions: Some(mode),
             ..FileAttributes::default()
         };
+        let owner = existing.as_ref().and_then(|m| Some((m.uid?, m.gid?)));
         let placed = async {
             self.inner.set_metadata(tmp.as_str(), attrs).await?;
+            if let Some((uid, gid)) = owner {
+                let ids = FileAttributes {
+                    uid: Some(uid),
+                    gid: Some(gid),
+                    ..FileAttributes::default()
+                };
+                let _ = self.inner.set_metadata(tmp.as_str(), ids).await;
+            }
             self.replace(&tmp, &target, existing.is_some()).await
         };
         if let Err(e) = placed.await {

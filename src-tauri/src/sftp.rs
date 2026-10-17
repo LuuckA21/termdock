@@ -29,7 +29,8 @@ use crate::state::AppState;
 
 /// Upload tokens are single use and expire.
 const PICK_TTL: Duration = Duration::from_secs(10 * 60);
-const MAX_PICKED: usize = 1000;
+/// Open picked files at most (each holds a file handle until uploaded).
+const MAX_PICKED: usize = 200;
 /// Progress messages are sent at most this often per transfer.
 const PROGRESS_STEP: u64 = 256 * 1024;
 /// How long closing waits for running transfers to clean up after cancel.
@@ -173,6 +174,25 @@ impl SftpState {
         for sftp in closed {
             sftp.close().await;
         }
+    }
+
+    /// Registers a background transfer of `browser` (no progress), so
+    /// closing the browser cancels it and waits for its cleanup.
+    pub(crate) fn track(&self, browser: u32) -> (u32, CancellationToken) {
+        let id = self.next_id();
+        let cancel = CancellationToken::new();
+        self.0.transfers.lock().unwrap().insert(
+            id,
+            Transfer {
+                browser,
+                cancel: cancel.clone(),
+            },
+        );
+        (id, cancel)
+    }
+
+    pub(crate) fn untrack(&self, id: u32) {
+        self.end_transfer(id);
     }
 
     fn start_transfer(&self, browser: u32, progress: &Channel<Progress>) -> (u32, CancellationToken) {
@@ -487,17 +507,21 @@ impl SftpState {
     /// dialog or dropped from the system) and hands out a single-use token
     /// for each. Also returns how many folders were left out.
     fn take(&self, paths: &[PathBuf]) -> CmdResult<(Vec<PickedFile>, usize)> {
+        // Only absolute paths: anything else would be resolved against the
+        // app's own working folder.
+        let paths: Vec<&PathBuf> = paths.iter().filter(|p| p.is_absolute()).collect();
         let mut picked = self.0.picked.lock().unwrap();
         picked.retain(|_, p| p.at.elapsed() < PICK_TTL);
+        // Checked before opening anything, so nothing is left open on refusal.
+        if picked.len() + paths.len() > MAX_PICKED {
+            return Err(CmdError::msg("too many files at once"));
+        }
         let mut out = Vec::new();
         let mut folders = 0;
         for path in paths {
             if path.is_dir() {
                 folders += 1;
                 continue;
-            }
-            if picked.len() >= MAX_PICKED {
-                return Err(CmdError::msg("too many files are waiting to be uploaded"));
             }
             let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
                 continue;
@@ -547,18 +571,26 @@ struct Dropped {
 /// releases the tokens of a drop that did not land on a file browser.
 pub fn on_drag_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
     use tauri::Emitter;
-    let scale = window.scale_factor().unwrap_or(1.0);
+    // Only Windows reports physical pixels; WebKitGTK and WKWebView already
+    // give CSS (logical) pixels.
+    let scale = if cfg!(windows) {
+        window.scale_factor().unwrap_or(1.0)
+    } else {
+        1.0
+    };
     let at = |p: &tauri::PhysicalPosition<f64>| {
         let l = p.to_logical::<f64>(scale);
         (l.x, l.y)
     };
+    let label = window.label().to_owned();
     match event {
         tauri::DragDropEvent::Enter { position, .. } | tauri::DragDropEvent::Over { position } => {
             let (x, y) = at(position);
-            let _ = window.emit("termdock://drag", DragOver { x, y, active: true });
+            let _ = window.emit_to(label.as_str(), "termdock://drag", DragOver { x, y, active: true });
         }
         tauri::DragDropEvent::Leave => {
-            let _ = window.emit(
+            let _ = window.emit_to(
+                label.as_str(),
                 "termdock://drag",
                 DragOver {
                     x: 0.0,
@@ -568,7 +600,8 @@ pub fn on_drag_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
             );
         }
         tauri::DragDropEvent::Drop { paths, position } => {
-            let _ = window.emit(
+            let _ = window.emit_to(
+                label.as_str(),
                 "termdock://drag",
                 DragOver {
                     x: 0.0,
@@ -576,10 +609,15 @@ pub fn on_drag_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
                     active: false,
                 },
             );
-            let state = window.state::<SftpState>();
             let (x, y) = at(position);
-            let (files, folders) = state.take(paths).unwrap_or_default();
-            let _ = window.emit("termdock://drop", Dropped { x, y, files, folders });
+            let window = window.clone();
+            let paths = paths.clone();
+            // Opening files (maybe on a slow share) off the event loop.
+            tauri::async_runtime::spawn_blocking(move || {
+                let state = window.state::<SftpState>();
+                let (files, folders) = state.take(&paths).unwrap_or_default();
+                let _ = window.emit_to(label.as_str(), "termdock://drop", Dropped { x, y, files, folders });
+            });
         }
         _ => {}
     }
@@ -698,7 +736,14 @@ pub(crate) fn local_file_name(name: &str) -> String {
     match cleaned {
         "" => "download".to_owned(),
         c if reserved => format!("_{c}"),
-        c => c.chars().take(200).collect(),
+        c => {
+            // At most 200 bytes, on a character boundary (file systems count bytes).
+            let mut end = c.len().min(200);
+            while !c.is_char_boundary(end) {
+                end -= 1;
+            }
+            c[..end].to_owned()
+        }
     }
 }
 

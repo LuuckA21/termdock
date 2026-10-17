@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Changed
 
 - Favourites are reordered by dragging with the pointer (the window now takes file drops from the system).
+- Uploading over an existing file also keeps its owner and group where the server allows it, and uploading over a link replaces the file it points to instead of the link.
 
 ## [0.8.0] - 2026-10-17
 

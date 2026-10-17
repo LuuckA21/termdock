@@ -97,6 +97,8 @@ export class FilesPane implements Pane {
   private readonly followBtn: HTMLButtonElement;
   /** Go to the terminal's folder whenever it changes. */
   private follow = false;
+  /** A folder Follow could not open: not retried at every prompt. */
+  private followFailed: string | null = null;
 
   private readonly pathInput: HTMLInputElement;
   private readonly list: HTMLElement;
@@ -346,8 +348,12 @@ export class FilesPane implements Pane {
     this.cwdBtn.disabled = this.state !== "open" || folder === null;
     this.cwdBtn.title = folder ? t("filesTerminalFolder") : t("filesTerminalFolderUnknown");
     if (!this.follow || !folder || this.busy || this.switching || this.state !== "open") return;
-    if (this.listing && folder === this.listing.path) return;
-    void this.navigate(folder);
+    if (folder === this.followFailed || (this.listing && folder === this.listing.path)) return;
+    void this.navigate(folder).then(() => {
+      // Not where it was asked to go (error, or a different canonical form):
+      // remember it so the next prompt does not try again.
+      this.followFailed = this.listing?.path === folder ? null : folder;
+    });
   }
 
   /** Offers to follow the terminal when its title shows another user. */

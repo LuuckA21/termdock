@@ -34,7 +34,7 @@ export function osc7Path(data: string): string | null {
     const url = new URL(data);
     if (url.protocol !== "file:") return null;
     const path = decodeURIComponent(url.pathname);
-    return path.startsWith("/") && !/[\p{Cc}]/u.test(path) ? path : null;
+    return path.startsWith("/") && !/[\p{Cc}\p{Cf}]/u.test(path) ? path : null;
   } catch {
     return null;
   }

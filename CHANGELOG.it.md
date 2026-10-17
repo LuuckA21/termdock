@@ -18,6 +18,7 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 ### Modificato
 
 - I preferiti si riordinano trascinandoli con il puntatore (la finestra ora riceve i file rilasciati dal sistema).
+- Caricare su un file esistente ne mantiene anche proprietario e gruppo se il server lo consente, e caricare su un link sostituisce il file a cui punta invece del link.
 
 ## [0.8.0] - 2026-10-17
 
