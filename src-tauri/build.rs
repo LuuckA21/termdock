@@ -15,6 +15,8 @@ const COMMANDS: &[&str] = &[
     "answer_prompt",
     "preview_ssh_config",
     "import_ssh_config",
+    "check_update",
+    "install_update",
 ];
 
 fn main() {

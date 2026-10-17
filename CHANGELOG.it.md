@@ -7,6 +7,16 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-16
+
+### Aggiunto
+
+- Aggiornamenti automatici: Termdock cerca una nuova versione all'avvio e una volta al giorno e, dopo la tua conferma, la scarica, la verifica e si riavvia. Nelle Impostazioni ci sono l'interruttore per disattivare il controllo, il pulsante "Controlla ora" e la versione attuale. Le copie installate da pacchetti deb/rpm ricevono solo l'avviso della nuova versione. Le versioni precedenti non hanno l'updater: la 0.4.0 va installata a mano una volta.
+
+### Sicurezza
+
+- Gli aggiornamenti sono accettati solo se firmati con la chiave inclusa nell'app e firmati per la versione che annunciano, quindi tramite l'updater non si possono installare né un pacchetto manomesso né una release più vecchia.
+
 ## [0.3.0] - 2026-10-16
 
 ### Aggiunto
@@ -50,7 +60,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/LuuckA21/termdock/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/LuuckA21/termdock/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LuuckA21/termdock/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LuuckA21/termdock/releases/tag/v0.1.0

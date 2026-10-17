@@ -48,7 +48,7 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 ### Desktop shell (Tauri 2)
 
 - Strict Content-Security-Policy: scripts only from the app bundle, no `eval`, no remote origins, no frames/objects/workers.
-- Every IPC command must be allowed explicitly in `src-tauri/capabilities/default.json` (generated per-command permissions). No file-system, shell, HTTP or opener plugins are included; the only plugin is the clipboard (read/write text).
+- Every IPC command must be allowed explicitly in `src-tauri/capabilities/default.json` (generated per-command permissions). No file-system, shell, HTTP or opener plugins are included. The UI may use the clipboard plugin (read/write text); the updater plugin is driven by the backend only and none of its own commands is allowed.
 - The UI builds DOM nodes with `textContent` only; profile colours are validated (`#rrggbb`) both in the backend and before use.
 - Text that is not session output but is shown in the terminal (server banner, exit signal, error and status messages) is stripped of control characters, so a server cannot inject escape sequences through it before the user has even authenticated.
 - Local shells can only be started from the detected list (by id) or from a saved profile.
@@ -70,6 +70,17 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - The backend reads only `~/.ssh/config`; the UI cannot choose another file.
 - `ProxyCommand`, `Match`, `Include`, unknown tokens and Unix-socket forwards are reported, never executed or guessed.
 - Imported profiles go through the same validation as manual ones.
+
+### Updates (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
+
+- The app looks for updates only at the HTTPS endpoint fixed in `tauri.conf.json` (`latest.json` of the latest *published* GitHub release; drafts are never offered). Release builds refuse a plain-HTTP endpoint (the download URL comes from the manifest and is protected by the package signature whatever its scheme; Termdock's manifests only list https GitHub URLs), and the UI cannot change the endpoint, the key or the version policy: it can only ask "is there an update?" and "install the one you found".
+- Every package is verified with minisign (Ed25519) against the public key built into the app, after the download and again right before installing. A package that fails the check is never written over the installed app.
+- The signature also covers the version it was made for (`requireSignedVersion`): a manifest announcing version X must point to a package signed for X, so a tampered manifest cannot pass off an older, validly signed release as a new one. Only newer versions are accepted (no downgrades).
+- The UI downloads and installs only after the user confirms (the default button is *Later*). Even a compromised web view could at most start installing a newer, validly signed release, with a restart. Release notes come from the manifest, which is not signed: they are shown as plain text and truncated.
+- deb and rpm installs are not updated in place (it would need root, which the updater plugin obtains by piping the user's password to `sudo`); the app only announces the new version.
+- The private key exists only as a secret of the repository's `release` environment, which only workflow runs on `main` and `v*` tags can use, and in the owner's offline backup. The release workflow refuses to tag a release if the key is missing or does not match the public key in the app, and verifies every updater package (Windows installers, macOS app archive, AppImage) before attaching `latest.json`. The actions it runs are pinned to commit SHAs. The key is necessarily in the environment of the build step (the Tauri bundler signs while packaging), so the build tools and dependencies run next to it: dependencies are locked (`Cargo.lock`, `package-lock.json`), audited in CI and updated through reviewed PRs.
+- Privacy: a check is one HTTPS request to GitHub at start and once a day (downloads come from GitHub's CDN; GitHub sees the IP address); it can be turned off in Settings.
+- Residual risk: whoever holds the private key and can publish releases on this repository can ship an update. If the key is lost, installed copies cannot update themselves any more and must be reinstalled by hand once.
 
 ### Storage
 

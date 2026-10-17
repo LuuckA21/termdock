@@ -23,6 +23,8 @@
     "allow-close-session",
     "allow-answer-prompt",
     "allow-preview-ssh-config",
-    "allow-import-ssh-config"
+    "allow-import-ssh-config",
+    "allow-check-update",
+    "allow-install-update"
   ]
 }

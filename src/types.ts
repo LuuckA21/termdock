@@ -50,6 +50,18 @@ export interface AppInfo {
   platform: string;
 }
 
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  notes: string;
+  /** False for deb/rpm packages and dev builds: they are updated another way. */
+  installable: boolean;
+}
+
+export type UpdateProgress =
+  | { stage: "downloading"; downloaded: number; total: number | null }
+  | { stage: "installing" };
+
 export interface DetectedShell {
   id: string;
   name: string;

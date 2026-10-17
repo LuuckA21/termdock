@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri::{AppHandle, State};
 use termdock_core::profile::{self, Profile, ProfileKind};
 use termdock_core::session::{EventSink, SessionEvent, TermSize};
 use termdock_core::shells::{self, DetectedShell};
@@ -27,8 +27,20 @@ use crate::state::AppState;
 #[error("{0}")]
 pub struct CmdError(String);
 
+impl CmdError {
+    pub fn msg(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+}
+
 impl From<CoreError> for CmdError {
     fn from(e: CoreError) -> Self {
+        Self(e.to_string())
+    }
+}
+
+impl From<tauri_plugin_updater::Error> for CmdError {
+    fn from(e: tauri_plugin_updater::Error) -> Self {
         Self(e.to_string())
     }
 }
@@ -39,22 +51,23 @@ impl Serialize for CmdError {
     }
 }
 
-type CmdResult<T> = Result<T, CmdError>;
+pub type CmdResult<T> = Result<T, CmdError>;
 
 const MAX_INPUT_CHUNK: usize = 1024 * 1024;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
-    version: &'static str,
+    version: String,
     vault_available: bool,
     platform: &'static str,
 }
 
 #[tauri::command]
-pub fn app_info() -> AppInfo {
+pub fn app_info(app: AppHandle) -> AppInfo {
     AppInfo {
-        version: env!("CARGO_PKG_VERSION"),
+        // The version the updater compares against (tauri.conf.json).
+        version: app.package_info().version.to_string(),
         vault_available: OsVault::available(),
         platform: std::env::consts::OS,
     }

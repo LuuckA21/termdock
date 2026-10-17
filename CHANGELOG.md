@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-16
+
+### Added
+
+- Automatic updates: Termdock looks for a new version at start and once a day and, after you confirm, downloads it, verifies it and restarts. Settings has a switch to turn the check off, a "Check now" button and the current version. Copies installed from deb/rpm packages are only told that a new version exists. Earlier versions have no updater: install 0.4.0 by hand once.
+
+### Security
+
+- Updates are accepted only if signed with the key built into the app and signed for the version they announce, so neither a tampered package nor an older release can be installed through the updater.
+
 ## [0.3.0] - 2026-10-16
 
 ### Added
@@ -50,7 +60,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/LuuckA21/termdock/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/LuuckA21/termdock/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LuuckA21/termdock/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LuuckA21/termdock/releases/tag/v0.1.0

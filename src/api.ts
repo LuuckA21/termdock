@@ -10,6 +10,8 @@ import type {
   PromptAnswer,
   SessionNotice,
   TermSize,
+  UpdateInfo,
+  UpdateProgress,
   Uuid,
 } from "./types";
 
@@ -44,6 +46,13 @@ export const api = {
   closeSession: (id: number) => invoke<void>("close_session", { id }),
   answerPrompt: (promptId: Uuid, answer: PromptAnswer) =>
     invoke<boolean>("answer_prompt", { promptId, answer }),
+
+  checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
+  installUpdate: (onProgress: (p: UpdateProgress) => void) => {
+    const progress = new Channel<UpdateProgress>();
+    progress.onmessage = onProgress;
+    return invoke<void>("install_update", { onProgress: progress });
+  },
 };
 
 export function errorText(e: unknown): string {
