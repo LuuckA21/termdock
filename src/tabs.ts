@@ -108,10 +108,20 @@ export class Tab {
    * the caller closes the tab.
    */
   remove(pane: Pane): boolean {
+    const last = this.detach(pane);
+    pane.dispose();
+    return last;
+  }
+
+  /**
+   * Takes `pane` out of this tab without closing it (to move it to another
+   * tab). Returns true when it was the last one.
+   */
+  detach(pane: Pane): boolean {
     const node = this.nodes.get(pane);
     if (!node) return this.nodes.size === 0;
     this.nodes.delete(pane);
-    pane.dispose();
+    pane.blur();
     const parent = node.parent;
     if (!parent) return true;
 

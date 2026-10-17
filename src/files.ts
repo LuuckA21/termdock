@@ -10,6 +10,7 @@ import { clear, h, icon } from "./dom";
 import { t } from "./i18n";
 import { showMenu } from "./menu";
 import type { Pane, PaneOptions, PaneState } from "./pane";
+import type { TerminalPane } from "./terminal";
 import type { RemoteEntry, RemoteListing, TransferProgress } from "./types";
 
 /** Control, format (bidi, zero-width, BOM, tags…) and line/paragraph separators. */
@@ -55,7 +56,19 @@ export interface FilesOptions extends PaneOptions {
   /** Backend id of the terminal session whose connection is used. */
   session: number;
   /** The terminal pane that owns that session. */
-  source: Pane;
+  source: TerminalPane;
+}
+
+const USER_NAME = /^[A-Za-z_][A-Za-z0-9_.-]{0,31}$/;
+
+/**
+ * The user in a terminal title like "bob@host: ~/dir" (what bash sets on
+ * Debian/Ubuntu and RHEL). The title comes from the server: it is only used
+ * to suggest switching, never acted on by itself.
+ */
+export function titleUser(title: string): string | null {
+  const m = /^([A-Za-z_][A-Za-z0-9_.-]{0,31})@[A-Za-z0-9][A-Za-z0-9.-]*(?:[:\s]|$)/.exec(title);
+  return m ? m[1]! : null;
 }
 
 export class FilesPane implements Pane {
@@ -69,6 +82,13 @@ export class FilesPane implements Pane {
   private busy = false;
   private transfer: number | null = null;
   private disposed = false;
+  /** The user the browser acts as, and the terminal's login user. */
+  private user = "";
+  private loginUser = "";
+  private readonly unsubscribeTitle: () => void;
+  private readonly userBtn: HTMLButtonElement;
+  private readonly userName: HTMLElement;
+  private readonly suggestion: HTMLElement;
 
   private readonly pathInput: HTMLInputElement;
   private readonly list: HTMLElement;
@@ -111,9 +131,23 @@ export class FilesPane implements Pane {
       this.actions.push(b);
       return b;
     };
+    this.userName = h("span", { class: "files-user-name" });
+    this.userBtn = h(
+      "button",
+      { type: "button", class: "btn btn-ghost files-user", title: t("filesUserMenu"), "aria-label": t("filesUserMenu") },
+      icon("user"),
+      this.userName,
+    );
+    this.userBtn.addEventListener("click", () => {
+      const r = this.userBtn.getBoundingClientRect();
+      this.userMenu(r.left, r.bottom + 4);
+    });
+    this.actions.push(this.userBtn);
+    this.suggestion = h("div", { class: "files-suggest", hidden: true });
     const bar = h(
       "div",
       { class: "files-bar" },
+      this.userBtn,
       tool("arrowUp", t("filesUp"), () => void this.up()),
       tool("home", t("filesHome"), () => void this.navigate(this.home)),
       tool("refresh", t("filesRefresh"), () => void this.refresh()),
@@ -125,12 +159,14 @@ export class FilesPane implements Pane {
       "div",
       { class: "pane files-pane" },
       bar,
+      this.suggestion,
       this.list,
       h("div", { class: "files-status" }, this.status, this.progress, this.cancelBtn),
     );
     this.el.addEventListener("focusin", () => this.opts.onFocus(this));
     this.setBusy(true);
-    void this.open();
+    this.unsubscribeTitle = opts.source.onRemoteTitle(() => this.suggest());
+    void this.open(null);
   }
 
   get title(): string {
@@ -147,6 +183,7 @@ export class FilesPane implements Pane {
 
   dispose(): void {
     this.disposed = true;
+    this.unsubscribeTitle();
     if (this.transfer !== null) void api.sftpCancel(this.transfer);
     if (this.id !== null) void api.sftpClose(this.id).catch(() => {});
     this.el.remove();
@@ -162,22 +199,125 @@ export class FilesPane implements Pane {
     this.say(t("filesClosed"), true);
   }
 
-  private async open(): Promise<void> {
-    this.say(t("filesOpening"));
+  /**
+   * Opens the browser as the login user (`null`) or, through sudo, as `user`.
+   * On success it replaces the current one; on failure the current one stays.
+   */
+  private async open(user: string | null): Promise<void> {
+    this.say(user ? t("filesOpeningAs", { user }) : t("filesOpening"));
+    let password: string | null = null;
     try {
-      const { id, home } = await api.sftpOpen(this.opts.session);
-      if (this.disposed) {
-        void api.sftpClose(id);
+      for (;;) {
+        const res = await api.sftpOpen(this.opts.session, user, password);
+        if (res.status === "passwordRequired") {
+          password = await this.askPassword(user ?? "", res.retry);
+          if (password === null) {
+            this.say(t("filesSudoCancelled"));
+            if (this.id === null) this.fail(t("filesSudoCancelled"));
+            return;
+          }
+          continue;
+        }
+        password = null;
+        if (this.disposed) {
+          void api.sftpClose(res.id);
+          return;
+        }
+        const previous = this.id;
+        this.id = res.id;
+        this.home = res.home;
+        this.user = res.user;
+        this.loginUser = res.loginUser;
+        if (previous !== null) void api.sftpClose(previous).catch(() => {});
+        this.userName.textContent = displayName(res.user);
+        this.userBtn.classList.toggle("root", res.user === "root");
+        this.setState("open");
+        this.setBusy(false);
+        this.pathInput.disabled = false;
+        this.suggest();
+        await this.navigate(res.home);
         return;
       }
-      this.id = id;
-      this.home = home;
-      this.setState("open");
-      this.setBusy(false);
-      await this.navigate(home);
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  /** Switches the browser to another user (null: back to the login user). */
+  private switchUser(user: string | null): void {
+    if (this.busy || this.state === "closed") return;
+    void this.open(user);
+  }
+
+  /** Offers to follow the terminal when its title shows another user. */
+  private suggest(): void {
+    const other = titleUser(this.opts.source.remoteTitle);
+    const show = this.state === "open" && other !== null && other !== this.user;
+    this.suggestion.hidden = !show;
+    if (!show) return;
+    const btn = h("button", { type: "button", class: "btn btn-primary" }, t("filesOpenAs", { user: other }));
+    btn.addEventListener("click", () => this.switchUser(other === this.loginUser ? null : other));
+    clear(this.suggestion);
+    this.suggestion.append(icon("user"), h("span", {}, t("filesTerminalUser", { user: other })), btn);
+  }
+
+  private userMenu(x: number, y: number): void {
+    if (this.state !== "open") return;
+    const items = [];
+    const other = titleUser(this.opts.source.remoteTitle);
+    if (other && other !== this.user) {
+      items.push({ label: t("filesOpenAs", { user: other }), action: () => this.switchUser(other === this.loginUser ? null : other) });
+    }
+    if (this.user !== this.loginUser) {
+      items.push({ label: t("filesBackTo", { user: this.loginUser }), action: () => this.switchUser(null) });
+    }
+    items.push({ label: t("filesOpenAsOther"), icon: icon("user"), action: () => void this.askUser() });
+    showMenu(x, y, items);
+  }
+
+  private async askUser(): Promise<void> {
+    const input = h("input", { class: "input", spellcheck: "false", autocomplete: "off", maxlength: 32 });
+    const warn = h("p", { class: "warn", hidden: true }, t("filesUserInvalid"));
+    const user = await modal<string | null>({
+      title: t("filesOpenAsOther"),
+      body: [
+        h("p", { class: "muted" }, t("filesOpenAsHelp", { user: this.loginUser })),
+        h("label", { class: "field" }, h("span", {}, t("username")), input),
+        warn,
+      ],
+      buttons: [
+        { label: t("cancel"), value: null },
+        { label: t("ok"), value: null, kind: "primary" },
+      ],
+      cancelValue: null,
+      initialFocus: input,
+      onSubmit: () => {
+        const name = input.value.trim();
+        warn.hidden = USER_NAME.test(name);
+        return warn.hidden ? name : undefined;
+      },
+    });
+    if (user) this.switchUser(user === this.loginUser ? null : user);
+  }
+
+  /** The login user's password for sudo; null when cancelled. Never stored. */
+  private askPassword(user: string, retry: boolean): Promise<string | null> {
+    const input = h("input", { class: "input", type: "password", autocomplete: "off" });
+    return modal<string | null>({
+      title: t("filesSudoTitle", { user }),
+      body: [
+        h("p", {}, t("filesSudoBody", { login: this.loginUser || "?", host: this.opts.title, user })),
+        h("p", { class: "warn", hidden: !retry }, t("filesSudoWrong")),
+        h("label", { class: "field" }, h("span", {}, t("authPassword")), input),
+      ],
+      buttons: [
+        { label: t("cancel"), value: null },
+        { label: t("ok"), value: null, kind: "primary" },
+      ],
+      cancelValue: null,
+      initialFocus: input,
+      onSubmit: () => input.value || undefined,
+    });
   }
 
   private setState(s: PaneState): void {

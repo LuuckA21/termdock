@@ -85,6 +85,7 @@ The SSH server is treated as untrusted: it controls names, listings, sizes, cont
 - Uploads go to a random hidden name created exclusively with mode `0600` (a file or link planted by someone else cannot redirect the write). Only when complete, and for an existing name only after the user confirmed, the file takes the target's place: atomically with `posix-rename@openssh.com`, otherwise by setting the old file aside and putting it back on failure. A replaced file keeps its permissions; a new one gets the local file's.
 - Cancel works at once; closing a browser or its tab cancels its transfers and lets them clean up before the connection closes.
 - Delete is never recursive (only files, links and empty folders) and its confirmation defaults to *Cancel*.
+- **Files as another user** run `sftp-server` through `sudo -u <user>` on the same connection; the server's sudo policy decides what is allowed, Termdock adds no privileges. The user name must be a plain Unix name (letters, digits, `_ . -`, not starting with `-`, at most 32 characters) and the command is built from fixed parts: only `sftp-server` paths from a built-in list are run, never one reported by the server. Termdock first tries without a password (`sudo -n`); only if sudo asks for one, the login user's password is requested in a dialog, passed to `sudo -k -S` on that channel's input (so it always goes to sudo, never to `sftp-server`) and dropped right after; it is never stored or logged. Switching is always an explicit click: the terminal title (`user@host`), which the server controls, is only used to suggest it. Acting as `root` is shown in red.
 
 ### Updates (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
 
@@ -111,5 +112,6 @@ The SSH server is treated as untrusted: it controls names, listings, sizes, cont
 
 - Release builds are not code-signed until signing certificates are configured in the release workflow; verify downloads accordingly.
 - Downloaded files are only as trustworthy as the server they come from; on macOS they are not marked with the quarantine flag yet.
+- With sudo, the password crosses the SSH connection to the server like typing it in the terminal would; it is as safe as that server.
 - Agent forwarding and X11 forwarding are not implemented (and therefore cannot be abused).
 - Typed secrets transit the web view's memory before reaching the backend; they are cleared from the input immediately after submission.

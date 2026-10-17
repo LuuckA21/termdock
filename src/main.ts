@@ -14,6 +14,7 @@ import { DEFAULTS, getPrefs, setPrefs } from "./prefs";
 import { openSettings } from "./settings";
 import { Tab, type Direction, type SplitDir } from "./tabs";
 import type { Pane } from "./pane";
+import { pickPane, type PaneChoice } from "./picker";
 import { TerminalPane } from "./terminal";
 import { startUpdateChecks } from "./updates";
 import type { AppInfo, DetectedShell, OpenTarget, Profile, Uuid } from "./types";
@@ -153,16 +154,63 @@ export class App {
     this.renderTabs();
   }
 
-  /** Opens the same connection or shell as the active pane next to it. */
-  private split(dir: SplitDir): void {
+  /**
+   * Splits the active pane and asks what goes in the new half: the same
+   * connection (first, so Enter keeps the quick duplicate), a local shell,
+   * any saved connection or a quick-connect address.
+   */
+  private async split(dir: SplitDir): Promise<void> {
     const tab = this.active;
     if (!tab) return;
-    const { title, subtitle, target, color } = tab.active.opts;
-    const pane = this.newPane(title, subtitle, target, color);
-    tab.split(tab.active, dir, pane);
+    const target = tab.active;
+    const { title, subtitle, target: current, color } = target.opts;
+    const choice = await pickPane({
+      title: t(dir === "right" ? "pickTitleRight" : "pickTitleDown"),
+      duplicate: { title, subtitle, target: current, color },
+      shells: this.shells,
+      profiles: this.profiles,
+      favorites: this.favorites,
+    });
+    if (choice && this.tabs.includes(tab) && tab.has(target)) this.splitWith(tab, target, dir, choice);
+    else this.focusActive();
+  }
+
+  /** Opens `choice` in a new pane next to `target`. */
+  private splitWith(tab: Tab, target: Pane, dir: SplitDir, choice: PaneChoice): void {
+    const pane = this.newPane(choice.title, choice.subtitle, choice.target, choice.color);
+    tab.split(target, dir, pane);
     tab.setActive(pane, true);
     this.renderTabs();
     void pane.connect();
+  }
+
+  /** Opens a saved connection next to the active pane (favourites menu). */
+  openProfileSplit(p: Profile, dir: SplitDir): void {
+    const tab = this.active;
+    if (!tab) return this.openProfile(p);
+    this.splitWith(tab, tab.active, dir, { title: p.name, subtitle: describe(p), target: { kind: "profile", id: p.id }, color: p.color });
+  }
+
+  /**
+   * Moves every pane of `from` next to the active pane of `into`, keeping
+   * their sessions: two tabs become one split view. `from` closes.
+   */
+  private mergeTab(from: Tab, into: Tab): void {
+    if (from === into) return;
+    const panes = from.panes;
+    const first = panes[0];
+    if (!first) return;
+    for (const pane of panes) from.detach(pane);
+    into.split(into.active, "right", first);
+    let previous = first;
+    for (const pane of panes.slice(1)) {
+      into.split(previous, "down", pane);
+      previous = pane;
+    }
+    this.tabs.splice(this.tabs.indexOf(from), 1);
+    from.el.remove();
+    into.setActive(first, false);
+    this.activate(into);
   }
 
   /** A pane that gets the focus (click, Alt+arrow) becomes the active one. */
@@ -266,8 +314,17 @@ export class App {
         this.activate(tab);
         const active = tab.active;
         showMenu(e.clientX, e.clientY, [
-          { label: t("splitRight"), icon: icon("splitRight"), hint: "Ctrl+Shift+E", action: () => this.split("right") },
-          { label: t("splitDown"), icon: icon("splitDown"), hint: "Ctrl+Shift+O", action: () => this.split("down") },
+          { label: t("splitRight"), icon: icon("splitRight"), hint: "Ctrl+Shift+E", action: () => void this.split("right") },
+          { label: t("splitDown"), icon: icon("splitDown"), hint: "Ctrl+Shift+O", action: () => void this.split("down") },
+          // Put this tab next to another one (Windows Terminal style split of two connections).
+          ...this.tabs
+            .filter((other) => other !== tab)
+            .slice(0, 9)
+            .map((other) => ({
+              label: t("moveNextTo", { name: other.title }),
+              icon: icon("splitRight"),
+              action: () => this.mergeTab(tab, other),
+            })),
           ...(active instanceof TerminalPane
             ? [
                 ...(active.opts.target.kind !== "shell" && active.session !== null
@@ -318,9 +375,9 @@ export class App {
         case "KeyM":
           return once(() => this.openManager({}));
         case "KeyE":
-          return once(() => this.split("right"));
+          return once(() => void this.split("right"));
         case "KeyO":
-          return once(() => this.split("down"));
+          return once(() => void this.split("down"));
         case "KeyS":
           return once(() => this.openFiles());
       }

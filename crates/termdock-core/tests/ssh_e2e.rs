@@ -21,7 +21,7 @@ use termdock_core::session::{
     BoxFuture, EventSink, Interaction, SecretAnswer, SecretPrompt, SessionEvent, SessionHandle, TermSize,
 };
 #[cfg(unix)]
-use termdock_core::sftp::{self, CancellationToken, EntryKind, Sftp};
+use termdock_core::sftp::{self, CancellationToken, EntryKind, OpenAs, Sftp};
 use termdock_core::ssh::{self, SshConnect};
 use termdock_core::vault::{MemoryVault, SecretKind, Vault};
 use uuid::Uuid;
@@ -724,4 +724,98 @@ async fn sftp_on_terminal_connection() {
 
     // The terminal still works on the same connection.
     run_and_exit(h, out, "sftp").await;
+}
+
+/// SFTP as another user through sudo, as after `sudo -iu user` in the
+/// terminal: without a password (NOPASSWD), with the login password (wrong,
+/// then right), refused when sudo does not allow it, and bad user names never
+/// reach the server. Needs the sudo rules from scripts/e2e-sshd.sh.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn sftp_as_another_user() {
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let (Ok(other), Ok(nopw)) = (
+        std::env::var("TERMDOCK_E2E_SUDO_USER"),
+        std::env::var("TERMDOCK_E2E_SUDO_NOPW_USER"),
+    ) else {
+        eprintln!("sudo test users not set up, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let kh = Arc::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let vault = Arc::new(MemoryVault::default());
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Password,
+        &kh,
+        &vault,
+        None,
+        user(true, &[(&e.password, false)]),
+        out.sink.clone(),
+    )
+    .await
+    .unwrap();
+    let opened = |r: termdock_core::Result<OpenAs>| match r {
+        Ok(OpenAs::Opened(fs)) => fs,
+        Ok(OpenAs::PasswordRequired { retry }) => panic!("password required (retry {retry})"),
+        Err(err) => panic!("{err}"),
+    };
+
+    // The login user itself: the plain subsystem, no sudo.
+    let fs = opened(Sftp::open_as(&h, &e.user, None).await);
+    assert!(fs.canonicalize(".").await.unwrap().ends_with(&format!("/{}", e.user)));
+
+    // NOPASSWD: starts in that user's home, and files are created as that user.
+    let fs = opened(Sftp::open_as(&h, &nopw, None).await);
+    let home = fs.canonicalize(".").await.unwrap();
+    assert!(home.ends_with(&format!("/{nopw}")), "{home}");
+    let name = format!("td-sudo-{}", Uuid::new_v4().simple());
+    fs.mkdir(&home, &name).await.unwrap();
+    h.write(format!("sudo -n -u {nopw} stat -c owner-%U {home}/{name}\n").into_bytes())
+        .unwrap();
+    let expected = format!("owner-{nopw}");
+    let owned = async {
+        while !out.text.lock().unwrap().contains(&expected) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(20), owned)
+        .await
+        .expect("owner check");
+    fs.remove(&home, &name).await.unwrap();
+    fs.close().await;
+
+    // A password is needed: asked for, a wrong one is reported, the right one works.
+    assert!(matches!(
+        Sftp::open_as(&h, &other, None).await,
+        Ok(OpenAs::PasswordRequired { retry: false })
+    ));
+    assert!(matches!(
+        Sftp::open_as(&h, &other, Some("not-the-password")).await,
+        Ok(OpenAs::PasswordRequired { retry: true })
+    ));
+    let fs = opened(Sftp::open_as(&h, &other, Some(&e.password)).await);
+    assert!(fs.canonicalize(".").await.unwrap().ends_with(&format!("/{other}")));
+    fs.close().await;
+
+    // sudo does not allow root for this user: its message is reported.
+    match Sftp::open_as(&h, "root", Some(&e.password)).await {
+        Err(Error::Sudo(msg)) => assert!(msg.contains("not allowed"), "{msg}"),
+        Err(err) => panic!("{err}"),
+        Ok(_) => panic!("root must be refused"),
+    }
+
+    // Names that could change the remote command never reach the server.
+    for bad in ["x;id", "-u", "a b", "$(id)", "a'b", ""] {
+        assert!(
+            matches!(Sftp::open_as(&h, bad, None).await, Err(Error::InvalidName(_))),
+            "{bad}"
+        );
+    }
+
+    run_and_exit(h, out, "sudo").await;
 }

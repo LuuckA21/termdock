@@ -18,9 +18,10 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
-use termdock_core::sftp::{CancellationToken, Listing, Sftp, is_format_char};
+use termdock_core::sftp::{CancellationToken, Listing, OpenAs, Sftp, is_format_char};
 use tokio::sync::oneshot;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::commands::{CmdError, CmdResult};
 use crate::state::AppState;
@@ -156,10 +157,19 @@ impl SftpState {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Opened {
-    id: u32,
-    home: String,
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum Opened {
+    #[serde(rename_all = "camelCase")]
+    Open {
+        id: u32,
+        home: String,
+        /// The user the browser acts as.
+        user: String,
+        /// The user the terminal logged in as.
+        login_user: String,
+    },
+    /// sudo needs the login user's password (`retry`: the one given was wrong).
+    PasswordRequired { retry: bool },
 }
 
 #[derive(Clone, Serialize)]
@@ -188,11 +198,27 @@ fn throttled(transfer: u32, channel: Channel<Progress>) -> impl FnMut(u64, Optio
     }
 }
 
+/// Opens a file browser on a terminal's SSH connection, as the login user or,
+/// through sudo, as `user`. The sudo `password` is used for this call only.
 #[tauri::command]
-pub async fn sftp_open(state: State<'_, AppState>, sftp: State<'_, SftpState>, session: u32) -> CmdResult<Opened> {
+pub async fn sftp_open(
+    state: State<'_, AppState>,
+    sftp: State<'_, SftpState>,
+    session: u32,
+    user: Option<String>,
+    password: Option<String>,
+) -> CmdResult<Opened> {
+    let password = password.map(Zeroizing::new);
     let live = |s: &State<'_, AppState>| s.sessions.lock().unwrap().get(&session).cloned();
     let handle = live(&state).ok_or_else(|| CmdError::msg("the terminal session is closed"))?;
-    let fs = Sftp::open(&handle).await?;
+    let login_user = handle.ssh_user().unwrap_or_default().to_owned();
+    let (fs, user) = match user {
+        None => (Sftp::open(&handle).await?, login_user.clone()),
+        Some(user) => match Sftp::open_as(&handle, &user, password.as_deref().map(String::as_str)).await? {
+            OpenAs::Opened(fs) => (*fs, user),
+            OpenAs::PasswordRequired { retry } => return Ok(Opened::PasswordRequired { retry }),
+        },
+    };
     let home = fs.canonicalize(".").await?;
     let id = sftp.next_id();
     {
@@ -207,7 +233,12 @@ pub async fn sftp_open(state: State<'_, AppState>, sftp: State<'_, SftpState>, s
                     sftp: Arc::new(fs),
                 },
             );
-            return Ok(Opened { id, home });
+            return Ok(Opened::Open {
+                id,
+                home,
+                user,
+                login_user,
+            });
         }
     }
     fs.close().await;

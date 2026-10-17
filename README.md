@@ -11,14 +11,14 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Favorites bar**, always visible: one click opens the connection in a new tab, drag to reorder, right click to edit or unpin, `Ctrl+Shift+1…9` opens the first nine.
 - **SSH** with a full terminal (xterm-256color, truecolor, Unicode, resizing).
 - **Jump hosts (ProxyJump)**: a connection can go through a bastion, even a chain of them; every hop verifies its own host key and authenticates separately.
-- **File browser (SFTP)**: `Ctrl+Shift+S` opens the files of the server next to its terminal, on the same authenticated connection (no second login): browse, download, upload, new folder, rename, delete.
+- **File browser (SFTP)**: `Ctrl+Shift+S` opens the files of the server next to its terminal, on the same authenticated connection (no second login): browse, download, upload, new folder, rename, delete. After `sudo -iu user` in the terminal it offers to open the files as that user too (through sudo on the server, with the sudo password asked only when needed and never saved), or pick any user from its user menu.
 - **Port forwarding** saved in the connection: local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`); the status of each tunnel is shown in the terminal.
 - **Import from `~/.ssh/config`**: preview with warnings, then imports Host, HostName, User, Port, IdentityFile, ProxyJump and the forwards.
 - **Local shells** in a real PTY: PowerShell 7, Windows PowerShell, cmd, WSL and Git Bash on Windows (ConPTY); bash, zsh, fish, pwsh… on macOS and Linux.
 - **Connection manager**: groups, colors, search, star to pin to the favorites bar.
 - **Quick connect**: type `user@host:port` in the bar and press Enter.
 - Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click).
-- **Split panes**: divide a tab side by side or top/bottom as many times as needed (the new pane opens the same connection or shell), drag the dividers to resize, move between panes with `Alt+arrows`.
+- **Split panes**, like Windows Terminal: divide a tab side by side or top/bottom as many times as needed and choose what opens in the new pane (the same connection, a local shell, any saved connection or a `user@host` address), e.g. server A on the left and server B on the right. Already open tabs can be put side by side without reconnecting (tab menu → *Move next to*), and favourites open directly on the right or below. Drag the dividers to resize, move between panes with `Alt+arrows`.
 - **Themes and fonts**: dark, light or system theme; terminal colour schemes (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); font, size, line height, cursor style and scrollback, with a live preview in Settings; `Ctrl` + `+` / `-` / `0` changes the font size.
 - **Automatic updates**: a new version is announced at start (and once a day), installed only after you confirm, and verified against the signing key built into the app; it can be turned off in Settings.
 - **Multilingual interface** (English, Italiano): choose it in Settings (`Ctrl+,`) or leave *Automatic* to follow the system language; the switch is immediate and open sessions keep running.
@@ -28,7 +28,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | Keys | Action |
 | --- | --- |
 | `Ctrl+Shift+T` | new local shell (default one) |
-| `Ctrl+Shift+E` / `Ctrl+Shift+O` | split the pane right / down |
+| `Ctrl+Shift+E` / `Ctrl+Shift+O` | split the pane right / down (then choose what to open; Enter = same connection) |
 | `Ctrl+Shift+S` | file browser (SFTP) for the SSH terminal |
 | `Alt+←↑→↓` | move to the next pane (with several panes) |
 | `Ctrl+Shift+W` | close the pane (the tab with its last pane) |
@@ -108,12 +108,13 @@ cargo clippy --workspace --all-targets -- -D warnings
 npm run typecheck
 npm run version:check
 
-# end-to-end tests against a real OpenSSH (Linux, needs root and openssh-server)
+# end-to-end tests against a real OpenSSH (Linux, needs root and openssh-server;
+# creates throw-away users and sudo rules, so use a VM or CI runner)
 eval "$(sudo scripts/e2e-sshd.sh)"
 cargo test -p termdock-core --test ssh_e2e
 ```
 
-The end-to-end tests cover: unknown host key refused, trust on first use, wrong password and retries, password remembered in the keychain and forgotten when rejected, encrypted private key with passphrase, keyboard-interactive, jump host with `-L` / `-R` / `-D` forwards, SFTP (upload, overwrite, download, cancel, rename, delete, rejected names), session close and **changed host key (MITM simulation)**.
+The end-to-end tests cover: unknown host key refused, trust on first use, wrong password and retries, password remembered in the keychain and forgotten when rejected, encrypted private key with passphrase, keyboard-interactive, jump host with `-L` / `-R` / `-D` forwards, SFTP (upload, overwrite, download, cancel, rename, delete, rejected names), SFTP as another user through sudo (without password, wrong and right password, refused user, unsafe names), session close and **changed host key (MITM simulation)**.
 
 Claude Code cloud sessions are prepared by `.claude/hooks/session-start.sh`, and the project skills in `.claude/skills/` describe the PR/release procedure and how to run the app headless.
 

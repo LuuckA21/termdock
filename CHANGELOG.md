@@ -7,6 +7,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-17
+
+### Added
+
+- Split panes like Windows Terminal: splitting asks what opens in the new pane (the same connection, a local shell, any saved connection or a `user@host` address), so server A and server B can sit side by side. Enter keeps the old behaviour (same connection).
+- Tab menu → *Move next to*: puts an open tab beside another one, keeping its sessions.
+- Favourites menu: *Open on the right* / *Open below*.
+- File browser as another user: after `sudo -iu user` in the terminal it offers to open the files as that user (through sudo on the server; the sudo password is asked only when needed and never saved). Any user can also be chosen from the browser's user menu; back to the login user in one click.
+
+### Changed
+
+- The file browser's path moves to its own row in narrow panes.
+
 ## [0.6.0] - 2026-10-17
 
 ### Added
@@ -102,7 +115,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/LuuckA21/termdock/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/LuuckA21/termdock/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/LuuckA21/termdock/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/LuuckA21/termdock/compare/v0.4.1...v0.5.0

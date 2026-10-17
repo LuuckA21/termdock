@@ -11,14 +11,14 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 - **Barra preferiti** sempre visibile: un clic apre la connessione in una nuova scheda, trascina per riordinare, tasto destro per modificare o togliere dai preferiti, `Ctrl+Shift+1…9` apre i primi nove.
 - **SSH** con terminale completo (xterm-256color, truecolor, Unicode, ridimensionamento).
 - **Jump host (ProxyJump)**: una connessione può passare da un bastion, anche a catena; ogni salto verifica la propria host key e si autentica separatamente.
-- **File browser (SFTP)**: `Ctrl+Shift+S` apre i file del server accanto al suo terminale, sulla stessa connessione già autenticata (nessun secondo login): navigazione, download, upload, nuova cartella, rinomina, eliminazione.
+- **File browser (SFTP)**: `Ctrl+Shift+S` apre i file del server accanto al suo terminale, sulla stessa connessione già autenticata (nessun secondo login): navigazione, download, upload, nuova cartella, rinomina, eliminazione. Dopo `sudo -iu utente` nel terminale propone di aprire i file anche come quell'utente (tramite sudo sul server, con la password di sudo chiesta solo se serve e mai salvata), oppure scegli qualsiasi utente dal suo menu utente.
 - **Port forwarding** salvato nella connessione: locale (`-L`), remoto (`-R`) e dinamico SOCKS5 (`-D`); lo stato di ogni tunnel compare nel terminale.
 - **Import da `~/.ssh/config`**: anteprima con avvisi, poi importa Host, HostName, User, Port, IdentityFile, ProxyJump e i forwarding.
 - **Shell locali** in PTY reale: PowerShell 7, Windows PowerShell, cmd, WSL e Git Bash su Windows (ConPTY); bash, zsh, fish, pwsh… su macOS e Linux.
 - **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti.
 - **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.
 - Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro).
-- **Pannelli divisi**: dividi una scheda affiancando o sovrapponendo i pannelli quante volte serve (il nuovo pannello apre la stessa connessione o shell), trascina i divisori per ridimensionarli, spostati tra i pannelli con `Alt+frecce`.
+- **Pannelli divisi**, come Windows Terminal: dividi una scheda affiancando o sovrapponendo i pannelli quante volte serve e scegli cosa aprire nel nuovo pannello (la stessa connessione, una shell locale, qualsiasi connessione salvata o un indirizzo `utente@host`), per esempio server A a sinistra e server B a destra. Le schede già aperte si possono affiancare senza riconnettersi (menu della scheda → *Affianca a*) e i preferiti si aprono direttamente a destra o sotto. Trascina i divisori per ridimensionarli, spostati tra i pannelli con `Alt+frecce`.
 - **Temi e caratteri**: tema scuro, chiaro o di sistema; schemi di colori del terminale (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); carattere, dimensione, interlinea, stile del cursore e scrollback, con anteprima dal vivo nelle Impostazioni; `Ctrl` + `+` / `-` / `0` cambia la dimensione del carattere.
 - **Aggiornamenti automatici**: una nuova versione viene segnalata all'avvio (e una volta al giorno), installata solo dopo la tua conferma e verificata con la chiave di firma inclusa nell'app; si può disattivare nelle Impostazioni.
 - **Interfaccia multilingua** (English, Italiano): si sceglie nelle Impostazioni (`Ctrl+,`) oppure si lascia *Automatica* per seguire la lingua del sistema; il cambio è immediato e le sessioni aperte restano attive.
@@ -28,7 +28,7 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 | Tasti | Azione |
 | --- | --- |
 | `Ctrl+Shift+T` | nuova shell locale (predefinita) |
-| `Ctrl+Shift+E` / `Ctrl+Shift+O` | dividi il pannello a destra / in basso |
+| `Ctrl+Shift+E` / `Ctrl+Shift+O` | dividi il pannello a destra / in basso (poi scegli cosa aprire; Invio = stessa connessione) |
 | `Ctrl+Shift+S` | file browser (SFTP) del terminale SSH |
 | `Alt+←↑→↓` | passa al pannello vicino (con più pannelli) |
 | `Ctrl+Shift+W` | chiudi il pannello (la scheda con l'ultimo pannello) |
@@ -108,12 +108,13 @@ cargo clippy --workspace --all-targets -- -D warnings
 npm run typecheck
 npm run version:check
 
-# test end-to-end contro un vero OpenSSH (Linux, richiede root e openssh-server)
+# test end-to-end contro un vero OpenSSH (Linux, richiede root e openssh-server;
+# crea utenti e regole sudo usa e getta, quindi usa una VM o il runner della CI)
 eval "$(sudo scripts/e2e-sshd.sh)"
 cargo test -p termdock-core --test ssh_e2e
 ```
 
-I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi ed eliminata se rifiutata, chiave privata cifrata con passphrase, keyboard-interactive, jump host con forwarding `-L` / `-R` / `-D`, SFTP (upload, sovrascrittura, download, annullamento, rinomina, eliminazione, nomi rifiutati), chiusura sessione e **host key cambiata (simulazione MITM)**.
+I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi ed eliminata se rifiutata, chiave privata cifrata con passphrase, keyboard-interactive, jump host con forwarding `-L` / `-R` / `-D`, SFTP (upload, sovrascrittura, download, annullamento, rinomina, eliminazione, nomi rifiutati), SFTP come altro utente tramite sudo (senza password, password errata e giusta, utente non consentito, nomi non sicuri), chiusura sessione e **host key cambiata (simulazione MITM)**.
 
 Le sessioni cloud di Claude Code vengono preparate da `.claude/hooks/session-start.sh`, e le skill del progetto in `.claude/skills/` descrivono la procedura di PR/release e come avviare l'app senza interfaccia grafica.
 

@@ -47,6 +47,9 @@ export class TerminalPane implements Pane {
   private readonly resizeObserver: ResizeObserver;
   private readonly unsubscribePrefs: () => void;
   private disposed = false;
+  /** Window title set by the remote shell (often "user@host: dir"); untrusted. */
+  remoteTitle = "";
+  private readonly titleListeners = new Set<(title: string) => void>();
 
   constructor(readonly opts: TerminalOptions) {
     this.el = h("div", { class: "pane terminal-host" });
@@ -65,6 +68,10 @@ export class TerminalPane implements Pane {
     this.term.attachCustomKeyEventHandler((e) => this.handleKey(e));
     this.term.onData((d) => this.input(d, false));
     this.term.onBinary((d) => this.input(d, true));
+    this.term.onTitleChange((title) => {
+      this.remoteTitle = title;
+      for (const listener of this.titleListeners) listener(title);
+    });
     this.term.onResize(({ cols, rows }) => {
       if (this.sessionId !== null) void api.resizeSession(this.sessionId, { cols, rows }).catch(() => {});
     });
@@ -161,8 +168,15 @@ export class TerminalPane implements Pane {
     }
   }
 
+  /** Calls `listener` when the remote shell changes the title; returns an unsubscribe. */
+  onRemoteTitle(listener: (title: string) => void): () => void {
+    this.titleListeners.add(listener);
+    return () => this.titleListeners.delete(listener);
+  }
+
   dispose(): void {
     this.disposed = true;
+    this.titleListeners.clear();
     this.generation++;
     this.prompts.abort();
     this.resizeObserver.disconnect();

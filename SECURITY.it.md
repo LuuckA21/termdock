@@ -85,6 +85,7 @@ Il server SSH non è considerato fidato: controlla nomi, elenchi, dimensioni, co
 - Gli upload vanno in un nome nascosto casuale creato in esclusiva con permessi `0600` (un file o un link piazzato da altri non può deviare la scrittura). Solo a trasferimento completato, e per un nome esistente solo dopo la conferma dell'utente, il file prende il posto della destinazione: in modo atomico con `posix-rename@openssh.com`, altrimenti mettendo da parte il vecchio file e ripristinandolo in caso di errore. Un file sostituito mantiene i suoi permessi; uno nuovo prende quelli del file locale.
 - L'annullamento è immediato; chiudere un file browser o la sua scheda annulla i trasferimenti e li lascia ripulire prima che la connessione si chiuda.
 - L'eliminazione non è mai ricorsiva (solo file, link e cartelle vuote) e la conferma ha *Annulla* come pulsante predefinito.
+- **I file come altro utente** avviano `sftp-server` tramite `sudo -u <utente>` sulla stessa connessione; decide la policy sudo del server, Termdock non aggiunge privilegi. Il nome utente deve essere un semplice nome Unix (lettere, cifre, `_ . -`, senza `-` iniziale, al massimo 32 caratteri) e il comando è composto da parti fisse: si eseguono solo percorsi di `sftp-server` da un elenco interno, mai uno indicato dal server. Termdock prova prima senza password (`sudo -n`); solo se sudo la chiede, la password dell'utente di login è richiesta in una finestra, passata a `sudo -k -S` sull'input di quel canale (così arriva sempre a sudo e mai a `sftp-server`) e scartata subito dopo; non è mai salvata né registrata. Il cambio è sempre un clic esplicito: il titolo del terminale (`utente@host`), controllato dal server, serve solo a suggerirlo. Quando si agisce come `root` l'utente è mostrato in rosso.
 
 ### Aggiornamenti (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
 
@@ -111,5 +112,6 @@ Il server SSH non è considerato fidato: controlla nomi, elenchi, dimensioni, co
 
 - Le build di release non sono firmate finché non vengono configurati i certificati di firma nel workflow di release; verifica i download di conseguenza.
 - I file scaricati sono affidabili quanto il server da cui provengono; su macOS non ricevono ancora il flag di quarantena.
+- Con sudo la password attraversa la connessione SSH verso il server come se la si scrivesse nel terminale; è al sicuro quanto quel server.
 - Agent forwarding e X11 forwarding non sono implementati (e quindi non possono essere sfruttati).
 - I segreti digitati passano per la memoria della web view prima di arrivare al backend; vengono cancellati dal campo subito dopo l'invio.
