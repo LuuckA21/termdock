@@ -28,6 +28,8 @@ jobs:
       - run: npm ci
       - name: Version consistency
         run: node scripts/version.mjs check
+      - name: Updater configuration
+        run: node scripts/updater-manifest.mjs check-config
       - run: npm run typecheck
       - run: npm run build
       - run: npm audit --audit-level=high

@@ -11,7 +11,8 @@ for the threat model; keep both up to date when behaviour changes.
   owner's explicit OK before merging (squash only).
 - Before pushing run the same checks as CI:
   `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace`, `npm run typecheck`, `npm run version:check`.
+  `cargo test --workspace`, `npm run typecheck`, `npm run version:check`,
+  `node scripts/updater-manifest.mjs check-config`.
   SSH changes: also the end-to-end suite (`scripts/e2e-sshd.sh`, see README).
 - Languages: code, comments, identifiers, log/error messages, commit messages
   and PR descriptions are in **English only**. Documentation is kept in
