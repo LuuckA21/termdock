@@ -10,7 +10,7 @@ import { h } from "./dom";
 import { t } from "./i18n";
 import { fontStack, getPrefs, onPrefsChange, terminalScheme } from "./prefs";
 import type { Pane, PaneOptions, PaneState } from "./pane";
-import { SearchBar } from "./search";
+import { HIGHLIGHT_LIMIT, SearchBar } from "./search";
 import type { PromptAnswer, SessionNotice } from "./types";
 
 
@@ -41,7 +41,7 @@ export class TerminalPane implements Pane {
   readonly term: Terminal;
   state: PaneState = "connecting";
   private readonly fit = new FitAddon();
-  private readonly searchAddon = new SearchAddon({ highlightLimit: 1000 });
+  private readonly searchAddon = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT });
   private readonly searchBar: SearchBar;
   private sessionId: number | null = null;
   /** Aborted when the pane closes or reconnects: closes its pending dialogs. */
@@ -83,6 +83,9 @@ export class TerminalPane implements Pane {
       if (this.sessionId !== null) void api.resizeSession(this.sessionId, { cols, rows }).catch(() => {});
     });
     this.el.addEventListener("contextmenu", (e) => {
+      // The find bar keeps the normal text-field menu: nothing is pasted
+      // into the session from there.
+      if (e.target instanceof Node && this.searchBar.el.contains(e.target)) return;
       // Right click: copy the selection if any, otherwise paste (PuTTY style).
       e.preventDefault();
       if (this.term.hasSelection()) void this.copy();
@@ -90,6 +93,8 @@ export class TerminalPane implements Pane {
     });
 
     this.term.textarea?.addEventListener("focus", () => this.opts.onFocus(this));
+    // Focus in the find bar also makes this the active pane.
+    this.searchBar.el.addEventListener("focusin", () => this.opts.onFocus(this));
 
     this.resizeObserver = new ResizeObserver(() => this.refit());
     this.resizeObserver.observe(this.el);

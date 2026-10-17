@@ -40,7 +40,8 @@ const STORAGE_KEY = "termdock.layouts";
 export const MAX_LAYOUTS = 50;
 export const MAX_PANES = 16;
 export const MAX_NAME = 60;
-const MAX_DEPTH = 8;
+/** A tree of n panes is at most n - 1 deep. */
+const MAX_DEPTH = MAX_PANES - 1;
 const MAX_TEXT = 255;
 
 const text = (v: unknown, max: number): string | null =>
@@ -126,10 +127,16 @@ export function setStartup(id: string | null): void {
   write({ ...stored, startup: id });
 }
 
-/** Saves `root` as `name`, replacing a layout with the same name. */
-export function saveLayout(name: string, root: LayoutNode): Layout {
-  const existing = stored.layouts.find((l) => l.name === name);
-  const layout: Layout = { id: existing?.id ?? crypto.randomUUID(), name, root };
+/**
+ * Saves `root` as `name`, replacing a layout with the same name. Returns null
+ * (and changes nothing) if the layout would not pass validation.
+ */
+export function saveLayout(name: string, root: LayoutNode): Layout | null {
+  const checked = node(root, 0, { panes: 0 });
+  const cleanName = text(name, MAX_NAME);
+  if (!checked || !cleanName) return null;
+  const existing = stored.layouts.find((l) => l.name === cleanName);
+  const layout: Layout = { id: existing?.id ?? crypto.randomUUID(), name: cleanName, root: checked };
   const layouts = existing
     ? stored.layouts.map((l) => (l.id === existing.id ? layout : l))
     : [...stored.layouts, layout].slice(-MAX_LAYOUTS);

@@ -6,6 +6,9 @@ import type { Terminal } from "@xterm/xterm";
 import { h, icon } from "./dom";
 import { t } from "./i18n";
 
+/** Matches highlighted (and counted) at most; beyond it the count shows "+". */
+export const HIGHLIGHT_LIMIT = 1000;
+
 /** Highlights: decorations need #RRGGBB colours. */
 const DECORATIONS = {
   matchBackground: "#6b5a12",
@@ -65,10 +68,14 @@ export class SearchBar {
     this.el = h("div", { class: "search-bar", role: "search", hidden: true }, this.input, this.count, this.caseBtn, this.regexBtn, prev, next, close);
     this.input.addEventListener("input", () => this.find(true, true));
     this.input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
+      if (e.key === "Enter" && !e.isComposing) {
         e.preventDefault();
         this.find(!e.shiftKey, false);
-      } else if (e.key === "Escape") {
+      }
+    });
+    // Esc from anywhere in the bar (input or its buttons).
+    this.el.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !e.isComposing) {
         e.preventDefault();
         this.close();
       }
@@ -122,6 +129,9 @@ export class SearchBar {
       try {
         new RegExp(text);
       } catch {
+        // Drop the previous highlights: the addon would keep refreshing them.
+        this.addon.clearDecorations();
+        this.term.clearSelection();
         this.input.classList.add("invalid");
         this.count.textContent = t("searchBadRegex");
         return;
@@ -135,8 +145,9 @@ export class SearchBar {
 
   private showCount(index: number, count: number): void {
     if (!this.input.value) return;
+    const total = count >= HIGHLIGHT_LIMIT ? t("searchMany", { count: HIGHLIGHT_LIMIT }) : String(count);
     if (count === 0) this.count.textContent = t("searchNone");
-    else if (index < 0) this.count.textContent = t("searchMany", { count });
-    else this.count.textContent = `${index + 1}/${count}`;
+    else if (index < 0) this.count.textContent = total;
+    else this.count.textContent = `${index + 1}/${total}`;
   }
 }

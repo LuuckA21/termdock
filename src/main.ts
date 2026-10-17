@@ -234,8 +234,8 @@ export class App {
       await alertBox(t("layouts"), t("layoutTooMany", { count: MAX_PANES }));
       return;
     }
-    const name = await askLayoutName(t("layoutSave"), tab.title);
-    if (name) saveLayoutAs(name, root);
+    const name = await askLayoutName(t("layoutSave"), tab.title, null);
+    if (name && !saveLayoutAs(name, root)) await alertBox(t("layouts"), t("layoutInvalid"));
     this.focusActive();
   }
 
@@ -267,13 +267,17 @@ export class App {
       return c ? this.newPane(c.title, c.subtitle, c.target, c.color) : null;
     };
     const first = make(firstLeaf(layout.root));
-    if (!first) return;
+    if (!first) {
+      void alertBox(layout.name, t("layoutMissing", { names: missing.join(", ") }));
+      return;
+    }
     const tab = new Tab(first);
     const panes = [first];
     // `pane` fills the area of `node`: split it as the saved tree says.
     const place = (node: LayoutNode, pane: TerminalPane): void => {
       if (node.kind === "pane") return;
       const created = make(firstLeaf(node.b));
+      // Only without any local shell: keep what can be opened.
       if (!created) return place(node.a, pane);
       panes.push(created);
       tab.split(pane, node.dir, created, node.ratio);

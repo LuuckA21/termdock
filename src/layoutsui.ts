@@ -5,8 +5,11 @@ import { clear, h, icon } from "./dom";
 import { t } from "./i18n";
 import { deleteLayout, getLayouts, MAX_NAME, paneCount, renameLayout, setStartup, startupLayout } from "./layouts";
 
-/** Asks for a layout name (trimmed, 1–60 characters); null when cancelled. */
-export async function askLayoutName(title: string, initial: string): Promise<string | null> {
+/**
+ * Asks for a layout name (trimmed, 1–60 characters); null when cancelled.
+ * `current`: the layout being renamed (keeping its name needs no confirmation).
+ */
+export async function askLayoutName(title: string, initial: string, current: string | null): Promise<string | null> {
   const input = h("input", { class: "input", maxlength: MAX_NAME, spellcheck: "false", autocomplete: "off" });
   input.value = initial.slice(0, MAX_NAME);
   const name = await modal<string | null>({
@@ -20,7 +23,7 @@ export async function askLayoutName(title: string, initial: string): Promise<str
     initialFocus: input,
     onSubmit: () => input.value.trim() || undefined,
   });
-  if (name && name !== initial && getLayouts().some((l) => l.name === name)) {
+  if (name && name !== current && getLayouts().some((l) => l.name === name)) {
     return (await confirmBox(t("layoutReplace", { name }), t("save"))) ? name : null;
   }
   return name;
@@ -47,7 +50,7 @@ export function manageLayouts(open: (id: string) => void): Promise<void> {
       });
       const renameBtn = h("button", { type: "button", class: "icon-btn", title: t("rename"), "aria-label": t("rename") }, icon("edit"));
       renameBtn.addEventListener("click", async () => {
-        const name = await askLayoutName(t("rename"), layout.name);
+        const name = await askLayoutName(t("rename"), layout.name, layout.name);
         if (name && name !== layout.name) {
           const clash = getLayouts().find((l) => l.name === name);
           if (clash) deleteLayout(clash.id);
