@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 
 use crate::error::{Error, Result};
 use crate::hostkeys::HostKeyInfo;
+use crate::ssh::SshHandle;
 use crate::vault::Secret;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -51,15 +52,29 @@ pub(crate) enum Control {
 
 /// Cheap, cloneable handle used to drive a running session. All methods are
 /// non-blocking: requests are queued to the session's own task/thread.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SessionHandle {
     tx: mpsc::UnboundedSender<Control>,
+    /// The SSH connection behind the terminal, for extra channels (SFTP).
+    ssh: Option<SshHandle>,
+}
+
+impl std::fmt::Debug for SessionHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionHandle")
+            .field("ssh", &self.ssh.is_some())
+            .finish()
+    }
 }
 
 impl SessionHandle {
-    pub(crate) fn new() -> (Self, mpsc::UnboundedReceiver<Control>) {
+    pub(crate) fn new(ssh: Option<SshHandle>) -> (Self, mpsc::UnboundedReceiver<Control>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Self { tx }, rx)
+        (Self { tx, ssh }, rx)
+    }
+
+    pub(crate) fn ssh(&self) -> Option<&SshHandle> {
+        self.ssh.as_ref()
     }
 
     pub fn write(&self, data: Vec<u8>) -> Result<()> {

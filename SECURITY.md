@@ -48,7 +48,7 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 ### Desktop shell (Tauri 2)
 
 - Strict Content-Security-Policy: scripts only from the app bundle, no `eval`, no remote origins, no frames/objects/workers.
-- Every IPC command must be allowed explicitly in `src-tauri/capabilities/default.json` (generated per-command permissions). No file-system, shell, HTTP or opener plugins are included. The UI may use the clipboard plugin (read/write text); the updater plugin is driven by the backend only and none of its own commands is allowed.
+- Every IPC command must be allowed explicitly in `src-tauri/capabilities/default.json` (generated per-command permissions). No file-system, shell, HTTP or opener plugins are included. The UI may use the clipboard plugin (read/write text); the updater and dialog plugins are driven by the backend only and none of their own commands is allowed.
 - The UI builds DOM nodes with `textContent` only; profile colours are validated (`#rrggbb`) both in the backend and before use.
 - Text that is not session output but is shown in the terminal (server banner, exit signal, error and status messages) is stripped of control characters, so a server cannot inject escape sequences through it before the user has even authenticated.
 - Local shells can only be started from the detected list (by id) or from a saved profile.
@@ -71,6 +71,17 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - The backend reads only `~/.ssh/config`; the UI cannot choose another file.
 - `ProxyCommand`, `Match`, `Include`, unknown tokens and Unix-socket forwards are reported, never executed or guessed.
 - Imported profiles go through the same validation as manual ones.
+
+### File transfer (`sftp.rs`, `src-tauri/src/sftp.rs`, `src/files.ts`)
+
+- SFTP runs on a new channel of the terminal's own SSH connection: same verified host key, no new credentials, nothing stored.
+- The UI never names a local file. Downloads are saved where the user picks in a native save dialog opened by the backend; uploads accept only single-use tokens (valid 10 minutes) handed out after the user picked files in a native open dialog. The dialog plugin's own IPC commands are not allowed, so they cannot widen any file-system scope.
+- Remote file names are untrusted: they are shown with control and bidirectional-override characters replaced (no `evil‮gpj.exe` spoofing), never used as local paths, and the save dialog's default name is stripped of separators, reserved Windows names and invisible characters.
+- New names (folder, rename, upload) must be one path component: no `/`, NUL, control characters, `.` or `..`, at most 255 bytes.
+- Downloads are written to a temporary file next to the target (`0600` on Unix) and moved into place only when complete; a failed or cancelled transfer leaves nothing behind. On Windows the file gets the Mark of the Web (`Zone.Identifier`), so SmartScreen checks it before it runs.
+- Uploads go to a hidden temporary name and replace an existing file only after the user confirmed it and the upload completed.
+- Delete is never recursive (only files, links and empty folders) and its confirmation defaults to *Cancel*.
+- Listings are capped at 20,000 entries; the SFTP library bounds packet size (256 KiB) and times out requests.
 
 ### Updates (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
 
@@ -96,5 +107,6 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 ## Known limitations
 
 - Release builds are not code-signed until signing certificates are configured in the release workflow; verify downloads accordingly.
+- Downloaded files are only as trustworthy as the server they come from; on macOS they are not marked with the quarantine flag yet.
 - Agent forwarding and X11 forwarding are not implemented (and therefore cannot be abused).
 - Typed secrets transit the web view's memory before reaching the backend; they are cleared from the input immediately after submission.

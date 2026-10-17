@@ -48,7 +48,7 @@ Viene annunciato `kex-strict-c-v00@openssh.com`, che mitiga l'attacco Terrapin (
 ### Applicazione desktop (Tauri 2)
 
 - Content-Security-Policy restrittiva: script solo dal bundle dell'app, niente `eval`, nessuna origine remota, niente frame/object/worker.
-- Ogni comando IPC deve essere autorizzato esplicitamente in `src-tauri/capabilities/default.json` (permessi generati per comando). Non sono inclusi plugin per file system, shell, HTTP o apertura di URL. L'interfaccia può usare il plugin degli appunti (lettura/scrittura testo); il plugin di aggiornamento è usato solo dal backend e nessuno dei suoi comandi è autorizzato.
+- Ogni comando IPC deve essere autorizzato esplicitamente in `src-tauri/capabilities/default.json` (permessi generati per comando). Non sono inclusi plugin per file system, shell, HTTP o apertura di URL. L'interfaccia può usare il plugin degli appunti (lettura/scrittura testo); i plugin di aggiornamento e delle finestre di dialogo sono usati solo dal backend e nessuno dei loro comandi è autorizzato.
 - L'interfaccia costruisce i nodi DOM solo con `textContent`; i colori dei profili sono validati (`#rrggbb`) sia nel backend sia prima dell'uso.
 - Il testo mostrato nel terminale che non è output della sessione (banner del server, segnale di uscita, messaggi di errore e di stato) viene ripulito dai caratteri di controllo, così un server non può iniettare sequenze di escape attraverso di esso, nemmeno prima che l'utente si sia autenticato.
 - Le shell locali si possono avviare solo dall'elenco rilevato (per id) o da un profilo salvato.
@@ -71,6 +71,17 @@ Viene annunciato `kex-strict-c-v00@openssh.com`, che mitiga l'attacco Terrapin (
 - Il backend legge solo `~/.ssh/config`; l'interfaccia non può scegliere un altro file.
 - `ProxyCommand`, `Match`, `Include`, token sconosciuti e forwarding su socket Unix vengono segnalati, mai eseguiti o indovinati.
 - I profili importati passano per la stessa validazione di quelli creati a mano.
+
+### Trasferimento file (`sftp.rs`, `src-tauri/src/sftp.rs`, `src/files.ts`)
+
+- SFTP usa un nuovo canale della stessa connessione SSH del terminale: stessa host key verificata, nessuna nuova credenziale, niente salvato.
+- L'interfaccia non indica mai un file locale. I download sono salvati dove l'utente sceglie in una finestra di salvataggio nativa aperta dal backend; gli upload accettano solo token monouso (validi 10 minuti) rilasciati dopo che l'utente ha scelto i file in una finestra nativa. I comandi IPC del plugin delle finestre di dialogo non sono autorizzati, quindi non possono allargare alcun accesso al file system.
+- I nomi dei file remoti non sono fidati: sono mostrati con i caratteri di controllo e di inversione del testo sostituiti (niente inganni tipo `evil‮gpj.exe`), non diventano mai percorsi locali, e il nome proposto nella finestra di salvataggio è ripulito da separatori, nomi riservati di Windows e caratteri invisibili.
+- I nuovi nomi (cartella, rinomina, upload) devono essere un solo componente: niente `/`, NUL, caratteri di controllo, `.` o `..`, al massimo 255 byte.
+- I download sono scritti in un file temporaneo accanto alla destinazione (`0600` su Unix) e spostati al loro posto solo a trasferimento completato; un trasferimento fallito o annullato non lascia nulla. Su Windows il file riceve il Mark of the Web (`Zone.Identifier`), così SmartScreen lo controlla prima dell'esecuzione.
+- Gli upload vanno in un nome temporaneo nascosto e sostituiscono un file esistente solo dopo la conferma dell'utente e a upload completato.
+- L'eliminazione non è mai ricorsiva (solo file, link e cartelle vuote) e la conferma ha *Annulla* come pulsante predefinito.
+- Gli elenchi sono limitati a 20.000 voci; la libreria SFTP limita la dimensione dei pacchetti (256 KiB) e applica un timeout alle richieste.
 
 ### Aggiornamenti (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
 
@@ -96,5 +107,6 @@ Viene annunciato `kex-strict-c-v00@openssh.com`, che mitiga l'attacco Terrapin (
 ## Limiti noti
 
 - Le build di release non sono firmate finché non vengono configurati i certificati di firma nel workflow di release; verifica i download di conseguenza.
+- I file scaricati sono affidabili quanto il server da cui provengono; su macOS non ricevono ancora il flag di quarantena.
 - Agent forwarding e X11 forwarding non sono implementati (e quindi non possono essere sfruttati).
 - I segreti digitati passano per la memoria della web view prima di arrivare al backend; vengono cancellati dal campo subito dopo l'invio.

@@ -6,12 +6,14 @@ import { api, errorText } from "./api";
 import { alertBox } from "./dialogs";
 import { clear, h, icon } from "./dom";
 import { describe, FavoritesBar, setDotColor } from "./favorites";
+import { FilesPane } from "./files";
 import { onLanguageChange, t } from "./i18n";
 import { openManager, type ManagerOptions } from "./manager";
 import { showMenu } from "./menu";
 import { DEFAULTS, getPrefs, setPrefs } from "./prefs";
 import { openSettings } from "./settings";
 import { Tab, type Direction, type SplitDir } from "./tabs";
+import type { Pane } from "./pane";
 import { TerminalPane } from "./terminal";
 import { startUpdateChecks } from "./updates";
 import type { AppInfo, DetectedShell, OpenTarget, Profile, Uuid } from "./types";
@@ -102,13 +104,7 @@ export class App {
       target,
       vaultAvailable: this.info.vaultAvailable,
       onStateChange: () => this.renderTabs(),
-      // A pane that gets the focus (click, Alt+arrow) becomes the active one.
-      onFocus: (pane) => {
-        const tab = this.tabs.find((x) => x.has(pane));
-        if (!tab) return;
-        tab.setActive(pane, false);
-        this.renderTabs();
-      },
+      onFocus: (pane) => this.paneFocused(pane),
       isAppShortcut: (e) => this.shortcut(e) !== null,
     });
   }
@@ -123,6 +119,32 @@ export class App {
   }
 
   /** Opens the same connection or shell as the active pane next to it. */
+  /** Opens a file browser on the SSH connection of the active terminal. */
+  private openFiles(): void {
+    const tab = this.active;
+    const source = tab?.active;
+    if (!tab || !(source instanceof TerminalPane)) return;
+    const session = source.session;
+    if (source.opts.target.kind === "shell" || session === null) {
+      void alertBox(t("files"), t("filesNeedsSsh"));
+      return;
+    }
+    const { title, subtitle, target, color } = source.opts;
+    const files = new FilesPane({
+      title,
+      subtitle,
+      target,
+      color,
+      session,
+      onStateChange: () => this.renderTabs(),
+      onFocus: (pane) => this.paneFocused(pane),
+      isAppShortcut: (e) => this.shortcut(e) !== null,
+    });
+    tab.split(source, "right", files);
+    tab.setActive(files, true);
+    this.renderTabs();
+  }
+
   private split(dir: SplitDir): void {
     const tab = this.active;
     if (!tab) return;
@@ -132,6 +154,14 @@ export class App {
     tab.setActive(pane, true);
     this.renderTabs();
     void pane.connect();
+  }
+
+  /** A pane that gets the focus (click, Alt+arrow) becomes the active one. */
+  private paneFocused(pane: Pane): void {
+    const tab = this.tabs.find((x) => x.has(pane));
+    if (!tab) return;
+    tab.setActive(pane, false);
+    this.renderTabs();
   }
 
   private moveFocus(dir: Direction): void {
@@ -225,11 +255,19 @@ export class App {
       el.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         this.activate(tab);
+        const active = tab.active;
         showMenu(e.clientX, e.clientY, [
           { label: t("splitRight"), icon: icon("splitRight"), hint: "Ctrl+Shift+E", action: () => this.split("right") },
           { label: t("splitDown"), icon: icon("splitDown"), hint: "Ctrl+Shift+O", action: () => this.split("down") },
-          { label: t("copy"), action: () => void tab.active.copy() },
-          { label: t("paste"), action: () => void tab.active.paste() },
+          ...(active instanceof TerminalPane
+            ? [
+                ...(active.opts.target.kind !== "shell" && active.session !== null
+                  ? [{ label: t("openFiles"), icon: icon("folder"), hint: "Ctrl+Shift+S", action: () => this.openFiles() }]
+                  : []),
+                { label: t("copy"), action: () => void active.copy() },
+                { label: t("paste"), action: () => void active.paste() },
+              ]
+            : []),
           ...(count > 1 ? [{ label: t("closePane"), hint: "Ctrl+Shift+W", action: () => this.closePane() }] : []),
           { label: t("closeTab"), icon: icon("close"), action: () => this.closeTab(tab) },
         ]);
@@ -274,6 +312,8 @@ export class App {
           return once(() => this.split("right"));
         case "KeyO":
           return once(() => this.split("down"));
+        case "KeyS":
+          return once(() => this.openFiles());
       }
       if (/^Digit[1-9]$/.test(e.code)) {
         const p = this.favoriteProfiles()[Number(e.code.slice(5)) - 1];
@@ -296,7 +336,9 @@ export class App {
       const dir = ({ ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" } as const)[
         e.code as "ArrowLeft"
       ];
-      const inTerminal = e.target instanceof Node && this.terminals.contains(e.target);
+      // Not from text fields (the file browser's path): they keep word movement.
+      const inTerminal =
+        e.target instanceof Element && this.terminals.contains(e.target) && !e.target.closest("input");
       if (dir && inTerminal && this.active && this.active.count > 1) return () => this.moveFocus(dir);
     }
     return null;

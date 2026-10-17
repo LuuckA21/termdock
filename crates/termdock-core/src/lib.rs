@@ -6,6 +6,7 @@ pub mod hostkeys;
 pub mod local;
 pub mod profile;
 pub mod session;
+pub mod sftp;
 pub mod shells;
 pub mod ssh;
 pub mod sshconfig;

@@ -20,6 +20,7 @@ use termdock_core::{Error as CoreError, local};
 use uuid::Uuid;
 
 use crate::prompts::{PromptAnswer, SessionNotice, UiInteraction};
+use crate::sftp::SftpState;
 use crate::state::AppState;
 
 /// Errors are flattened to a message for the UI.
@@ -270,7 +271,8 @@ pub fn resize_session(state: State<'_, AppState>, id: u32, size: TermSize) -> Cm
 }
 
 #[tauri::command]
-pub fn close_session(state: State<'_, AppState>, id: u32) {
+pub fn close_session(state: State<'_, AppState>, sftp: State<'_, SftpState>, id: u32) {
+    sftp.forget_session(id);
     if let Some(h) = state.sessions.lock().unwrap().remove(&id) {
         h.close();
     }

@@ -7,6 +7,20 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-17
+
+### Aggiunto
+
+- File browser (SFTP): `Ctrl+Shift+S` (o il menu col tasto destro sulla scheda) apre i file del server accanto al suo terminale SSH, sulla stessa connessione senza un nuovo login. Navigazione nelle cartelle, download, upload (con richiesta prima di sostituire un file), nuove cartelle, rinomina ed eliminazione, con avanzamento e annullamento.
+
+### Modificato
+
+- Le conferme delle azioni distruttive (eliminare una connessione o un file remoto) hanno ora *Annulla* come pulsante predefinito.
+
+### Sicurezza
+
+- I file locali si scelgono solo in finestre native aperte dal backend; i nomi remoti sono mostrati senza caratteri invisibili o di inversione e non diventano mai percorsi locali; i trasferimenti scrivono in file temporanei e sostituiscono la destinazione solo a completamento; su Windows i download ricevono il Mark of the Web.
+
 ## [0.5.1] - 2026-10-17
 
 ### Corretto
@@ -88,7 +102,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/LuuckA21/termdock/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/LuuckA21/termdock/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/LuuckA21/termdock/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/LuuckA21/termdock/compare/v0.4.0...v0.4.1

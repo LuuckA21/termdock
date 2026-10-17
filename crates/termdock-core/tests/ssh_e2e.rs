@@ -7,6 +7,8 @@
 //! * `TERMDOCK_E2E_USER`     login user
 //! * `TERMDOCK_E2E_PASSWORD` its password
 //! * `TERMDOCK_E2E_KEY`      private key (passphrase `TERMDOCK_E2E_KEY_PASS`)
+//!
+//! The server must offer the `sftp` subsystem (the script enables it).
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -18,6 +20,7 @@ use termdock_core::profile::{Forward, Hop, SshAuth, SshTarget};
 use termdock_core::session::{
     BoxFuture, EventSink, Interaction, SecretAnswer, SecretPrompt, SessionEvent, SessionHandle, TermSize,
 };
+use termdock_core::sftp::{self, EntryKind, Sftp};
 use termdock_core::ssh::{self, SshConnect};
 use termdock_core::vault::{MemoryVault, SecretKind, Vault};
 use uuid::Uuid;
@@ -532,4 +535,123 @@ async fn stale_saved_password_is_forgotten() {
     assert!(vault.get(profile, SecretKind::Password).unwrap().is_none());
     assert!(ui.infos.lock().unwrap().iter().any(|i| i.contains("rejected")));
     run_and_exit(h, out, "stale").await;
+}
+
+/// SFTP on the terminal's own connection: browse, create, upload (with and
+/// without overwrite), download, cancel, rename, remove; names that would
+/// leave the directory are refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn sftp_on_terminal_connection() {
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let kh = Arc::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let vault = Arc::new(MemoryVault::default());
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Password,
+        &kh,
+        &vault,
+        None,
+        user(true, &[(&e.password, false)]),
+        out.sink.clone(),
+    )
+    .await
+    .unwrap();
+
+    let fs = Sftp::open(&h).await.unwrap();
+    let home = fs.canonicalize(".").await.unwrap();
+    assert!(home.starts_with('/'), "{home}");
+    let work = format!("td-sftp-{}", Uuid::new_v4().simple());
+    fs.mkdir(&home, &work).await.unwrap();
+    let listing = fs.list(&home).await.unwrap();
+    assert!(
+        listing
+            .entries
+            .iter()
+            .any(|x| x.name == work && x.kind == EntryKind::Dir)
+    );
+    let remote_dir = sftp::join(&home, &work);
+
+    // Upload 1 MiB + a bit, so several chunks are involved.
+    let data: Vec<u8> = (0..(1024 * 1024 + 4321)).map(|i| (i * 7 % 251) as u8).collect();
+    let local = dir.path().join("src.bin");
+    std::fs::write(&local, &data).unwrap();
+    let no_cancel = sftp::CancelFlag::default();
+    let mut seen = 0;
+    let n = fs
+        .upload(&local, &remote_dir, "data.bin", false, &no_cancel, |done, _| {
+            seen = done
+        })
+        .await
+        .unwrap();
+    assert_eq!(n, data.len() as u64);
+    assert_eq!(seen, data.len() as u64);
+    assert!(matches!(
+        fs.upload(&local, &remote_dir, "data.bin", false, &no_cancel, |_, _| {})
+            .await,
+        Err(Error::Exists(_))
+    ));
+    fs.upload(&local, &remote_dir, "data.bin", true, &no_cancel, |_, _| {})
+        .await
+        .unwrap();
+    let names: Vec<_> = fs
+        .list(&remote_dir)
+        .await
+        .unwrap()
+        .entries
+        .into_iter()
+        .map(|x| (x.name, x.size))
+        .collect();
+    assert_eq!(
+        names,
+        [("data.bin".to_owned(), Some(data.len() as u64))],
+        "no temporary files left"
+    );
+
+    // Download and compare.
+    let copy = dir.path().join("copy.bin");
+    fs.download(&sftp::join(&remote_dir, "data.bin"), &copy, &no_cancel, |_, _| {})
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&copy).unwrap(), data);
+
+    // A cancelled download leaves nothing behind.
+    let cancelled = sftp::CancelFlag::new(true.into());
+    let partial = dir.path().join("partial.bin");
+    assert!(matches!(
+        fs.download(&sftp::join(&remote_dir, "data.bin"), &partial, &cancelled, |_, _| {})
+            .await,
+        Err(Error::Cancelled)
+    ));
+    assert!(!partial.exists());
+    assert!(
+        std::fs::read_dir(dir.path())
+            .unwrap()
+            .all(|f| !f.unwrap().file_name().to_string_lossy().ends_with(".part"))
+    );
+
+    // Names that would escape the directory are refused before reaching the server.
+    for bad in ["../evil", "a/b", "..", ""] {
+        assert!(
+            matches!(fs.mkdir(&remote_dir, bad).await, Err(Error::InvalidName(_))),
+            "{bad}"
+        );
+        assert!(matches!(
+            fs.rename(&remote_dir, "data.bin", bad).await,
+            Err(Error::InvalidName(_))
+        ));
+    }
+    fs.rename(&remote_dir, "data.bin", "renamed.bin").await.unwrap();
+    // Directories are only removed when empty.
+    assert!(fs.remove(&home, &work).await.is_err());
+    fs.remove(&remote_dir, "renamed.bin").await.unwrap();
+    fs.remove(&home, &work).await.unwrap();
+    assert!(!fs.list(&home).await.unwrap().entries.iter().any(|x| x.name == work));
+
+    // The terminal still works on the same connection.
+    run_and_exit(h, out, "sftp").await;
 }
