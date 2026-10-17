@@ -74,14 +74,17 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 
 ### File transfer (`sftp.rs`, `src-tauri/src/sftp.rs`, `src/files.ts`)
 
-- SFTP runs on a new channel of the terminal's own SSH connection: same verified host key, no new credentials, nothing stored.
-- The UI never names a local file. Downloads are saved where the user picks in a native save dialog opened by the backend; uploads accept only single-use tokens (valid 10 minutes) handed out after the user picked files in a native open dialog. The dialog plugin's own IPC commands are not allowed, so they cannot widen any file-system scope.
-- Remote file names are untrusted: they are shown with control and bidirectional-override characters replaced (no `evil‮gpj.exe` spoofing), never used as local paths, and the save dialog's default name is stripped of separators, reserved Windows names and invisible characters.
-- New names (folder, rename, upload) must be one path component: no `/`, NUL, control characters, `.` or `..`, at most 255 bytes.
-- Downloads are written to a temporary file next to the target (`0600` on Unix) and moved into place only when complete; a failed or cancelled transfer leaves nothing behind. On Windows the file gets the Mark of the Web (`Zone.Identifier`), so SmartScreen checks it before it runs.
-- Uploads go to a hidden temporary name and replace an existing file only after the user confirmed it and the upload completed.
+The SSH server is treated as untrusted: it controls names, listings, sizes, contents and error messages.
+
+- SFTP runs on new channels of the terminal's own SSH connection: same verified host key, no new credentials, nothing stored. File browsers end with their terminal session.
+- The UI never names a local file. Downloads are saved where the user picks in a native save dialog opened by the backend; uploads accept only single-use tokens (valid 10 minutes) for files the user picked in a native open dialog, opened at that moment so they cannot be swapped afterwards. The dialogs carry the system's own titles (the UI cannot word them), and the dialog plugin's own IPC commands are not allowed, so they cannot widen any file-system scope.
+- Remote names are shown with control, invisible-format and bidirectional characters replaced (no `evil<U+202E>gpj.exe` spoofing) and never become local paths; the save dialog's default name is stripped of separators, reserved Windows names and invisible characters. Names the server sent in another encoding are listed but not touched.
+- New names (folder, rename, upload) must be one path component: no `/`, NUL, control or invisible characters, `.` or `..`, at most 255 bytes.
+- Listings are read in steps and stop at 20,000 entries or after 30 seconds, whatever the server sends; the SFTP library also bounds packets (256 KiB) and times out each request.
+- Downloads accept only regular files (checked on the opened file, so links to devices or FIFOs are refused) and read at most the size reported when the file was opened. They are written to a temporary file next to the destination and moved into place only when complete; a failed or cancelled transfer leaves nothing behind. Saved files are private (`0600`) on Unix; on Windows they get the Mark of the Web (`Zone.Identifier`), so SmartScreen checks them before they run.
+- Uploads go to a random hidden name created exclusively with mode `0600` (a file or link planted by someone else cannot redirect the write). Only when complete, and for an existing name only after the user confirmed, the file takes the target's place: atomically with `posix-rename@openssh.com`, otherwise by setting the old file aside and putting it back on failure. A replaced file keeps its permissions; a new one gets the local file's.
+- Cancel works at once; closing a browser or its tab cancels its transfers and lets them clean up before the connection closes.
 - Delete is never recursive (only files, links and empty folders) and its confirmation defaults to *Cancel*.
-- Listings are capped at 20,000 entries; the SFTP library bounds packet size (256 KiB) and times out requests.
 
 ### Updates (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
 

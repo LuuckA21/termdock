@@ -19,7 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Security
 
-- Local files are only chosen in native dialogs opened by the backend; remote names are shown without invisible or reordering characters and never become local paths; transfers write to temporary files and replace the target only when complete; downloads on Windows carry the Mark of the Web.
+- File transfers treat the server as untrusted: local files are only chosen in native dialogs opened by the backend; remote names are shown without invisible or reordering characters and never become local paths; listings are bounded; only regular files are downloaded; uploads use exclusive temporary files and replace the target atomically, keeping its permissions; downloads on Windows carry the Mark of the Web.
 
 ## [0.5.1] - 2026-10-17
 

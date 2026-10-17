@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sftp-forget-picks"
+description = "Enables the sftp_forget_picks command without any pre-configured scope."
+commands.allow = ["sftp_forget_picks"]
+
+[[permission]]
+identifier = "deny-sftp-forget-picks"
+description = "Denies the sftp_forget_picks command without any pre-configured scope."
+commands.deny = ["sftp_forget_picks"]

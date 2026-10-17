@@ -27,6 +27,7 @@ const COMMANDS: &[&str] = &[
     "sftp_download",
     "sftp_pick_upload",
     "sftp_upload",
+    "sftp_forget_picks",
 ];
 
 fn main() {

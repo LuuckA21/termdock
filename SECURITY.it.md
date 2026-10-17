@@ -74,14 +74,17 @@ Viene annunciato `kex-strict-c-v00@openssh.com`, che mitiga l'attacco Terrapin (
 
 ### Trasferimento file (`sftp.rs`, `src-tauri/src/sftp.rs`, `src/files.ts`)
 
-- SFTP usa un nuovo canale della stessa connessione SSH del terminale: stessa host key verificata, nessuna nuova credenziale, niente salvato.
-- L'interfaccia non indica mai un file locale. I download sono salvati dove l'utente sceglie in una finestra di salvataggio nativa aperta dal backend; gli upload accettano solo token monouso (validi 10 minuti) rilasciati dopo che l'utente ha scelto i file in una finestra nativa. I comandi IPC del plugin delle finestre di dialogo non sono autorizzati, quindi non possono allargare alcun accesso al file system.
-- I nomi dei file remoti non sono fidati: sono mostrati con i caratteri di controllo e di inversione del testo sostituiti (niente inganni tipo `evil‮gpj.exe`), non diventano mai percorsi locali, e il nome proposto nella finestra di salvataggio è ripulito da separatori, nomi riservati di Windows e caratteri invisibili.
-- I nuovi nomi (cartella, rinomina, upload) devono essere un solo componente: niente `/`, NUL, caratteri di controllo, `.` o `..`, al massimo 255 byte.
-- I download sono scritti in un file temporaneo accanto alla destinazione (`0600` su Unix) e spostati al loro posto solo a trasferimento completato; un trasferimento fallito o annullato non lascia nulla. Su Windows il file riceve il Mark of the Web (`Zone.Identifier`), così SmartScreen lo controlla prima dell'esecuzione.
-- Gli upload vanno in un nome temporaneo nascosto e sostituiscono un file esistente solo dopo la conferma dell'utente e a upload completato.
+Il server SSH non è considerato fidato: controlla nomi, elenchi, dimensioni, contenuti e messaggi di errore.
+
+- SFTP usa nuovi canali della stessa connessione SSH del terminale: stessa host key verificata, nessuna nuova credenziale, niente salvato. I file browser terminano con la loro sessione di terminale.
+- L'interfaccia non indica mai un file locale. I download sono salvati dove l'utente sceglie in una finestra di salvataggio nativa aperta dal backend; gli upload accettano solo token monouso (validi 10 minuti) per file scelti dall'utente in una finestra nativa, aperti in quel momento così da non poter essere sostituiti dopo. Le finestre hanno i titoli del sistema (l'interfaccia non può formularli) e i comandi IPC del plugin delle finestre di dialogo non sono autorizzati, quindi non possono allargare alcun accesso al file system.
+- I nomi remoti sono mostrati con i caratteri di controllo, invisibili e di inversione del testo sostituiti (niente inganni tipo `evil<U+202E>gpj.exe`) e non diventano mai percorsi locali; il nome proposto nella finestra di salvataggio è ripulito da separatori, nomi riservati di Windows e caratteri invisibili. I nomi che il server invia in un'altra codifica sono elencati ma non toccati.
+- I nuovi nomi (cartella, rinomina, upload) devono essere un solo componente: niente `/`, NUL, caratteri di controllo o invisibili, `.` o `..`, al massimo 255 byte.
+- Gli elenchi sono letti a blocchi e si fermano a 20.000 voci o dopo 30 secondi, qualunque cosa invii il server; la libreria SFTP limita anche i pacchetti (256 KiB) e applica un timeout a ogni richiesta.
+- I download accettano solo file regolari (verificato sul file aperto, quindi link a dispositivi o FIFO sono rifiutati) e leggono al massimo la dimensione indicata all'apertura. Sono scritti in un file temporaneo accanto alla destinazione e spostati al loro posto solo a trasferimento completato; un trasferimento fallito o annullato non lascia nulla. I file salvati sono privati (`0600`) su Unix; su Windows ricevono il Mark of the Web (`Zone.Identifier`), così SmartScreen li controlla prima dell'esecuzione.
+- Gli upload vanno in un nome nascosto casuale creato in esclusiva con permessi `0600` (un file o un link piazzato da altri non può deviare la scrittura). Solo a trasferimento completato, e per un nome esistente solo dopo la conferma dell'utente, il file prende il posto della destinazione: in modo atomico con `posix-rename@openssh.com`, altrimenti mettendo da parte il vecchio file e ripristinandolo in caso di errore. Un file sostituito mantiene i suoi permessi; uno nuovo prende quelli del file locale.
+- L'annullamento è immediato; chiudere un file browser o la sua scheda annulla i trasferimenti e li lascia ripulire prima che la connessione si chiuda.
 - L'eliminazione non è mai ricorsiva (solo file, link e cartelle vuote) e la conferma ha *Annulla* come pulsante predefinito.
-- Gli elenchi sono limitati a 20.000 voci; la libreria SFTP limita la dimensione dei pacchetti (256 KiB) e applica un timeout alle richieste.
 
 ### Aggiornamenti (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
 

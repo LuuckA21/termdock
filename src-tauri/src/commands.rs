@@ -173,6 +173,7 @@ pub enum OpenTarget {
 #[tauri::command]
 pub async fn open_session(
     state: State<'_, AppState>,
+    sftp: State<'_, SftpState>,
     target: OpenTarget,
     size: TermSize,
     on_data: Channel<InvokeResponseBody>,
@@ -181,6 +182,7 @@ pub async fn open_session(
     let id = state.next_session.fetch_add(1, Ordering::Relaxed);
 
     let sessions = state.sessions.clone();
+    let browsers = sftp.inner().clone();
     let exit_notices = on_notice.clone();
     let sink: EventSink = Arc::new(move |event| match event {
         SessionEvent::Data(bytes) => {
@@ -188,6 +190,7 @@ pub async fn open_session(
         }
         SessionEvent::Exit { code, message } => {
             sessions.lock().unwrap().remove(&id);
+            browsers.session_ended(id);
             let _ = exit_notices.send(SessionNotice::Exit { code, message });
         }
     });
@@ -271,11 +274,13 @@ pub fn resize_session(state: State<'_, AppState>, id: u32, size: TermSize) -> Cm
 }
 
 #[tauri::command]
-pub fn close_session(state: State<'_, AppState>, sftp: State<'_, SftpState>, id: u32) {
-    sftp.forget_session(id);
+pub async fn close_session(state: State<'_, AppState>, sftp: State<'_, SftpState>, id: u32) -> CmdResult<()> {
+    // File transfers on this connection are cancelled and cleaned up first.
+    sftp.close_session(id).await;
     if let Some(h) = state.sessions.lock().unwrap().remove(&id) {
         h.close();
     }
+    Ok(())
 }
 
 #[tauri::command]

@@ -1,41 +1,55 @@
-//! SFTP over an open SSH terminal session: the `sftp` subsystem runs on a new
-//! channel of the same, already authenticated connection.
+//! SFTP over an open SSH terminal session: the `sftp` subsystem runs on new
+//! channels of the same, already authenticated connection.
 //!
-//! Remote names come from the server and are untrusted: they never become
-//! local paths here. Downloads go to a path the user picked in a native save
-//! dialog (the caller's job), written to a temporary file next to it and moved
-//! into place only when complete. Uploads go to a hidden temporary name and
-//! replace the target only once fully written.
+//! The server is not trusted. Its names never become local paths here; a
+//! listing is read in bounded steps with a deadline; downloads accept only
+//! regular files, read at most the size reported when opened, go to a
+//! temporary file next to the destination the user picked in a native dialog
+//! (the caller's job) and are moved into place only when complete. Uploads go
+//! to a randomly named temporary file created exclusively with mode 0600 and
+//! replace the target only once complete, keeping its permissions.
 
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
-use russh_sftp::client::SftpSession;
 use russh_sftp::client::error::Error as SftpError;
-use russh_sftp::protocol::{FileType, OpenFlags};
+use russh_sftp::client::{RawSftpSession, SftpSession};
+use russh_sftp::protocol::{FileAttributes, FileType, OpenFlags, Packet, StatusCode};
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+pub use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, Result};
 use crate::session::SessionHandle;
 
-/// Directory listings are cut at this many entries (the UI says so).
+/// Directory listings stop after this many entries (the UI says so).
 pub const MAX_ENTRIES: usize = 20_000;
 /// Longest file name accepted for new names (most file systems allow 255 bytes).
 const MAX_NAME_LEN: usize = 255;
 const CHUNK: usize = 256 * 1024;
 /// Server error messages are shown to the user: keep them short.
 const MAX_MESSAGE_LEN: usize = 300;
+const OPEN_TIMEOUT: Duration = Duration::from_secs(20);
+/// A whole listing must arrive within this time, however the server paces it.
+const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+const POSIX_RENAME: &str = "posix-rename@openssh.com";
+
+fn short(text: String) -> String {
+    text.chars().take(MAX_MESSAGE_LEN).collect()
+}
 
 impl From<SftpError> for Error {
     fn from(e: SftpError) -> Self {
-        let text = match e {
-            SftpError::Status(s) if !s.error_message.trim().is_empty() => s.error_message,
-            other => other.to_string(),
-        };
-        Error::Sftp(text.chars().take(MAX_MESSAGE_LEN).collect())
+        match e {
+            SftpError::Status(s) if !s.error_message.trim().is_empty() => Error::Sftp(short(s.error_message)),
+            other => Error::Sftp(short(other.to_string())),
+        }
     }
+}
+
+/// I/O errors of remote files carry text from the server.
+fn remote_io(e: std::io::Error) -> Error {
+    Error::Sftp(short(e.to_string()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -68,13 +82,20 @@ pub struct Listing {
     pub truncated: bool,
 }
 
-/// Set to stop a running transfer; the partial file is removed.
-pub type CancelFlag = Arc<AtomicBool>;
+/// Invisible characters that change how a name reads (Unicode "format"
+/// characters: bidi overrides, zero-width marks, BOM, tags…).
+pub fn is_format_char(c: char) -> bool {
+    matches!(c,
+        '\u{00ad}' | '\u{0600}'..='\u{0605}' | '\u{061c}' | '\u{06dd}' | '\u{070f}' | '\u{180e}'
+        | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{2064}'
+        | '\u{2066}'..='\u{206f}' | '\u{feff}' | '\u{fff9}'..='\u{fffb}'
+        | '\u{e0001}' | '\u{e0020}'..='\u{e007f}')
+}
 
-/// One path component: not empty, not `.`/`..`, no `/` or NUL. Applied to
-/// names coming back from a listing before they are joined to a directory.
+/// One path component: not empty, not `.`/`..`, no `/` or NUL, and no U+FFFD
+/// (a name the server sent in another encoding cannot be named back safely).
 fn check_component(name: &str) -> Result<()> {
-    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0', '\u{fffd}']) {
         Err(Error::InvalidName(name.chars().take(64).collect()))
     } else {
         Ok(())
@@ -82,22 +103,37 @@ fn check_component(name: &str) -> Result<()> {
 }
 
 /// A new name typed by the user (new folder, rename, upload target): a single
-/// component, at most 255 bytes, without control characters.
+/// component, at most 255 bytes, without control or invisible characters.
 pub fn validate_name(name: &str) -> Result<()> {
     check_component(name)?;
-    if name.len() > MAX_NAME_LEN || name.chars().any(char::is_control) {
+    if name.len() > MAX_NAME_LEN || name.chars().any(|c| c.is_control() || is_format_char(c)) {
         return Err(Error::InvalidName(name.chars().take(64).collect()));
     }
     Ok(())
 }
 
-/// Joins a remote directory and a validated name (SFTP paths are POSIX).
+/// Joins a remote directory and a checked name (SFTP paths are POSIX).
 pub fn join(dir: &str, name: &str) -> String {
     if dir.ends_with('/') {
         format!("{dir}{name}")
     } else {
         format!("{dir}/{name}")
     }
+}
+
+/// `name` cut to at most `max` bytes on a character boundary.
+fn truncate_bytes(name: &str, max: usize) -> &str {
+    let mut end = name.len().min(max);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    &name[..end]
+}
+
+/// Hidden, unpredictable sibling name used while uploading or replacing.
+fn scratch_name(name: &str, tag: &str) -> String {
+    let random = uuid::Uuid::new_v4().simple().to_string();
+    format!(".{}.{}.{tag}", truncate_bytes(name, 200), &random[..12])
 }
 
 fn kind_of(t: FileType) -> EntryKind {
@@ -109,18 +145,52 @@ fn kind_of(t: FileType) -> EntryKind {
     }
 }
 
+fn ssh_string(out: &mut Vec<u8>, s: &str) {
+    out.extend_from_slice(&(s.len() as u32).to_be_bytes());
+    out.extend_from_slice(s.as_bytes());
+}
+
+/// Runs `fut` unless `cancel` fires first.
+async fn cancellable<T>(cancel: &CancellationToken, fut: impl Future<Output = Result<T>>) -> Result<T> {
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(Error::Cancelled),
+        r = fut => r,
+    }
+}
+
 pub struct Sftp {
+    /// File transfers (pipelined reads and writes).
     inner: SftpSession,
+    /// Second channel for what `SftpSession` does not expose: bounded
+    /// directory reads and the atomic `posix-rename` extension.
+    raw: RawSftpSession,
+    posix_rename: bool,
 }
 
 impl Sftp {
     /// Starts the `sftp` subsystem on the session's SSH connection.
     pub async fn open(session: &SessionHandle) -> Result<Self> {
         let handle = session.ssh().ok_or(Error::NotSsh)?;
-        let channel = handle.channel_open_session().await?;
-        channel.request_subsystem(true, "sftp").await?;
-        let inner = SftpSession::new(channel.into_stream()).await?;
-        Ok(Self { inner })
+        let opened = async {
+            let files = handle.channel_open_session().await?;
+            files.request_subsystem(true, "sftp").await?;
+            let inner = SftpSession::new(files.into_stream()).await?;
+
+            let control = handle.channel_open_session().await?;
+            control.request_subsystem(true, "sftp").await?;
+            let raw = RawSftpSession::new(control.into_stream());
+            let version = raw.init().await?;
+            let posix_rename = version.extensions.get(POSIX_RENAME).is_some_and(|v| v == "1");
+            Ok::<_, Error>(Self {
+                inner,
+                raw,
+                posix_rename,
+            })
+        };
+        tokio::time::timeout(OPEN_TIMEOUT, opened)
+            .await
+            .map_err(|_| Error::Timeout)?
     }
 
     /// The canonical absolute form of `path` (`"."` is the login directory).
@@ -129,28 +199,39 @@ impl Sftp {
     }
 
     /// Lists a directory: folders first, then by name; `.` and `..` omitted.
+    /// Reading stops at [`MAX_ENTRIES`] or after [`LIST_TIMEOUT`].
     pub async fn list(&self, path: &str) -> Result<Listing> {
         let path = self.canonicalize(path).await?;
-        let mut entries = Vec::new();
-        let mut truncated = false;
-        for e in self.inner.read_dir(path.as_str()).await? {
-            let name = e.file_name();
-            if name == "." || name == ".." {
-                continue;
+        let handle = self.raw.opendir(path.as_str()).await?.handle;
+        let read = async {
+            let mut entries = Vec::new();
+            loop {
+                let batch = match self.raw.readdir(handle.as_str()).await {
+                    Ok(batch) => batch,
+                    Err(SftpError::Status(s)) if s.status_code == StatusCode::Eof => return Ok((entries, false)),
+                    Err(e) => return Err(Error::from(e)),
+                };
+                for f in batch.files {
+                    if f.filename == "." || f.filename == ".." {
+                        continue;
+                    }
+                    if entries.len() == MAX_ENTRIES {
+                        return Ok((entries, true));
+                    }
+                    entries.push(Entry {
+                        kind: kind_of(f.attrs.file_type()),
+                        size: f.attrs.size,
+                        modified: f.attrs.mtime,
+                        mode: f.attrs.permissions.map(|p| p & 0o7777),
+                        name: f.filename,
+                    });
+                }
             }
-            if entries.len() == MAX_ENTRIES {
-                truncated = true;
-                break;
-            }
-            let meta = e.metadata();
-            entries.push(Entry {
-                name,
-                kind: kind_of(meta.file_type()),
-                size: meta.size,
-                modified: meta.mtime,
-                mode: meta.permissions.map(|p| p & 0o7777),
-            });
-        }
+        };
+        let result = tokio::time::timeout(LIST_TIMEOUT, read).await;
+        let _ = self.raw.close(handle).await;
+        let (mut entries, truncated) =
+            result.map_err(|_| Error::Sftp("the server took too long to list the folder".into()))??;
         entries.sort_by(|a, b| {
             (a.kind != EntryKind::Dir)
                 .cmp(&(b.kind != EntryKind::Dir))
@@ -168,6 +249,7 @@ impl Sftp {
         Ok(self.inner.create_dir(join(dir, name)).await?)
     }
 
+    /// Renames within `dir`; never replaces an existing name (SFTP v3 rename).
     pub async fn rename(&self, dir: &str, from: &str, to: &str) -> Result<()> {
         check_component(from)?;
         validate_name(to)?;
@@ -186,37 +268,48 @@ impl Sftp {
         }
     }
 
-    pub async fn exists(&self, dir: &str, name: &str) -> Result<bool> {
-        Ok(self.inner.try_exists(join(dir, name)).await?)
-    }
-
-    /// Downloads `remote` to `local`. `progress(done, total)` is called as
-    /// data arrives. Returns the number of bytes written.
+    /// Downloads the regular file `dir/name` to `local` (a path the user
+    /// picked). Reads at most the size the server reported when the file was
+    /// opened. `progress(done, total)` is called as data arrives.
     pub async fn download(
         &self,
-        remote: &str,
+        dir: &str,
+        name: &str,
         local: &Path,
-        cancel: &CancelFlag,
+        cancel: &CancellationToken,
         mut progress: impl FnMut(u64, Option<u64>),
     ) -> Result<u64> {
-        let mut src = self.inner.open(remote).await?;
-        let total = src.metadata().await.ok().and_then(|m| m.size);
+        check_component(name)?;
+        let remote = join(dir, name);
+        let (mut src, total) = cancellable(cancel, async {
+            let src = self.inner.open(remote).await?;
+            // fstat of what was opened: no devices, FIFOs or other surprises.
+            let meta = src.metadata().await?;
+            if meta.file_type() != FileType::File {
+                return Err(Error::NotRegular(name.chars().take(64).collect()));
+            }
+            Ok((src, meta.size))
+        })
+        .await?;
+
         let dir = local
             .parent()
             .ok_or_else(|| Error::InvalidName(local.display().to_string()))?;
-        // Created 0600 on Unix; removed automatically unless persisted.
+        // Random name, created exclusively, 0600 on Unix; removed unless persisted.
         let tmp = tempfile::Builder::new()
             .prefix(".termdock-")
             .suffix(".part")
             .tempfile_in(dir)?;
-        let mut out = tokio::fs::File::from_std(tmp.reopen()?);
+        let mut out = tokio::fs::File::from_std(tmp.as_file().try_clone()?);
         let mut buf = vec![0u8; CHUNK];
         let mut done = 0u64;
         loop {
-            if cancel.load(Ordering::Relaxed) {
-                return Err(Error::Cancelled);
-            }
-            let n = src.read(&mut buf).await?;
+            let want = match total {
+                Some(t) if done >= t => break,
+                Some(t) => CHUNK.min((t - done) as usize),
+                None => CHUNK,
+            };
+            let n = cancellable(cancel, async { src.read(&mut buf[..want]).await.map_err(remote_io) }).await?;
             if n == 0 {
                 break;
             }
@@ -233,54 +326,71 @@ impl Sftp {
         Ok(done)
     }
 
-    /// Uploads `local` as `dir/name`. An existing file of that name is only
-    /// replaced when `overwrite` is set, and only after the upload completed.
+    /// Uploads `local` (already open, a regular file the user picked) as
+    /// `dir/name`. An existing file is only replaced when `overwrite` is set,
+    /// after the upload completed, keeping that file's permissions; a new
+    /// file gets `local_mode` (or 0644).
+    #[allow(clippy::too_many_arguments)]
     pub async fn upload(
         &self,
-        local: &Path,
+        local: std::fs::File,
+        local_mode: Option<u32>,
         dir: &str,
         name: &str,
         overwrite: bool,
-        cancel: &CancelFlag,
+        cancel: &CancellationToken,
         mut progress: impl FnMut(u64, Option<u64>),
     ) -> Result<u64> {
         validate_name(name)?;
         let target = join(dir, name);
-        if !overwrite && self.inner.try_exists(target.as_str()).await? {
+        let existing = match self.inner.symlink_metadata(target.as_str()).await {
+            Ok(meta) => Some(meta),
+            Err(SftpError::Status(s)) if s.status_code == StatusCode::NoSuchFile => None,
+            Err(e) => return Err(e.into()),
+        };
+        if existing.is_some() && !overwrite {
             return Err(Error::Exists(name.to_owned()));
         }
-        let mut src = tokio::fs::File::open(local).await?;
-        let meta = src.metadata().await?;
-        if !meta.is_file() {
-            return Err(Error::InvalidName(local.display().to_string()));
+        if existing.as_ref().is_some_and(|m| m.file_type() == FileType::Dir) {
+            return Err(Error::Exists(name.to_owned()));
         }
-        let total = Some(meta.len());
+        let mut src = tokio::fs::File::from_std(local);
+        let total = Some(src.metadata().await?.len());
 
-        let tmp_name = format!(".{}.termdock-upload", name.chars().take(200).collect::<String>());
-        let tmp = join(dir, &tmp_name);
-        let flags = OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE;
-        let mut dst = self.inner.open_with_flags(tmp.as_str(), flags).await?;
+        // Exclusive create with a random name: a file or link planted at a
+        // predictable name cannot redirect the write.
+        let tmp = join(dir, &scratch_name(name, "upload"));
+        let private = FileAttributes {
+            permissions: Some(0o600),
+            ..FileAttributes::default()
+        };
+        let mut dst = self
+            .inner
+            .open_with_flags_and_attributes(
+                tmp.as_str(),
+                OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
+                private,
+            )
+            .await?;
 
-        let copied = async {
+        let copied = cancellable(cancel, async {
             let mut buf = vec![0u8; CHUNK];
             let mut done = 0u64;
             loop {
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(Error::Cancelled);
-                }
                 let n = src.read(&mut buf).await?;
                 if n == 0 {
                     break;
                 }
-                dst.write_all(&buf[..n]).await?;
+                dst.write_all(&buf[..n]).await.map_err(remote_io)?;
                 done += n as u64;
                 progress(done, total);
             }
-            dst.shutdown().await?;
+            // fsync@openssh.com when the server has it.
+            let _ = dst.sync_all().await;
+            dst.shutdown().await.map_err(remote_io)?;
             Ok(done)
-        }
+        })
         .await;
-
         let done = match copied {
             Ok(done) => done,
             Err(e) => {
@@ -288,23 +398,71 @@ impl Sftp {
                 return Err(e);
             }
         };
-        // SFTP v3 rename does not replace: remove the old file first.
-        if overwrite
-            && self.inner.try_exists(target.as_str()).await?
-            && let Err(e) = self.inner.remove_file(target.as_str()).await
-        {
+
+        // Keep the replaced file's permissions (for a link, those of its target).
+        let existing_mode = match &existing {
+            Some(m) if m.file_type() == FileType::Symlink => self
+                .inner
+                .metadata(target.as_str())
+                .await
+                .ok()
+                .and_then(|t| t.permissions),
+            Some(m) => m.permissions,
+            None => None,
+        };
+        let mode = existing_mode.or(local_mode).unwrap_or(0o644) & 0o7777;
+        let attrs = FileAttributes {
+            permissions: Some(mode),
+            ..FileAttributes::default()
+        };
+        let placed = async {
+            self.inner.set_metadata(tmp.as_str(), attrs).await?;
+            self.replace(&tmp, &target, existing.is_some()).await
+        };
+        if let Err(e) = placed.await {
             let _ = self.inner.remove_file(tmp).await;
-            return Err(e.into());
-        }
-        if let Err(e) = self.inner.rename(tmp.as_str(), target).await {
-            let _ = self.inner.remove_file(tmp).await;
-            return Err(e.into());
+            return Err(e);
         }
         Ok(done)
     }
 
+    /// Moves `tmp` onto `target`. With `posix-rename` the swap is atomic;
+    /// otherwise the old file is set aside first and put back on failure, so
+    /// it is never lost.
+    async fn replace(&self, tmp: &str, target: &str, exists: bool) -> Result<()> {
+        if !exists {
+            // Plain SFTP rename fails if the name appeared meanwhile: nothing
+            // the user did not agree to is replaced.
+            return Ok(self.inner.rename(tmp, target).await?);
+        }
+        if self.posix_rename {
+            let mut data = Vec::new();
+            ssh_string(&mut data, tmp);
+            ssh_string(&mut data, target);
+            return match self.raw.extended(POSIX_RENAME, data).await? {
+                Packet::Status(s) if s.status_code == StatusCode::Ok => Ok(()),
+                Packet::Status(s) => Err(SftpError::Status(s).into()),
+                _ => Err(Error::Sftp("unexpected reply to posix-rename".into())),
+            };
+        }
+        let (dir, name) = target.rsplit_once('/').unwrap_or(("", target));
+        let backup = join(if dir.is_empty() { "/" } else { dir }, &scratch_name(name, "old"));
+        self.inner.rename(target, backup.as_str()).await?;
+        match self.inner.rename(tmp, target).await {
+            Ok(()) => {
+                let _ = self.inner.remove_file(backup).await;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.inner.rename(backup, target).await;
+                Err(e.into())
+            }
+        }
+    }
+
     pub async fn close(&self) {
         let _ = self.inner.close().await;
+        let _ = self.raw.close_session();
     }
 }
 
@@ -330,7 +488,19 @@ mod tests {
         for ok in ["a", "file.txt", ".hidden", "with space", "ünïcode", "..dots"] {
             assert!(validate_name(ok).is_ok(), "{ok}");
         }
-        for bad in ["", ".", "..", "a/b", "/abs", "nul\0", "line\nbreak", &"x".repeat(256)] {
+        for bad in [
+            "",
+            ".",
+            "..",
+            "a/b",
+            "/abs",
+            "nul\0",
+            "line\nbreak",
+            "evil\u{202e}gpj.exe",
+            "zero\u{200b}width",
+            "bad\u{fffd}",
+            &"x".repeat(256),
+        ] {
             assert!(validate_name(bad).is_err(), "{bad:?}");
         }
     }
@@ -340,5 +510,14 @@ mod tests {
         assert_eq!(join("/", "etc"), "/etc");
         assert_eq!(join("/home/u", "f"), "/home/u/f");
         assert_eq!(join("/home/u/", "f"), "/home/u/f");
+    }
+
+    #[test]
+    fn scratch_names_stay_short() {
+        let long = "é".repeat(127); // 254 bytes
+        let s = scratch_name(&long, "upload");
+        assert!(s.len() <= 255, "{}", s.len());
+        assert!(s.starts_with('.'));
+        assert_ne!(scratch_name("a", "upload"), scratch_name("a", "upload"));
     }
 }

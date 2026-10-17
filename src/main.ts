@@ -103,7 +103,15 @@ export class App {
       color,
       target,
       vaultAvailable: this.info.vaultAvailable,
-      onStateChange: () => this.renderTabs(),
+      onStateChange: (pane) => {
+        // A terminal that ended takes its file browsers' connection with it.
+        if (pane.state === "closed") {
+          for (const tab of this.tabs) {
+            for (const p of tab.panes) if (p instanceof FilesPane && p.opts.source === pane) p.sessionEnded();
+          }
+        }
+        this.renderTabs();
+      },
       onFocus: (pane) => this.paneFocused(pane),
       isAppShortcut: (e) => this.shortcut(e) !== null,
     });
@@ -118,7 +126,6 @@ export class App {
     void pane.connect();
   }
 
-  /** Opens the same connection or shell as the active pane next to it. */
   /** Opens a file browser on the SSH connection of the active terminal. */
   private openFiles(): void {
     const tab = this.active;
@@ -136,6 +143,7 @@ export class App {
       target,
       color,
       session,
+      source,
       onStateChange: () => this.renderTabs(),
       onFocus: (pane) => this.paneFocused(pane),
       isAppShortcut: (e) => this.shortcut(e) !== null,
@@ -145,6 +153,7 @@ export class App {
     this.renderTabs();
   }
 
+  /** Opens the same connection or shell as the active pane next to it. */
   private split(dir: SplitDir): void {
     const tab = this.active;
     if (!tab) return;

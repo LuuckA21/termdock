@@ -63,6 +63,9 @@ pub enum Error {
 
     #[error("cancelled")]
     Cancelled,
+
+    #[error("{0:?} is not a regular file")]
+    NotRegular(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

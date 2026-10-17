@@ -59,10 +59,11 @@ export const api = {
   sftpRemove: (id: number, dir: string, name: string) => invoke<void>("sftp_remove", { id, dir, name }),
   sftpCancel: (transfer: number) => invoke<void>("sftp_cancel", { transfer }),
   /** Shows a native save dialog; resolves with the saved path, or null if cancelled. */
-  sftpDownload: (id: number, dir: string, name: string, title: string, onProgress: (p: TransferProgress) => void) =>
-    invoke<string | null>("sftp_download", { id, dir, name, title, onProgress: progressChannel(onProgress) }),
+  sftpDownload: (id: number, dir: string, name: string, onProgress: (p: TransferProgress) => void) =>
+    invoke<string | null>("sftp_download", { id, dir, name, onProgress: progressChannel(onProgress) }),
   /** Shows a native file picker; resolves with tokens for the picked files. */
-  sftpPickUpload: (title: string) => invoke<PickedFile[]>("sftp_pick_upload", { title }),
+  sftpPickUpload: () => invoke<PickedFile[]>("sftp_pick_upload"),
+  sftpForgetPicks: (tokens: string[]) => invoke<void>("sftp_forget_picks", { tokens }),
   sftpUpload: (id: number, dir: string, token: string, overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
     invoke<void>("sftp_upload", { id, dir, token, overwrite, onProgress: progressChannel(onProgress) }),
 

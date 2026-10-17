@@ -19,7 +19,7 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ### Sicurezza
 
-- I file locali si scelgono solo in finestre native aperte dal backend; i nomi remoti sono mostrati senza caratteri invisibili o di inversione e non diventano mai percorsi locali; i trasferimenti scrivono in file temporanei e sostituiscono la destinazione solo a completamento; su Windows i download ricevono il Mark of the Web.
+- I trasferimenti considerano il server non fidato: i file locali si scelgono solo in finestre native aperte dal backend; i nomi remoti sono mostrati senza caratteri invisibili o di inversione e non diventano mai percorsi locali; gli elenchi sono limitati; si scaricano solo file regolari; gli upload usano file temporanei esclusivi e sostituiscono la destinazione in modo atomico mantenendone i permessi; su Windows i download ricevono il Mark of the Web.
 
 ## [0.5.1] - 2026-10-17
 

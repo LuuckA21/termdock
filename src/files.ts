@@ -12,11 +12,20 @@ import { showMenu } from "./menu";
 import type { Pane, PaneOptions, PaneState } from "./pane";
 import type { RemoteEntry, RemoteListing, TransferProgress } from "./types";
 
-const UNSAFE = /[\u0000-\u001f\u007f-\u009f؜‎‏‪-‮⁦-⁩]/g;
+/** Control, format (bidi, zero-width, BOM, tags…) and line/paragraph separators. */
+const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 
-/** A server-provided name made safe to display: invisible/reordering characters become "�". */
+/** A server-provided name made safe to display: invisible/reordering characters become U+FFFD. */
 export function displayName(name: string): string {
-  return name.replace(UNSAFE, "�");
+  return name.replace(UNSAFE, "\ufffd");
+}
+
+/**
+ * Names the server sent in another encoding arrive with U+FFFD: they cannot
+ * be named back safely, so they are shown but not touched.
+ */
+function unusable(entry: RemoteEntry): boolean {
+  return entry.name.includes("\ufffd");
 }
 
 function formatSize(bytes: number | null): string {
@@ -45,6 +54,8 @@ function formatDate(secs: number | null): string {
 export interface FilesOptions extends PaneOptions {
   /** Backend id of the terminal session whose connection is used. */
   session: number;
+  /** The terminal pane that owns that session. */
+  source: Pane;
 }
 
 export class FilesPane implements Pane {
@@ -74,7 +85,11 @@ export class FilesPane implements Pane {
       "aria-label": t("filesPath"),
     });
     this.pathInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") void this.navigate(this.pathInput.value);
+      if (e.key !== "Enter") return;
+      // Unchanged text is the displayed form of the current path: use the real one.
+      const listing = this.listing;
+      const typed = this.pathInput.value;
+      void this.navigate(listing && typed === displayName(listing.path) ? listing.path : typed);
     });
     this.list = h("div", { class: "files-list", role: "listbox", tabindex: "0", "aria-label": t("files") });
     this.list.addEventListener("keydown", (e) => this.onKey(e));
@@ -135,6 +150,16 @@ export class FilesPane implements Pane {
     if (this.transfer !== null) void api.sftpCancel(this.transfer);
     if (this.id !== null) void api.sftpClose(this.id).catch(() => {});
     this.el.remove();
+  }
+
+  /** The terminal's session ended: this connection is gone. */
+  sessionEnded(): void {
+    if (this.state === "closed") return;
+    this.id = null;
+    this.setState("closed");
+    this.setBusy(true);
+    this.pathInput.disabled = true;
+    this.say(t("filesClosed"), true);
   }
 
   private async open(): Promise<void> {
@@ -261,6 +286,10 @@ export class FilesPane implements Pane {
   /** Double click / Enter: folders open, files download; links are tried as folders first. */
   private async activate(entry: RemoteEntry): Promise<void> {
     if (!this.listing) return;
+    if (unusable(entry)) {
+      this.say(t("filesUnusableName"), true);
+      return;
+    }
     const path = `${this.listing.path.replace(/\/+$/, "")}/${entry.name}`;
     if (entry.kind === "dir") return this.navigate(path);
     if (entry.kind === "link" && this.id !== null) {
@@ -281,7 +310,7 @@ export class FilesPane implements Pane {
   private menu(x: number, y: number, entry: RemoteEntry | null): void {
     if (this.state !== "open") return;
     const items = [];
-    if (entry) {
+    if (entry && !unusable(entry)) {
       items.push({
         label: entry.kind === "dir" ? t("filesOpen") : t("filesDownload"),
         icon: icon(entry.kind === "dir" ? "folder" : "download"),
@@ -308,8 +337,8 @@ export class FilesPane implements Pane {
     else if (e.key === "End") this.select(entries[entries.length - 1]?.name ?? null);
     else if (e.key === "Enter" && entry) void this.activate(entry);
     else if (e.key === "Backspace") void this.up();
-    else if (e.key === "F2" && entry) void this.rename(entry);
-    else if (e.key === "Delete" && entry) void this.remove(entry);
+    else if (e.key === "F2" && entry && !unusable(entry)) void this.rename(entry);
+    else if (e.key === "Delete" && entry && !unusable(entry)) void this.remove(entry);
     else if (e.key === "F5") void this.refresh();
     else handled = false;
     if (handled) e.preventDefault();
@@ -328,7 +357,8 @@ export class FilesPane implements Pane {
       ],
       cancelValue: null,
       initialFocus: input,
-      onSubmit: () => input.value.trim() || undefined,
+      // Taken as typed (no trimming): the backend validates the name.
+      onSubmit: () => input.value || undefined,
     });
   }
 
@@ -352,8 +382,10 @@ export class FilesPane implements Pane {
 
   private async rename(entry: RemoteEntry): Promise<void> {
     if (this.id === null || !this.listing) return;
-    const name = await this.askName(t("filesRename"), entry.name);
-    if (!name || name === entry.name) return;
+    // Pre-filled with the displayed form: invisible characters are not carried over.
+    const shown = displayName(entry.name);
+    const name = await this.askName(t("filesRename"), shown);
+    if (!name || name === shown) return;
     const { id, listing } = this;
     await this.run(() => api.sftpRename(id, listing.path, entry.name, name));
     this.select(name);
@@ -403,7 +435,7 @@ export class FilesPane implements Pane {
     const name = displayName(entry.name);
     const onProgress = this.startTransfer(t("filesDownloading", { name }));
     try {
-      const saved = await api.sftpDownload(this.id, this.listing.path, entry.name, t("filesSaveAs", { name }), onProgress);
+      const saved = await api.sftpDownload(this.id, this.listing.path, entry.name, onProgress);
       this.say(saved ? t("filesSaved", { path: saved }) : "");
     } catch (e) {
       if (/cancelled/i.test(errorText(e))) this.say(t("filesCancelled"));
@@ -420,7 +452,7 @@ export class FilesPane implements Pane {
     const dir = this.listing.path;
     let picked;
     try {
-      picked = await api.sftpPickUpload(t("filesUploadTitle"));
+      picked = await api.sftpPickUpload();
     } catch (e) {
       this.busy = false;
       this.fail(e);
@@ -431,9 +463,11 @@ export class FilesPane implements Pane {
       return;
     }
     const existing = new Set(this.listing.entries.map((e) => e.name));
+    const pending = new Set(picked.map((f) => f.token));
     let uploaded = 0;
     try {
       for (const file of picked) {
+        pending.delete(file.token);
         const name = displayName(file.name);
         let overwrite = false;
         if (existing.has(file.name)) {
@@ -467,6 +501,8 @@ export class FilesPane implements Pane {
       else this.fail(e);
     } finally {
       this.busy = false;
+      // Skipped or stopped files: release their tokens at once.
+      if (pending.size) void api.sftpForgetPicks([...pending]).catch(() => {});
     }
     if (this.state === "open") {
       await this.navigate(dir);
