@@ -7,6 +7,16 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-17
+
+### Corretto
+
+- La scheda attiva era illeggibile quando i colori del terminale e il tema dell'app hanno luminosità diverse (per esempio tema chiaro con Dracula); ora usa il colore del testo del terminale.
+- Svuotando un numero nelle Impostazioni (dimensione del carattere, interlinea, scrollback) e salvando, veniva impostato il minimo, per esempio scrollback 0; ora resta il valore attuale.
+- Le scorciatoie non agiscono più sulle schede dietro una finestra di dialogo aperta, e tenerne premuta una non apre o chiude più una raffica di pannelli.
+- `Alt+frecce` sposta tra i pannelli solo da un terminale, così i campi di testo mantengono lo spostamento per parole.
+- Il trascinamento di un divisore risponde solo al tasto sinistro del mouse; il suggerimento sulla × della scheda non indica più `Ctrl+Shift+W`, che ora chiude un pannello.
+
 ## [0.5.0] - 2026-10-17
 
 ### Aggiunto
@@ -78,7 +88,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/LuuckA21/termdock/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/LuuckA21/termdock/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/LuuckA21/termdock/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/LuuckA21/termdock/compare/v0.3.0...v0.4.0

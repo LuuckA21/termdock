@@ -348,7 +348,7 @@ textarea.input {
 .tab.active {
   background: var(--bg-term);
   border-color: var(--line);
-  color: var(--fg);
+  color: var(--fg-term, var(--fg));
 }
 
 .tab.connecting .dot {
@@ -394,6 +394,17 @@ textarea.input {
 .tab:hover .tab-close,
 .tab.active .tab-close {
   opacity: 1;
+}
+
+/* The active tab sits on the terminal's colours, which may not match the theme. */
+.tab.active .tab-close,
+.tab.active .tab-panes {
+  color: inherit;
+}
+
+.tab.active .tab-panes {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentColor;
 }
 
 .tab-close:hover {

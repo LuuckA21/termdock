@@ -4,14 +4,12 @@ import type { ITheme } from "@xterm/xterm";
 
 export interface Scheme {
   name: string;
-  dark: boolean;
   colors: ITheme;
 }
 
 export const SCHEMES = {
   "termdock-dark": {
     name: "Termdock Dark",
-    dark: true,
     colors: {
       background: "#0f1420",
       foreground: "#d7dce8",
@@ -38,7 +36,6 @@ export const SCHEMES = {
   },
   "termdock-light": {
     name: "Termdock Light",
-    dark: false,
     colors: {
       background: "#fbfcfe",
       foreground: "#1f2430",
@@ -65,7 +62,6 @@ export const SCHEMES = {
   },
   "solarized-dark": {
     name: "Solarized Dark",
-    dark: true,
     colors: {
       background: "#002b36",
       foreground: "#839496",
@@ -92,7 +88,6 @@ export const SCHEMES = {
   },
   "solarized-light": {
     name: "Solarized Light",
-    dark: false,
     colors: {
       background: "#fdf6e3",
       foreground: "#657b83",
@@ -119,7 +114,6 @@ export const SCHEMES = {
   },
   dracula: {
     name: "Dracula",
-    dark: true,
     colors: {
       background: "#282a36",
       foreground: "#f8f8f2",
@@ -146,7 +140,6 @@ export const SCHEMES = {
   },
   nord: {
     name: "Nord",
-    dark: true,
     colors: {
       background: "#2e3440",
       foreground: "#d8dee9",
@@ -173,7 +166,6 @@ export const SCHEMES = {
   },
   "gruvbox-dark": {
     name: "Gruvbox Dark",
-    dark: true,
     colors: {
       background: "#282828",
       foreground: "#ebdbb2",

@@ -3,12 +3,13 @@ import { modal } from "./dialogs";
 import { h } from "./dom";
 import { LANGUAGES, languageSetting, setLanguage, systemLanguage, t, type LanguageSetting } from "./i18n";
 import {
-  DEFAULT_FONT_STACK,
   DEFAULTS,
+  fontStack,
   getPrefs,
   LIMITS,
   normalize,
   setPrefs,
+  terminalScheme,
   type CursorStyle,
   type Prefs,
   type ThemeSetting,
@@ -87,27 +88,26 @@ export async function openSettings(): Promise<void> {
   ]);
   const cursorBlink = h("input", { type: "checkbox" });
   cursorBlink.checked = p.cursorBlink;
-  const scrollback = number(p.scrollback, LIMITS.scrollback.min, LIMITS.scrollback.max, 1000);
+  const scrollback = number(p.scrollback, LIMITS.scrollback.min, LIMITS.scrollback.max, 1);
 
   const formPrefs = (): Prefs =>
     normalize({
       theme: theme.value,
       scheme: scheme.value,
       fontFamily: fontFamily.value,
-      fontSize: fontSize.value,
-      lineHeight: lineHeight.value,
+      // An emptied number field keeps the current value.
+      fontSize: fontSize.value || p.fontSize,
+      lineHeight: lineHeight.value || p.lineHeight,
       cursorStyle: cursorStyle.value,
       cursorBlink: cursorBlink.checked,
-      scrollback: scrollback.value,
+      scrollback: scrollback.value || p.scrollback,
     });
 
   // Live preview of colours and font, before saving.
   const preview = h("div", { class: "appearance-preview", "aria-hidden": "true" });
   const renderPreview = () => {
     const next = formPrefs();
-    const dark = next.theme === "system" ? window.matchMedia("(prefers-color-scheme: dark)").matches : next.theme === "dark";
-    const colors = (next.scheme === "auto" ? SCHEMES[dark ? "termdock-dark" : "termdock-light"] : SCHEMES[next.scheme])
-      .colors;
+    const { colors } = terminalScheme(next);
     preview.replaceChildren(
       h("div", {}, h("span", { "data-c": "green" }, "user@host"), ":", h("span", { "data-c": "blue" }, "~"), "$ ls -l"),
       h(
@@ -118,7 +118,7 @@ export async function openSettings(): Promise<void> {
     );
     preview.style.background = colors.background ?? "";
     preview.style.color = colors.foreground ?? "";
-    preview.style.fontFamily = next.fontFamily ? `"${next.fontFamily}", ${DEFAULT_FONT_STACK}` : DEFAULT_FONT_STACK;
+    preview.style.fontFamily = fontStack(next);
     preview.style.fontSize = `${next.fontSize}px`;
     preview.style.lineHeight = String(next.lineHeight);
     for (const span of preview.querySelectorAll<HTMLElement>("[data-c]")) {
