@@ -70,6 +70,12 @@ pub enum Error {
     #[error("sudo: {0}")]
     Sudo(String),
 
+    #[error("the file changed size during the transfer; nothing was replaced")]
+    SizeMismatch,
+
+    #[error("the file is too large for this")]
+    TooLarge,
+
     #[error("sftp-server was not found on the server, so files cannot be opened as another user")]
     NoSftpServer,
 }

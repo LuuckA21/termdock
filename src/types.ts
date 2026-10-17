@@ -89,6 +89,11 @@ export type SftpOpened =
   | { status: "open"; id: number; home: string; user: string; loginUser: string }
   | { status: "passwordRequired"; pending: number; retry: boolean; asksFor: string | null };
 
+export type EditEvent =
+  | { kind: "saved"; edit: number }
+  | { kind: "conflict"; edit: number }
+  | { kind: "failed"; edit: number; message: string };
+
 export interface PickedFile {
   token: string;
   name: string;

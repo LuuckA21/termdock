@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sftp-edit-resolve"
+description = "Enables the sftp_edit_resolve command without any pre-configured scope."
+commands.allow = ["sftp_edit_resolve"]
+
+[[permission]]
+identifier = "deny-sftp-edit-resolve"
+description = "Denies the sftp_edit_resolve command without any pre-configured scope."
+commands.deny = ["sftp_edit_resolve"]

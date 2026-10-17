@@ -11,7 +11,7 @@ import { t } from "./i18n";
 import { showMenu } from "./menu";
 import type { Pane, PaneOptions, PaneState } from "./pane";
 import type { TerminalPane } from "./terminal";
-import type { RemoteEntry, RemoteListing, TransferProgress } from "./types";
+import type { EditEvent, PickedFile, RemoteEntry, RemoteListing, TransferProgress } from "./types";
 
 /** Control, format (bidi, zero-width, BOM, tags…) and line/paragraph separators. */
 const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
@@ -93,6 +93,12 @@ export class FilesPane implements Pane {
   private readonly userBtn: HTMLButtonElement;
   private readonly userName: HTMLElement;
   private readonly suggestion: HTMLElement;
+  private readonly cwdBtn: HTMLButtonElement;
+  private readonly followBtn: HTMLButtonElement;
+  /** Go to the terminal's folder whenever it changes. */
+  private follow = false;
+  /** A folder Follow could not open: not retried at every prompt. */
+  private followFailed: string | null = null;
 
   private readonly pathInput: HTMLInputElement;
   private readonly list: HTMLElement;
@@ -148,6 +154,25 @@ export class FilesPane implements Pane {
     });
     this.actions.push(this.userBtn);
     this.suggestion = h("div", { class: "files-suggest", hidden: true });
+    this.cwdBtn = h(
+      "button",
+      { type: "button", class: "icon-btn", title: t("filesTerminalFolder"), "aria-label": t("filesTerminalFolder") },
+      icon("terminal"),
+    );
+    this.cwdBtn.addEventListener("click", () => {
+      const folder = this.terminalFolder();
+      if (folder) void this.navigate(folder);
+    });
+    this.followBtn = h(
+      "button",
+      { type: "button", class: "icon-btn toggle", title: t("filesFollow"), "aria-label": t("filesFollow"), "aria-pressed": "false" },
+      icon("link"),
+    );
+    this.followBtn.addEventListener("click", () => {
+      this.follow = !this.follow;
+      this.followBtn.setAttribute("aria-pressed", String(this.follow));
+      if (this.follow) this.followTerminal();
+    });
     const bar = h(
       "div",
       { class: "files-bar" },
@@ -155,6 +180,8 @@ export class FilesPane implements Pane {
       tool("arrowUp", t("filesUp"), () => void this.up()),
       tool("home", t("filesHome"), () => void this.navigate(this.home)),
       tool("refresh", t("filesRefresh"), () => void this.refresh()),
+      this.cwdBtn,
+      this.followBtn,
       this.pathInput,
       tool("folderPlus", t("filesNewFolder"), () => void this.mkdir()),
       tool("upload", t("filesUpload"), () => void this.upload()),
@@ -169,7 +196,10 @@ export class FilesPane implements Pane {
     );
     this.el.addEventListener("focusin", () => this.opts.onFocus(this));
     this.setBusy(true);
-    this.unsubscribeTitle = opts.source.onRemoteTitle(() => this.suggest());
+    this.unsubscribeTitle = opts.source.onRemoteTitle(() => {
+      this.suggest();
+      this.followTerminal();
+    });
     void this.open(null);
   }
 
@@ -255,12 +285,75 @@ export class FilesPane implements Pane {
     }
   }
 
+  /**
+   * Opens a remote text file in the system text editor; each save there is
+   * uploaded back (asking first if the server's copy changed meanwhile).
+   */
+  private async editFile(entry: RemoteEntry): Promise<void> {
+    if (this.id === null || !this.listing) return;
+    const dir = this.listing.path;
+    const name = displayName(entry.name);
+    this.say(t("filesEditOpening", { name }));
+    try {
+      await api.sftpEdit(this.id, dir, entry.name, (ev) => void this.onEdit(ev, name, dir));
+      this.say(t("filesEditOpened", { name }));
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  private async onEdit(ev: EditEvent, name: string, dir: string): Promise<void> {
+    if (this.disposed) return;
+    if (ev.kind === "saved") {
+      if (this.listing?.path === dir && !this.busy) await this.navigate(dir);
+      this.say(t("filesEditSaved", { name, time: new Date().toLocaleTimeString() }));
+    } else if (ev.kind === "conflict") {
+      const overwrite = await confirmBox(t("filesEditConflict", { name }), t("filesEditOverwrite"), true);
+      await api.sftpEditResolve(ev.edit, overwrite).catch((e) => this.fail(e));
+      if (!overwrite) this.say(t("filesEditStopped", { name }));
+    } else {
+      this.say(displayName(t("filesEditFailed", { name, error: ev.message })), true);
+    }
+  }
+
   /** Switches the browser to another user (null: back to the login user). */
   private async switchUser(user: string | null): Promise<void> {
     if (this.busy || this.switching || this.state === "closed") return;
     // The suggestion comes from the server (terminal title): root needs a yes.
     if (user === "root" && !(await confirmBox(t("filesRootConfirm"), t("filesOpenAs", { user }), true))) return;
     void this.open(user);
+  }
+
+  /**
+   * The terminal's current folder: from OSC 7 or from a title like
+   * "user@host: ~/dir" ("~" only for the user the browser acts as). Null if
+   * the shell does not say.
+   */
+  private terminalFolder(): string | null {
+    const src = this.opts.source;
+    const m = /^([A-Za-z_][A-Za-z0-9_.-]{0,31})@[A-Za-z0-9][A-Za-z0-9.-]*:\s*(\S.*)$/.exec(src.remoteTitle);
+    let fromTitle: string | null = null;
+    if (m) {
+      const [, user, dir] = m;
+      const d = dir!.trim();
+      if (d.startsWith("/")) fromTitle = d;
+      else if ((d === "~" || d.startsWith("~/")) && user === this.user) fromTitle = this.home.replace(/\/$/, "") + d.slice(1);
+    }
+    return src.cwdIsNewer ? (src.remoteCwd ?? fromTitle) : (fromTitle ?? src.remoteCwd);
+  }
+
+  /** With "follow" on, goes to the terminal's folder when it changes. */
+  private followTerminal(): void {
+    const folder = this.terminalFolder();
+    this.cwdBtn.disabled = this.state !== "open" || folder === null;
+    this.cwdBtn.title = folder ? t("filesTerminalFolder") : t("filesTerminalFolderUnknown");
+    if (!this.follow || !folder || this.busy || this.switching || this.state !== "open") return;
+    if (folder === this.followFailed || (this.listing && folder === this.listing.path)) return;
+    void this.navigate(folder).then(() => {
+      // Not where it was asked to go (error, or a different canonical form):
+      // remember it so the next prompt does not try again.
+      this.followFailed = this.listing?.path === folder ? null : folder;
+    });
   }
 
   /** Offers to follow the terminal when its title shows another user. */
@@ -474,6 +567,9 @@ export class FilesPane implements Pane {
         icon: icon(entry.kind === "dir" ? "folder" : "download"),
         action: () => void this.activate(entry),
       });
+      if (entry.kind === "file" || entry.kind === "link") {
+        items.push({ label: t("filesEdit"), icon: icon("edit"), hint: "F4", action: () => void this.editFile(entry) });
+      }
       items.push({ label: t("filesRename"), hint: "F2", action: () => void this.rename(entry) });
       items.push({ label: t("delete"), danger: true, hint: "Del", action: () => void this.remove(entry) });
     }
@@ -496,6 +592,7 @@ export class FilesPane implements Pane {
     else if (e.key === "Enter" && entry) void this.activate(entry);
     else if (e.key === "Backspace") void this.up();
     else if (e.key === "F2" && entry && !unusable(entry)) void this.rename(entry);
+    else if (e.key === "F4" && entry && !unusable(entry) && entry.kind !== "dir") void this.editFile(entry);
     else if (e.key === "Delete" && entry && !unusable(entry)) void this.remove(entry);
     else if (e.key === "F5") void this.refresh();
     else handled = false;
@@ -616,19 +713,70 @@ export class FilesPane implements Pane {
       this.fail(e);
       return;
     }
-    if (!picked.length) {
+    await this.uploadAll(
+      dir,
+      picked.map((f) => ({
+        name: f.name,
+        send: (overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
+          api.sftpUpload(id, dir, f.token, overwrite, onProgress),
+        release: () => void api.sftpForgetPicks([f.token]).catch(() => {}),
+      })),
+    );
+  }
+
+  /** Highlights the browser while files from the computer are dragged over it. */
+  setDropHover(on: boolean): void {
+    this.el.classList.toggle("drop-target", on && this.state === "open");
+  }
+
+  /**
+   * Files dropped on the browser from the computer: the backend opened them
+   * and gives tokens, uploaded like files picked in the dialog. Returns
+   * false (tokens untouched) when the browser cannot take them now.
+   */
+  dropFiles(files: PickedFile[], folders: number): boolean {
+    this.setDropHover(false);
+    if (this.id === null || !this.listing || this.busy || this.state !== "open") return false;
+    if (folders) this.say(t("filesDropFolders", { count: folders }), true);
+    else if (!files.length) this.say(t("filesDropNothing"), true);
+    if (!files.length) return true;
+    this.busy = true;
+    const { id } = this;
+    const dir = this.listing.path;
+    void this.uploadAll(
+      dir,
+      files.map((f) => ({
+        name: f.name,
+        send: (overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
+          api.sftpUpload(id, dir, f.token, overwrite, onProgress),
+        release: () => void api.sftpForgetPicks([f.token]).catch(() => {}),
+      })),
+    );
+    return true;
+  }
+
+  /** Uploads one by one, asking before replacing; `busy` is set by the caller. */
+  private async uploadAll(
+    dir: string,
+    items: {
+      name: string;
+      send: (overwrite: boolean, onProgress: (p: TransferProgress) => void) => Promise<void>;
+      release?: () => void;
+    }[],
+  ): Promise<void> {
+    if (!this.listing || !items.length) {
       this.busy = false;
       return;
     }
     const existing = new Set(this.listing.entries.map((e) => e.name));
-    const pending = new Set(picked.map((f) => f.token));
     let uploaded = 0;
+    let next = 0;
     try {
-      for (const file of picked) {
-        pending.delete(file.token);
-        const name = displayName(file.name);
+      for (; next < items.length; next++) {
+        const item = items[next]!;
+        const name = displayName(item.name);
         let overwrite = false;
-        if (existing.has(file.name)) {
+        if (existing.has(item.name)) {
           const choice = await modal<"replace" | "skip" | "stop">({
             title: t("filesExistsTitle"),
             body: [h("p", {}, t("filesExistsBody", { name }))],
@@ -641,12 +789,15 @@ export class FilesPane implements Pane {
             focusButton: 1,
           });
           if (choice === "stop") break;
-          if (choice === "skip") continue;
+          if (choice === "skip") {
+            item.release?.();
+            continue;
+          }
           overwrite = true;
         }
         const onProgress = this.startTransfer(t("filesUploading", { name }));
         try {
-          await api.sftpUpload(id, dir, file.token, overwrite, onProgress);
+          await item.send(overwrite, onProgress);
           uploaded++;
         } finally {
           this.endTransfer();
@@ -655,16 +806,27 @@ export class FilesPane implements Pane {
       }
       this.say(t("filesUploaded", { count: uploaded }));
     } catch (e) {
+      next++;
       if (/cancelled/i.test(errorText(e))) this.say(t("filesCancelled"));
       else this.fail(e);
     } finally {
       this.busy = false;
-      // Skipped or stopped files: release their tokens at once.
-      if (pending.size) void api.sftpForgetPicks([...pending]).catch(() => {});
+      // Skipped or stopped files: release what they hold at once.
+      for (const item of items.slice(next)) item.release?.();
     }
     if (this.state === "open") {
       await this.navigate(dir);
       if (uploaded) this.say(t("filesUploaded", { count: uploaded }));
     }
   }
+}
+
+/**
+ * A drag that may carry files from the computer: "Files", or a URI list
+ * (how WebKitGTK presents files from a file manager). Only real files are
+ * taken on drop; links are ignored.
+ */
+export function carriesFiles(e: DragEvent): boolean {
+  const types = e.dataTransfer ? Array.from(e.dataTransfer.types) : [];
+  return types.includes("Files") || types.includes("text/uri-list");
 }

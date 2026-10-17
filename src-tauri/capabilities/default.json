@@ -38,6 +38,9 @@
     "allow-sftp-upload",
     "allow-sftp-forget-picks",
     "allow-sftp-sudo-password",
-    "allow-sftp-sudo-cancel"
+    "allow-sftp-sudo-cancel",
+    "allow-sftp-edit",
+    "allow-sftp-edit-resolve",
+    "allow-sftp-edit-stop"
   ]
 }

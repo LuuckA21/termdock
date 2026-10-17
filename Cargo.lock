@@ -5600,7 +5600,7 @@ dependencies = [
 
 [[package]]
 name = "termdock"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "directories",
  "serde",
@@ -5610,6 +5610,7 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-updater",
+ "tempfile",
  "termdock-core",
  "thiserror 2.0.21",
  "tokio",
@@ -5621,7 +5622,7 @@ dependencies = [
 
 [[package]]
 name = "termdock-core"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "data-encoding",
  "directories",

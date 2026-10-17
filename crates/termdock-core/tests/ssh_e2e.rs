@@ -839,3 +839,105 @@ async fn sftp_as_another_user() {
 
     run_and_exit(h, out, "sudo").await;
 }
+
+/// Uploads streamed from memory (files dropped on the browser): exact size
+/// required, nothing left behind on a short or long stream; file_info.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn sftp_streamed_upload() {
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let kh = Arc::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let vault = Arc::new(MemoryVault::default());
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Password,
+        &kh,
+        &vault,
+        None,
+        user(true, &[(&e.password, false)]),
+        out.sink.clone(),
+    )
+    .await
+    .unwrap();
+    let fs = Sftp::open(&h).await.unwrap();
+    let home = fs.canonicalize(".").await.unwrap();
+    let work = format!("td-stream-{}", Uuid::new_v4().simple());
+    fs.mkdir(&home, &work).await.unwrap();
+    let remote_dir = sftp::join(&home, &work);
+    let none = CancellationToken::new();
+    let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+
+    let n = fs
+        .upload_from(
+            &data[..],
+            data.len() as u64,
+            None,
+            &remote_dir,
+            "dropped.bin",
+            false,
+            &none,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+    assert_eq!(n, data.len() as u64);
+    let (size, mtime, kind) = fs.file_info(&remote_dir, "dropped.bin").await.unwrap();
+    assert_eq!(size, data.len() as u64);
+    assert!(mtime.is_some());
+    assert_eq!(kind, sftp::FileType::File);
+
+    // A stream shorter or longer than announced replaces nothing.
+    for (bytes, announced) in [(&data[..1000], 2000u64), (&data[..3000], 2000u64)] {
+        assert!(matches!(
+            fs.upload_from(
+                bytes,
+                announced,
+                None,
+                &remote_dir,
+                "dropped.bin",
+                true,
+                &none,
+                |_, _| {}
+            )
+            .await,
+            Err(Error::SizeMismatch)
+        ));
+    }
+    let listing = fs.list(&remote_dir).await.unwrap();
+    let names: Vec<_> = listing.entries.iter().map(|x| (x.name.as_str(), x.size)).collect();
+    assert_eq!(
+        names,
+        [("dropped.bin", Some(data.len() as u64))],
+        "original kept, no temporary files"
+    );
+
+    // Size caps: reading or downloading more than allowed fails.
+    let read = fs
+        .read_at_most(&remote_dir, "dropped.bin", data.len() as u64)
+        .await
+        .unwrap();
+    assert_eq!(read, data);
+    assert!(matches!(
+        fs.read_at_most(&remote_dir, "dropped.bin", 1000).await,
+        Err(Error::TooLarge)
+    ));
+    let local = dir.path().join("capped.bin");
+    assert!(matches!(
+        fs.download_at_most(&remote_dir, "dropped.bin", &local, 1000, &none, |_, _| {})
+            .await,
+        Err(Error::TooLarge)
+    ));
+    assert_eq!(
+        fs.resolve(&remote_dir, "dropped.bin").await.unwrap(),
+        (remote_dir.clone(), "dropped.bin".to_owned())
+    );
+
+    fs.remove(&remote_dir, "dropped.bin").await.unwrap();
+    fs.remove(&home, &work).await.unwrap();
+    run_and_exit(h, out, "stream").await;
+}

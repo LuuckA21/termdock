@@ -18,7 +18,8 @@ export function describe(p: Profile): string {
 
 /** The bar at the top: pinned connections, quick connect and shortcuts. */
 export class FavoritesBar {
-  private dragId: string | null = null;
+  /** Set right after a drag, so its click does not open the connection. */
+  private suppressClick = false;
 
   constructor(
     private readonly root: HTMLElement,
@@ -132,14 +133,16 @@ export class FavoritesBar {
       {
         class: "fav-chip",
         type: "button",
-        draggable: "true",
+        "data-id": p.id,
         title: `${describe(p)}${index < 9 ? `  (Ctrl+Shift+${index + 1})` : ""}`,
       },
       dot,
       icon(p.type === "ssh" ? "server" : "terminal"),
       h("span", { class: "fav-name" }, p.name),
     );
-    chip.addEventListener("click", () => this.app.openProfile(p));
+    chip.addEventListener("click", () => {
+      if (!this.suppressClick) this.app.openProfile(p);
+    });
     chip.addEventListener("auxclick", (e) => {
       if (e.button === 1) this.app.openProfile(p);
     });
@@ -154,37 +157,52 @@ export class FavoritesBar {
       ]);
     });
 
-    // Drag & drop reordering.
-    chip.addEventListener("dragstart", (e) => {
-      this.dragId = p.id;
-      chip.classList.add("dragging");
-      e.dataTransfer?.setData("text/plain", p.id);
-      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-    });
-    chip.addEventListener("dragend", () => {
-      this.dragId = null;
-      chip.classList.remove("dragging");
-      this.root.querySelectorAll(".drop-before,.drop-after").forEach((el) => el.classList.remove("drop-before", "drop-after"));
-    });
-    chip.addEventListener("dragover", (e) => {
-      if (!this.dragId || this.dragId === p.id) return;
-      e.preventDefault();
-      const r = chip.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
-      chip.classList.toggle("drop-after", after);
-      chip.classList.toggle("drop-before", !after);
-    });
-    chip.addEventListener("dragleave", () => chip.classList.remove("drop-before", "drop-after"));
-    chip.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const from = this.dragId;
-      if (!from || from === p.id) return;
-      const r = chip.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
-      const order = this.app.favorites.filter((id) => id !== from);
-      const at = order.indexOf(p.id) + (after ? 1 : 0);
-      order.splice(at, 0, from);
-      void this.app.reorderFavorites(order);
+    // Reordering by dragging with the pointer (not HTML5 drag & drop: the
+    // window takes file drops from the system for the file browser).
+    chip.addEventListener("pointerdown", (start) => {
+      if (start.button !== 0) return;
+      // Captured at once, so the release is always seen here.
+      chip.setPointerCapture(start.pointerId);
+      let dragging = false;
+      let target: { id: string; after: boolean } | null = null;
+      const clear = () =>
+        this.root.querySelectorAll(".drop-before,.drop-after").forEach((el) => el.classList.remove("drop-before", "drop-after"));
+      const move = (e: PointerEvent) => {
+        if (!(e.buttons & 1)) return end();
+        if (!dragging && Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) < 6) return;
+        if (!dragging) {
+          dragging = true;
+          chip.classList.add("dragging");
+        }
+        clear();
+        target = null;
+        const over = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>(".fav-chip");
+        const id = over?.dataset.id;
+        if (!over || !id || id === p.id) return;
+        const r = over.getBoundingClientRect();
+        const after = e.clientX > r.left + r.width / 2;
+        over.classList.add(after ? "drop-after" : "drop-before");
+        target = { id, after };
+      };
+      const self = this;
+      function end(): void {
+        chip.removeEventListener("pointermove", move);
+        chip.removeEventListener("pointerup", end);
+        chip.removeEventListener("pointercancel", end);
+        chip.classList.remove("dragging");
+        clear();
+        if (!dragging) return;
+        // The click that follows a drag must not open the connection.
+        self.suppressClick = true;
+        setTimeout(() => (self.suppressClick = false), 0);
+        if (!target) return;
+        const order = self.app.favorites.filter((id) => id !== p.id);
+        order.splice(order.indexOf(target.id) + (target.after ? 1 : 0), 0, p.id);
+        void self.app.reorderFavorites(order);
+      }
+      chip.addEventListener("pointermove", move);
+      chip.addEventListener("pointerup", end);
+      chip.addEventListener("pointercancel", end);
     });
     return chip;
   }
