@@ -1,12 +1,13 @@
 import "@xterm/xterm/css/xterm.css";
 
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { api, errorText } from "./api";
 import { alertBox } from "./dialogs";
 import { clear, h, icon } from "./dom";
 import { describe, FavoritesBar, setDotColor } from "./favorites";
-import { FilesPane } from "./files";
+import { carriesFiles, FilesPane } from "./files";
 import { onLanguageChange, t } from "./i18n";
 import { openManager, type ManagerOptions } from "./manager";
 import { firstLeaf, getLayouts, MAX_PANES, paneCount, saveLayout as saveLayoutAs, startupLayout, type LayoutLeaf, type LayoutNode } from "./layouts";
@@ -19,7 +20,7 @@ import type { Pane } from "./pane";
 import { pickPane, type PaneChoice } from "./picker";
 import { TerminalPane } from "./terminal";
 import { startUpdateChecks } from "./updates";
-import type { AppInfo, DetectedShell, OpenTarget, Profile, Uuid } from "./types";
+import type { AppInfo, DetectedShell, OpenTarget, PickedFile, Profile, Uuid } from "./types";
 
 export class App {
   info!: AppInfo;
@@ -40,6 +41,7 @@ export class App {
     [this.info, this.shells] = await Promise.all([api.appInfo(), api.listShells()]);
     await this.reload();
     document.addEventListener("keydown", (e) => this.onKey(e));
+    this.listenForDrops();
     // Language switched in Settings: redraw the chrome; open terminals keep running.
     onLanguageChange(() => {
       this.favbar.render();
@@ -308,6 +310,37 @@ export class App {
     ]);
   }
 
+  /** The file browser at a point of the window (CSS pixels), if any. */
+  private filesAt(x: number, y: number): FilesPane | null {
+    const el = document.elementFromPoint(x, y)?.closest(".files-pane");
+    for (const tab of this.tabs) {
+      for (const pane of tab.panes) if (pane instanceof FilesPane && pane.el === el) return pane;
+    }
+    return null;
+  }
+
+  /** Files dragged from the system: highlight and upload where they land. */
+  private listenForDrops(): void {
+    let hovered: FilesPane | null = null;
+    void listen<{ x: number; y: number; active: boolean }>("termdock://drag", ({ payload }) => {
+      const pane = payload.active ? this.filesAt(payload.x, payload.y) : null;
+      if (pane !== hovered) {
+        hovered?.setDropHover(false);
+        pane?.setDropHover(true);
+        hovered = pane;
+      }
+    });
+    void listen<{ x: number; y: number; files: PickedFile[]; folders: number }>("termdock://drop", ({ payload }) => {
+      hovered?.setDropHover(false);
+      hovered = null;
+      const pane = this.filesAt(payload.x, payload.y);
+      // Not on a file browser (or it is busy): the files are not uploaded.
+      if (!pane?.dropFiles(payload.files, payload.folders) && payload.files.length) {
+        void api.sftpForgetPicks(payload.files.map((f) => f.token)).catch(() => {});
+      }
+    });
+  }
+
   /** A pane that gets the focus (click, Alt+arrow) becomes the active one. */
   private paneFocused(pane: Pane): void {
     const tab = this.tabs.find((x) => x.has(pane));
@@ -525,6 +558,18 @@ export class App {
 
 const app = new App();
 app.init().catch((e) => alertBox(t("errorTitle"), errorText(e)));
+
+// Files dragged from the system are taken by the backend (see
+// listenForDrops). The web view itself never opens a dropped file or link:
+// it only accepts the drag over a file browser, so the drop happens there.
+for (const type of ["dragover", "drop"] as const) {
+  document.addEventListener(type, (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    const overFiles = e.target instanceof Element && e.target.closest(".files-pane");
+    if (e.dataTransfer) e.dataTransfer.dropEffect = overFiles ? "copy" : "none";
+  });
+}
 
 // Hide the WebView's own context menu (reload, inspect…) outside text fields.
 document.addEventListener("contextmenu", (e) => {

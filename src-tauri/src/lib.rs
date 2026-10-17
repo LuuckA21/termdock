@@ -1,4 +1,5 @@
 mod commands;
+mod edit;
 mod prompts;
 mod sftp;
 mod state;
@@ -20,11 +21,20 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Native file dialogs, driven by the backend only (see sftp.rs).
         .plugin(tauri_plugin_dialog::init())
+        // Files dragged from the system onto the window (see sftp::on_drag_drop).
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(drag) = event {
+                sftp::on_drag_drop(window, drag);
+            }
+        })
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState::new(&dir)?);
             app.manage(updates::PendingUpdate::default());
-            app.manage(sftp::SftpState::default());
+            edit::remove_stale_copies();
+            let sftp_state = sftp::SftpState::default();
+            app.manage(sftp_state.edits());
+            app.manage(sftp_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -59,15 +69,22 @@ pub fn run() {
             sftp::sftp_forget_picks,
             sftp::sftp_sudo_password,
             sftp::sftp_sudo_cancel,
+            edit::sftp_edit,
+            edit::sftp_edit_resolve,
+            edit::sftp_edit_stop,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Termdock");
 
     app.run(|handle, event| {
-        if let RunEvent::Exit = event
-            && let Some(state) = handle.try_state::<AppState>()
-        {
-            state.close_all();
+        if let RunEvent::Exit = event {
+            if let Some(state) = handle.try_state::<AppState>() {
+                state.close_all();
+            }
+            // Local copies of files being edited are deleted.
+            if let Some(edits) = handle.try_state::<std::sync::Arc<edit::EditState>>() {
+                edits.clear();
+            }
         }
     });
 }

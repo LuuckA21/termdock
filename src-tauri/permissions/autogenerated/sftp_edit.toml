@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sftp-edit"
+description = "Enables the sftp_edit command without any pre-configured scope."
+commands.allow = ["sftp_edit"]
+
+[[permission]]
+identifier = "deny-sftp-edit"
+description = "Denies the sftp_edit command without any pre-configured scope."
+commands.deny = ["sftp_edit"]

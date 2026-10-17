@@ -7,6 +7,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-17
+
+### Added
+
+- File browser: drag files from the computer onto it to upload them (folders are skipped).
+- File browser: *Go to the terminal's folder* and *Follow* (it moves along with `cd` in the terminal), from OSC 7 or the usual `user@host: dir` title.
+- File browser: *Edit* (`F4`) opens a remote text file in the system text editor; each save there is uploaded back, asking first if the file changed on the server meanwhile.
+
+### Changed
+
+- Favourites are reordered by dragging with the pointer (the window now takes file drops from the system).
+
 ## [0.8.0] - 2026-10-17
 
 ### Added
@@ -122,7 +134,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/LuuckA21/termdock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/LuuckA21/termdock/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/LuuckA21/termdock/compare/v0.5.1...v0.6.0

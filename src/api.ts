@@ -9,6 +9,7 @@ import type {
   ProfileList,
   PromptAnswer,
   SessionNotice,
+  EditEvent,
   PickedFile,
   SftpOpened,
   RemoteListing,
@@ -70,6 +71,14 @@ export const api = {
   /** Shows a native file picker; resolves with tokens for the picked files. */
   sftpPickUpload: () => invoke<PickedFile[]>("sftp_pick_upload"),
   sftpForgetPicks: (tokens: string[]) => invoke<void>("sftp_forget_picks", { tokens }),
+  /** Opens a remote text file in the system text editor; saves are uploaded back. */
+  sftpEdit: (id: number, dir: string, name: string, onEvent: (e: EditEvent) => void) => {
+    const channel = new Channel<EditEvent>();
+    channel.onmessage = onEvent;
+    return invoke<number>("sftp_edit", { id, dir, name, onEvent: channel });
+  },
+  sftpEditResolve: (edit: number, overwrite: boolean) => invoke<void>("sftp_edit_resolve", { edit, overwrite }),
+  sftpEditStop: (edit: number) => invoke<void>("sftp_edit_stop", { edit }),
   sftpUpload: (id: number, dir: string, token: string, overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
     invoke<void>("sftp_upload", { id, dir, token, overwrite, onProgress: progressChannel(onProgress) }),
 

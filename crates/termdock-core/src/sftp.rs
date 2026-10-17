@@ -14,7 +14,8 @@ use std::time::Duration;
 
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::{RawSftpSession, SftpSession};
-use russh_sftp::protocol::{FileAttributes, FileType, OpenFlags, Packet, StatusCode};
+pub use russh_sftp::protocol::FileType;
+use russh_sftp::protocol::{FileAttributes, OpenFlags, Packet, StatusCode};
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 pub use tokio_util::sync::CancellationToken;
@@ -581,6 +582,13 @@ impl Sftp {
         Ok(self.inner.rename(join(dir, from), join(dir, to)).await?)
     }
 
+    /// Size and modification time (seconds) of the file at `dir/name`.
+    pub async fn file_info(&self, dir: &str, name: &str) -> Result<(u64, Option<u32>, FileType)> {
+        check_component(name)?;
+        let meta = self.inner.metadata(join(dir, name)).await?;
+        Ok((meta.size.unwrap_or(0), meta.mtime, meta.file_type()))
+    }
+
     /// Removes a file, a link or an *empty* directory (never recursive).
     pub async fn remove(&self, dir: &str, name: &str) -> Result<()> {
         check_component(name)?;
@@ -652,13 +660,33 @@ impl Sftp {
     }
 
     /// Uploads `local` (already open, a regular file the user picked) as
-    /// `dir/name`. An existing file is only replaced when `overwrite` is set,
-    /// after the upload completed, keeping that file's permissions; a new
-    /// file gets `local_mode` (or 0644).
+    /// `dir/name`; see [`Sftp::upload_from`].
     #[allow(clippy::too_many_arguments)]
     pub async fn upload(
         &self,
         local: std::fs::File,
+        local_mode: Option<u32>,
+        dir: &str,
+        name: &str,
+        overwrite: bool,
+        cancel: &CancellationToken,
+        progress: impl FnMut(u64, Option<u64>),
+    ) -> Result<u64> {
+        let src = tokio::fs::File::from_std(local);
+        let size = src.metadata().await?.len();
+        self.upload_from(src, size, local_mode, dir, name, overwrite, cancel, progress)
+            .await
+    }
+
+    /// Uploads exactly `size` bytes read from `src` as `dir/name`. An existing
+    /// file is only replaced when `overwrite` is set, after the upload
+    /// completed, keeping that file's permissions; a new file gets
+    /// `local_mode` (or 0644). Fewer or more bytes than `size` abort it.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upload_from<R: tokio::io::AsyncRead + Unpin>(
+        &self,
+        mut src: R,
+        size: u64,
         local_mode: Option<u32>,
         dir: &str,
         name: &str,
@@ -679,8 +707,7 @@ impl Sftp {
         if existing.as_ref().is_some_and(|m| m.file_type() == FileType::Dir) {
             return Err(Error::Exists(name.to_owned()));
         }
-        let mut src = tokio::fs::File::from_std(local);
-        let total = Some(src.metadata().await?.len());
+        let total = Some(size);
 
         // Exclusive create with a random name: a file or link planted at a
         // predictable name cannot redirect the write.
@@ -706,9 +733,15 @@ impl Sftp {
                 if n == 0 {
                     break;
                 }
-                dst.write_all(&buf[..n]).await.map_err(remote_io)?;
                 done += n as u64;
+                if done > size {
+                    return Err(Error::SizeMismatch);
+                }
+                dst.write_all(&buf[..n]).await.map_err(remote_io)?;
                 progress(done, total);
+            }
+            if done != size {
+                return Err(Error::SizeMismatch);
             }
             // fsync@openssh.com when the server has it.
             let _ = dst.sync_all().await;

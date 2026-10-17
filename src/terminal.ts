@@ -27,6 +27,19 @@ function plain(text: string): string {
     .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, "")
     .replace(/\n/g, "\r\n");
 }
+/** The absolute path of an OSC 7 `file://host/path` report, or null. */
+export function osc7Path(data: string): string | null {
+  if (data.length > 4096) return null;
+  try {
+    const url = new URL(data);
+    if (url.protocol !== "file:") return null;
+    const path = decodeURIComponent(url.pathname);
+    return path.startsWith("/") && !/[\p{Cc}]/u.test(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
 const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
@@ -53,6 +66,10 @@ export class TerminalPane implements Pane {
   private disposed = false;
   /** Window title set by the remote shell (often "user@host: dir"); untrusted. */
   remoteTitle = "";
+  /** Current folder reported by the shell with OSC 7 (absolute); untrusted. */
+  remoteCwd: string | null = null;
+  /** Which of the two the shell updated last (some shells send both). */
+  cwdIsNewer = false;
   private readonly titleListeners = new Set<(title: string) => void>();
 
   constructor(readonly opts: TerminalOptions) {
@@ -77,7 +94,19 @@ export class TerminalPane implements Pane {
     this.term.onBinary((d) => this.input(d, true));
     this.term.onTitleChange((title) => {
       this.remoteTitle = title;
+      this.cwdIsNewer = false;
       for (const listener of this.titleListeners) listener(title);
+    });
+    // OSC 7 "file://host/path": the shell's current folder (vte.sh, fish,
+    // zsh setups). Only remembered, used to suggest a folder to browse.
+    this.term.parser.registerOscHandler(7, (data) => {
+      const cwd = osc7Path(data);
+      if (cwd) {
+        this.remoteCwd = cwd;
+        this.cwdIsNewer = true;
+        for (const listener of this.titleListeners) listener(this.remoteTitle);
+      }
+      return true;
     });
     this.term.onResize(({ cols, rows }) => {
       if (this.sessionId !== null) void api.resizeSession(this.sessionId, { cols, rows }).catch(() => {});
@@ -185,7 +214,7 @@ export class TerminalPane implements Pane {
     }
   }
 
-  /** Calls `listener` when the remote shell changes the title; returns an unsubscribe. */
+  /** Calls `listener` when the remote shell changes its title or folder; returns an unsubscribe. */
   onRemoteTitle(listener: (title: string) => void): () => void {
     this.titleListeners.add(listener);
     return () => this.titleListeners.delete(listener);

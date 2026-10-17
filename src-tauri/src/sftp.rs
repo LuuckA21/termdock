@@ -24,6 +24,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::commands::{CmdError, CmdResult};
+use crate::edit::EditState;
 use crate::state::AppState;
 
 /// Upload tokens are single use and expire.
@@ -59,6 +60,8 @@ struct Inner {
     picked: Mutex<HashMap<Uuid, Picked>>,
     /// sudo attempts waiting for a password, by id.
     sudo: Mutex<HashMap<u32, PendingSudo>>,
+    /// Files open in a local editor.
+    edits: Arc<EditState>,
 }
 
 struct PendingSudo {
@@ -77,6 +80,15 @@ const SUDO_TTL: Duration = Duration::from_secs(5 * 60);
 pub struct SftpState(Arc<Inner>);
 
 impl SftpState {
+    /// The edit state, managed separately for its commands.
+    pub fn edits(&self) -> Arc<EditState> {
+        self.0.edits.clone()
+    }
+
+    pub(crate) fn browser(&self, id: u32) -> CmdResult<Arc<Sftp>> {
+        self.get(id)
+    }
+
     fn get(&self, id: u32) -> CmdResult<Arc<Sftp>> {
         self.0
             .browsers
@@ -106,6 +118,10 @@ impl SftpState {
             .map(|b| b.sftp)
             .collect();
         drop(browsers);
+        // Their edited files stop being watched.
+        for id in &ids {
+            self.0.edits.forget_browser(*id);
+        }
         let transfers = self.0.transfers.lock().unwrap();
         let running = transfers
             .iter()
@@ -214,7 +230,7 @@ pub struct Progress {
     total: Option<u64>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PickedFile {
     token: Uuid,
@@ -462,33 +478,111 @@ pub async fn sftp_pick_upload(app: AppHandle, sftp: State<'_, SftpState>) -> Cmd
     let Some(files) = rx.await.ok().flatten() else {
         return Ok(Vec::new());
     };
-    let mut picked = sftp.0.picked.lock().unwrap();
-    picked.retain(|_, p| p.at.elapsed() < PICK_TTL);
-    let mut out = Vec::new();
-    for file in files {
-        if picked.len() >= MAX_PICKED {
-            return Err(CmdError::msg("too many files are waiting to be uploaded"));
+    let paths: Vec<PathBuf> = files.into_iter().filter_map(|f| f.into_path().ok()).collect();
+    Ok(sftp.take(&paths)?.0)
+}
+
+impl SftpState {
+    /// Opens the regular files among `paths` (chosen by the user in a native
+    /// dialog or dropped from the system) and hands out a single-use token
+    /// for each. Also returns how many folders were left out.
+    fn take(&self, paths: &[PathBuf]) -> CmdResult<(Vec<PickedFile>, usize)> {
+        let mut picked = self.0.picked.lock().unwrap();
+        picked.retain(|_, p| p.at.elapsed() < PICK_TTL);
+        let mut out = Vec::new();
+        let mut folders = 0;
+        for path in paths {
+            if path.is_dir() {
+                folders += 1;
+                continue;
+            }
+            if picked.len() >= MAX_PICKED {
+                return Err(CmdError::msg("too many files are waiting to be uploaded"));
+            }
+            let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+                continue;
+            };
+            let Some((handle, size, mode)) = open_regular(path) else {
+                continue;
+            };
+            let token = Uuid::new_v4();
+            picked.insert(
+                token,
+                Picked {
+                    file: handle,
+                    mode,
+                    name: name.clone(),
+                    at: Instant::now(),
+                },
+            );
+            out.push(PickedFile { token, name, size });
         }
-        let Ok(path) = file.into_path() else { continue };
-        let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
-            continue;
-        };
-        let Some((handle, size, mode)) = open_regular(&path) else {
-            continue;
-        };
-        let token = Uuid::new_v4();
-        picked.insert(
-            token,
-            Picked {
-                file: handle,
-                mode,
-                name: name.clone(),
-                at: Instant::now(),
-            },
-        );
-        out.push(PickedFile { token, name, size });
+        Ok((out, folders))
     }
-    Ok(out)
+}
+
+/// Where files dragged from the system are over the window (CSS pixels),
+/// sent to the UI so it can highlight the file browser under them.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DragOver {
+    x: f64,
+    y: f64,
+    active: bool,
+}
+
+/// Files dropped on the window: tokens (not paths) and where they landed.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Dropped {
+    x: f64,
+    y: f64,
+    files: Vec<PickedFile>,
+    folders: usize,
+}
+
+/// Files dragged from the system onto the window. The paths come from the
+/// operating system, never from the UI: dropped regular files are opened at
+/// once and the UI only receives tokens, as with the open dialog. The UI
+/// releases the tokens of a drop that did not land on a file browser.
+pub fn on_drag_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
+    use tauri::Emitter;
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let at = |p: &tauri::PhysicalPosition<f64>| {
+        let l = p.to_logical::<f64>(scale);
+        (l.x, l.y)
+    };
+    match event {
+        tauri::DragDropEvent::Enter { position, .. } | tauri::DragDropEvent::Over { position } => {
+            let (x, y) = at(position);
+            let _ = window.emit("termdock://drag", DragOver { x, y, active: true });
+        }
+        tauri::DragDropEvent::Leave => {
+            let _ = window.emit(
+                "termdock://drag",
+                DragOver {
+                    x: 0.0,
+                    y: 0.0,
+                    active: false,
+                },
+            );
+        }
+        tauri::DragDropEvent::Drop { paths, position } => {
+            let _ = window.emit(
+                "termdock://drag",
+                DragOver {
+                    x: 0.0,
+                    y: 0.0,
+                    active: false,
+                },
+            );
+            let state = window.state::<SftpState>();
+            let (x, y) = at(position);
+            let (files, folders) = state.take(paths).unwrap_or_default();
+            let _ = window.emit("termdock://drop", Dropped { x, y, files, folders });
+        }
+        _ => {}
+    }
 }
 
 /// Releases tokens the UI did not use (skipped or stopped uploads).
@@ -580,7 +674,7 @@ fn dialog(app: &AppHandle) -> FileDialogBuilder<tauri::Wry> {
 
 /// A safe default name for the save dialog: the server's name without path
 /// separators, characters Windows rejects, or invisible characters.
-fn local_file_name(name: &str) -> String {
+pub(crate) fn local_file_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
         .filter(|c| !is_format_char(*c))

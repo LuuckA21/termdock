@@ -7,6 +7,18 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-17
+
+### Aggiunto
+
+- File browser: trascina file dal computer per caricarli (le cartelle sono saltate).
+- File browser: *Vai alla cartella del terminale* e *Segui* (si sposta insieme ai `cd` nel terminale), da OSC 7 o dal solito titolo `utente@host: dir`.
+- File browser: *Modifica* (`F4`) apre un file di testo remoto nell'editor di testo di sistema; ogni salvataggio viene ricaricato sul server, chiedendo prima se il file è cambiato sul server nel frattempo.
+
+### Modificato
+
+- I preferiti si riordinano trascinandoli con il puntatore (la finestra ora riceve i file rilasciati dal sistema).
+
 ## [0.8.0] - 2026-10-17
 
 ### Aggiunto
@@ -122,7 +134,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/LuuckA21/termdock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/LuuckA21/termdock/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/LuuckA21/termdock/compare/v0.5.1...v0.6.0
