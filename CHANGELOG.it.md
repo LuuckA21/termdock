@@ -7,6 +7,18 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-17
+
+### Aggiunto
+
+- Pannelli divisi: `Ctrl+Shift+E` divide il pannello attivo a destra, `Ctrl+Shift+O` in basso (anche dal menu col tasto destro sulla scheda). Il nuovo pannello apre la stessa connessione o shell; i divisori si trascinano e `Alt+frecce` sposta tra i pannelli.
+- Impostazioni di aspetto: tema scuro, chiaro o di sistema, schemi di colori del terminale (Termdock Dark/Light, Solarized Dark/Light, Dracula, Nord, Gruvbox Dark), carattere, dimensione, interlinea, stile e lampeggio del cursore, scrollback, con anteprima dal vivo.
+- `Ctrl` + `+` / `-` / `0` ingrandisce, rimpicciolisce o ripristina il carattere del terminale.
+
+### Modificato
+
+- `Ctrl+Shift+W` chiude il pannello attivo; una scheda si chiude con il suo ultimo pannello (la × sulla scheda chiude ancora l'intera scheda).
+
 ## [0.4.1] - 2026-10-17
 
 ### Modificato
@@ -66,7 +78,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/LuuckA21/termdock/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/LuuckA21/termdock/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/LuuckA21/termdock/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/LuuckA21/termdock/compare/v0.2.0...v0.3.0

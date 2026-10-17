@@ -17,6 +17,8 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Connection manager**: groups, colors, search, star to pin to the favorites bar.
 - **Quick connect**: type `user@host:port` in the bar and press Enter.
 - Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click).
+- **Split panes**: divide a tab side by side or top/bottom as many times as needed (the new pane opens the same connection or shell), drag the dividers to resize, move between panes with `Alt+arrows`.
+- **Themes and fonts**: dark, light or system theme; terminal colour schemes (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); font, size, line height, cursor style and scrollback, with a live preview in Settings; `Ctrl` + `+` / `-` / `0` changes the font size.
 - **Automatic updates**: a new version is announced at start (and once a day), installed only after you confirm, and verified against the signing key built into the app; it can be turned off in Settings.
 - **Multilingual interface** (English, Italiano): choose it in Settings (`Ctrl+,`) or leave *Automatic* to follow the system language; the switch is immediate and open sessions keep running.
 
@@ -25,14 +27,17 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | Keys | Action |
 | --- | --- |
 | `Ctrl+Shift+T` | new local shell (default one) |
-| `Ctrl+Shift+W` | close tab |
+| `Ctrl+Shift+E` / `Ctrl+Shift+O` | split the pane right / down |
+| `Alt+←↑→↓` | move to the next pane (with several panes) |
+| `Ctrl+Shift+W` | close the pane (the tab with its last pane) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | next / previous tab |
 | `Alt+1…9` | go to tab N |
 | `Ctrl+Shift+1…9` | open favorite N |
 | `Ctrl+Shift+K` | quick connect |
 | `Ctrl+Shift+M` | connection manager |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
-| `Ctrl+,` | settings (language, updates) |
+| `Ctrl` + `+` / `-` / `0` | larger / smaller / default font size |
+| `Ctrl+,` | settings (language, appearance, updates) |
 | right click in the terminal | copy the selection, otherwise paste |
 
 ## Security
@@ -80,7 +85,7 @@ Data is stored in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json` and `known_hosts`; passwords live only in the keychain.)
+(`profiles.json` and `known_hosts`; passwords live only in the keychain. Interface preferences such as language and appearance are kept in the web view's local storage.)
 
 ## Development
 

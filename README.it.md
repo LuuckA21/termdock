@@ -17,6 +17,8 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 - **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti.
 - **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.
 - Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro).
+- **Pannelli divisi**: dividi una scheda affiancando o sovrapponendo i pannelli quante volte serve (il nuovo pannello apre la stessa connessione o shell), trascina i divisori per ridimensionarli, spostati tra i pannelli con `Alt+frecce`.
+- **Temi e caratteri**: tema scuro, chiaro o di sistema; schemi di colori del terminale (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); carattere, dimensione, interlinea, stile del cursore e scrollback, con anteprima dal vivo nelle Impostazioni; `Ctrl` + `+` / `-` / `0` cambia la dimensione del carattere.
 - **Aggiornamenti automatici**: una nuova versione viene segnalata all'avvio (e una volta al giorno), installata solo dopo la tua conferma e verificata con la chiave di firma inclusa nell'app; si può disattivare nelle Impostazioni.
 - **Interfaccia multilingua** (English, Italiano): si sceglie nelle Impostazioni (`Ctrl+,`) oppure si lascia *Automatica* per seguire la lingua del sistema; il cambio è immediato e le sessioni aperte restano attive.
 
@@ -25,14 +27,17 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 | Tasti | Azione |
 | --- | --- |
 | `Ctrl+Shift+T` | nuova shell locale (predefinita) |
-| `Ctrl+Shift+W` | chiudi scheda |
+| `Ctrl+Shift+E` / `Ctrl+Shift+O` | dividi il pannello a destra / in basso |
+| `Alt+←↑→↓` | passa al pannello vicino (con più pannelli) |
+| `Ctrl+Shift+W` | chiudi il pannello (la scheda con l'ultimo pannello) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | scheda successiva / precedente |
 | `Alt+1…9` | vai alla scheda N |
 | `Ctrl+Shift+1…9` | apri il preferito N |
 | `Ctrl+Shift+K` | connessione rapida |
 | `Ctrl+Shift+M` | gestore connessioni |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copia / incolla |
-| `Ctrl+,` | impostazioni (lingua, aggiornamenti) |
+| `Ctrl` + `+` / `-` / `0` | carattere più grande / più piccolo / predefinito |
+| `Ctrl+,` | impostazioni (lingua, aspetto, aggiornamenti) |
 | tasto destro nel terminale | copia la selezione, altrimenti incolla |
 
 ## Sicurezza
@@ -80,7 +85,7 @@ I dati sono salvati in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json` e `known_hosts`; le password stanno solo nel portachiavi.)
+(`profiles.json` e `known_hosts`; le password stanno solo nel portachiavi. Le preferenze dell'interfaccia, come lingua e aspetto, sono nel local storage della web view.)
 
 ## Sviluppo
 
