@@ -20,6 +20,7 @@ use termdock_core::profile::{Forward, Hop, SshAuth, SshTarget};
 use termdock_core::session::{
     BoxFuture, EventSink, Interaction, SecretAnswer, SecretPrompt, SessionEvent, SessionHandle, TermSize,
 };
+#[cfg(unix)]
 use termdock_core::sftp::{self, CancellationToken, EntryKind, Sftp};
 use termdock_core::ssh::{self, SshConnect};
 use termdock_core::vault::{MemoryVault, SecretKind, Vault};
@@ -541,6 +542,8 @@ async fn stale_saved_password_is_forgotten() {
 /// without overwrite, keeping permissions), download, cancel, rename,
 /// remove; names that would leave the directory, non-regular files and
 /// oversized listings are handled safely.
+/// Unix only: it checks Unix permissions and prepares files from the shell.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn sftp_on_terminal_connection() {
     use std::os::unix::fs::PermissionsExt;
