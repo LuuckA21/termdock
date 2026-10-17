@@ -112,6 +112,8 @@ cargo test -p termdock-core --test ssh_e2e
 
 I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi ed eliminata se rifiutata, chiave privata cifrata con passphrase, keyboard-interactive, jump host con forwarding `-L` / `-R` / `-D`, chiusura sessione e **host key cambiata (simulazione MITM)**.
 
+Le sessioni cloud di Claude Code vengono preparate da `.claude/hooks/session-start.sh`, e le skill del progetto in `.claude/skills/` descrivono la procedura di PR/release e come avviare l'app senza interfaccia grafica.
+
 Codice, commenti e messaggi di commit sono in inglese; la documentazione è mantenuta in inglese e in italiano (`*.md` e `*.it.md`).
 
 I testi dell'interfaccia stanno in [`src/locales/`](src/locales), un file per lingua. Per aggiungere una lingua copia `en.ts` in `<codice>.ts`, traducilo (il tipo `Dict` fa fallire la build se manca una chiave) e registralo in `LANGUAGES` in [`src/i18n.ts`](src/i18n.ts); comparirà nelle Impostazioni.

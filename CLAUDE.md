@@ -22,6 +22,12 @@ for the threat model; keep both up to date when behaviour changes.
   with one dictionary per language in `src/locales/` (every key in every
   locale).
 
+## Agent sessions
+
+- `.claude/hooks/session-start.sh` prepares cloud sessions (system packages,
+  npm modules, crates). Skills: `steward` (PR, merge and release procedure)
+  and `termdock-dev` (SSH e2e, headless app runs, local update tests).
+
 ## Versioning and releases (owned by the agent, not the user)
 
 - Semantic Versioning. Before 1.0: new features -> minor (0.2.0 -> 0.3.0),
