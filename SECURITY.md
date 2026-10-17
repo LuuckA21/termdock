@@ -85,6 +85,7 @@ The SSH server is treated as untrusted: it controls names, listings, sizes, cont
 - Uploads go to a random hidden name created exclusively with mode `0600` (a file or link planted by someone else cannot redirect the write). Only when complete, and for an existing name only after the user confirmed, the file takes the target's place: atomically with `posix-rename@openssh.com`, otherwise by setting the old file aside and putting it back on failure. A replaced file keeps its permissions; a new one gets the local file's.
 - Cancel works at once; closing a browser or its tab cancels its transfers and lets them clean up before the connection closes.
 - Delete is never recursive (only files, links and empty folders) and its confirmation defaults to *Cancel*.
+- **Files as another user** run `sftp-server` through `sudo -u <user>` on new channels of the same connection; the server's sudo policy decides what is allowed, Termdock adds no privileges. The user name must be a plain Unix name (letters, digits, `_ . -`, starting with a letter or `_`, at most 32 characters) and the command is built from fixed parts: only `sftp-server` paths from a built-in list are run, never one reported by the server. sudo is started with a random prompt marker for each channel, and the password is sent **only after that exact prompt appears**; if sudo needs none (NOPASSWD, a PAM module that does not ask), it is never sent. The password is asked in a dialog that names whose password sudo wants (`%p`: the login user, or root/the target user with `rootpw`/`targetpw`), sent to the waiting sudo and dropped right after; it is never stored or logged. A wrong password goes back to the same sudo, which allows its usual three tries. Switching is always an explicit click, and root needs a confirmation: the terminal title (`user@host`), which the server controls, is only used to suggest it. Acting as `root` is shown in red.
 
 ### Updates (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
 
@@ -111,5 +112,6 @@ The SSH server is treated as untrusted: it controls names, listings, sizes, cont
 
 - Release builds are not code-signed until signing certificates are configured in the release workflow; verify downloads accordingly.
 - Downloaded files are only as trustworthy as the server they come from; on macOS they are not marked with the quarantine flag yet.
+- With sudo, the password crosses the SSH connection to the server like typing it in the terminal would; it is as safe as that server. Each opening authenticates with sudo twice (one per SFTP channel), which two-factor setups may show as two requests.
 - Agent forwarding and X11 forwarding are not implemented (and therefore cannot be abused).
 - Typed secrets transit the web view's memory before reaching the backend; they are cleared from the input immediately after submission.

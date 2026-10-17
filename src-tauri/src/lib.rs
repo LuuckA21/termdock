@@ -57,6 +57,8 @@ pub fn run() {
             sftp::sftp_pick_upload,
             sftp::sftp_upload,
             sftp::sftp_forget_picks,
+            sftp::sftp_sudo_password,
+            sftp::sftp_sudo_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Termdock");

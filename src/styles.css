@@ -518,6 +518,45 @@ textarea.input {
   border-bottom: 1px solid var(--line);
 }
 
+.files-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  padding: 4px 8px;
+}
+
+.files-user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Acting as root: make it obvious. */
+.files-user.root {
+  color: var(--danger);
+}
+
+.files-suggest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 12px;
+}
+
+.files-suggest .btn {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.files-suggest span {
+  flex: 1;
+  min-width: 0;
+}
+
 .files-path {
   flex: 1;
   min-width: 0;
@@ -603,6 +642,17 @@ textarea.input {
 .files-status progress {
   width: 140px;
   accent-color: var(--accent);
+}
+
+/* Narrow panes: the path gets its own row. */
+@container (max-width: 440px) {
+  .files-bar {
+    flex-wrap: wrap;
+  }
+  .files-path {
+    order: 1;
+    flex-basis: 100%;
+  }
 }
 
 /* Narrow panes: keep name and size only. */
@@ -1112,4 +1162,43 @@ dialog.import {
   .fwd-row {
     grid-template-columns: 1fr 1fr 70px;
   }
+}
+
+/* ---------- pane picker (split) ---------- */
+
+dialog.picker {
+  width: min(560px, 92vw);
+}
+
+.picker-list {
+  margin-top: 8px;
+  max-height: min(50vh, 420px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 0;
+}
+
+.picker-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.picker-row.selected {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.picker-label,
+.picker-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker-detail {
+  font-size: 12px;
 }

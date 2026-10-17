@@ -62,6 +62,7 @@ const ICONS = {
   download: ["M12 4v11", "M7 10l5 5 5-5", "M5 20h14"],
   splitRight: ["M4 5h16v14H4z", "M12 5v14"],
   folder: ["M3 6h6l2 2h10v11H3z"],
+  user: ["M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M4 21a8 8 0 0 1 16 0"],
   folderPlus: ["M3 6h6l2 2h10v11H3z", "M12 11v6", "M9 14h6"],
   file: ["M6 3h8l4 4v14H6z", "M14 3v4h4"],
   link: ["M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1", "M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"],

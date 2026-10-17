@@ -137,6 +137,8 @@ export class FavoritesBar {
       e.preventDefault();
       showMenu(e.clientX, e.clientY, [
         { label: t("connect"), icon: icon("bolt"), action: () => this.app.openProfile(p) },
+        { label: t("openSplitRight"), icon: icon("splitRight"), action: () => this.app.openProfileSplit(p, "right") },
+        { label: t("openSplitDown"), icon: icon("splitDown"), action: () => this.app.openProfileSplit(p, "down") },
         { label: t("edit"), icon: icon("edit"), action: () => this.app.openManager({ edit: p.id }) },
         { label: t("removeFromFavorites"), icon: icon("star"), action: () => void this.app.setFavorite(p.id, false) },
       ]);

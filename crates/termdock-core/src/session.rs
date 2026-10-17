@@ -55,8 +55,9 @@ pub(crate) enum Control {
 #[derive(Clone)]
 pub struct SessionHandle {
     tx: mpsc::UnboundedSender<Control>,
-    /// The SSH connection behind the terminal, for extra channels (SFTP).
-    ssh: Option<SshHandle>,
+    /// The SSH connection behind the terminal, for extra channels (SFTP),
+    /// and the user it is logged in as.
+    ssh: Option<(SshHandle, String)>,
 }
 
 impl std::fmt::Debug for SessionHandle {
@@ -68,13 +69,18 @@ impl std::fmt::Debug for SessionHandle {
 }
 
 impl SessionHandle {
-    pub(crate) fn new(ssh: Option<SshHandle>) -> (Self, mpsc::UnboundedReceiver<Control>) {
+    pub(crate) fn new(ssh: Option<(SshHandle, String)>) -> (Self, mpsc::UnboundedReceiver<Control>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (Self { tx, ssh }, rx)
     }
 
     pub(crate) fn ssh(&self) -> Option<&SshHandle> {
-        self.ssh.as_ref()
+        self.ssh.as_ref().map(|(h, _)| h)
+    }
+
+    /// The user an SSH session is logged in as.
+    pub fn ssh_user(&self) -> Option<&str> {
+        self.ssh.as_ref().map(|(_, u)| u.as_str())
     }
 
     pub fn write(&self, data: Vec<u8>) -> Result<()> {

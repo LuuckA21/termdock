@@ -19,8 +19,12 @@ use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 pub use tokio_util::sync::CancellationToken;
 
+use russh::ChannelMsg;
+use zeroize::Zeroizing;
+
 use crate::error::{Error, Result};
 use crate::session::SessionHandle;
+use crate::ssh::SshHandle;
 
 /// Directory listings stop after this many entries (the UI says so).
 pub const MAX_ENTRIES: usize = 20_000;
@@ -168,29 +172,350 @@ pub struct Sftp {
     posix_rename: bool,
 }
 
+/// Where OpenSSH installs `sftp-server` (Debian/Ubuntu, RHEL/Fedora, Arch,
+/// macOS, BSD, Alpine, NixOS…). Only these fixed paths are ever run through
+/// sudo; the server's reply to the probe is only compared with this list.
+const SFTP_SERVERS: &[&str] = &[
+    "/usr/lib/openssh/sftp-server",
+    "/usr/libexec/openssh/sftp-server",
+    "/usr/lib/ssh/sftp-server",
+    "/usr/libexec/sftp-server",
+    "/usr/lib/sftp-server",
+    "/usr/local/libexec/sftp-server",
+    "/run/current-system/sw/libexec/sftp-server",
+];
+/// sudo's own output kept while waiting for its prompt or for sftp-server.
+const MAX_SUDO_OUTPUT: usize = 64 * 1024;
+/// What `sftp-server -e -l INFO` prints once it runs, i.e. sudo is done.
+const SFTP_STARTED: &str = "session opened for local user";
+
+type SshChannel = russh::Channel<russh::client::Msg>;
+type SshStream = russh::ChannelStream<russh::client::Msg>;
+
+/// A Unix user name to run SFTP as: letters, digits, `_`, `.`, `-`, starting
+/// with a letter or `_`, at most 32 characters. Strict on purpose: it is
+/// placed in a remote command line.
+pub fn validate_user(name: &str) -> Result<()> {
+    let mut chars = name.chars();
+    let ok = name.len() <= 32
+        && chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(Error::InvalidName(name.chars().take(64).collect()))
+    }
+}
+
+/// Opens a channel for `command`; fails if the server refuses to run it.
+async fn exec_channel(handle: &SshHandle, command: &str) -> Result<SshChannel> {
+    let channel = handle.channel_open_session().await?;
+    if let Err(e) = channel.exec(true, command.as_bytes()).await {
+        let _ = channel.close().await;
+        return Err(e.into());
+    }
+    Ok(channel)
+}
+
+/// Finds `sftp-server` among [`SFTP_SERVERS`] on the server.
+async fn find_sftp_server(handle: &SshHandle) -> Result<&'static str> {
+    // No quotes needed (and none used): the paths have no spaces.
+    let probe = format!(
+        "sh -c 'for p in {}; do if [ -x $p ]; then echo $p; exit 0; fi; done; exit 1'",
+        SFTP_SERVERS.join(" ")
+    );
+    let mut channel = exec_channel(handle, &probe).await?;
+    let mut out = Vec::new();
+    let read = async {
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } if out.len() < MAX_SUDO_OUTPUT => out.extend_from_slice(&data),
+                ChannelMsg::Failure => return Err(Error::Sudo("the server refused to run commands".into())),
+                ChannelMsg::Close | ChannelMsg::Eof => break,
+                _ => {}
+            }
+        }
+        Ok(())
+    };
+    let result = tokio::time::timeout(OPEN_TIMEOUT, read).await;
+    let _ = channel.close().await;
+    result.map_err(|_| Error::Timeout)??;
+    // Login scripts may print first: the path is the last line.
+    let text = String::from_utf8_lossy(&out);
+    let last = text.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or_default();
+    SFTP_SERVERS
+        .iter()
+        .copied()
+        .find(|p| *p == last)
+        .ok_or(Error::NoSftpServer)
+}
+
+/// The line of sudo's output that explains a failure, cleaned for display:
+/// the last one naming sudo, else the last one (the first may be the lecture).
+fn sudo_message(stderr: &str, marker: &str) -> String {
+    let lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.contains(marker))
+        .collect();
+    let line = lines
+        .iter()
+        .rev()
+        .find(|l| l.starts_with("sudo"))
+        .or(lines.last())
+        .copied()
+        .unwrap_or("sudo did not start the file server");
+    short(
+        line.chars()
+            .filter(|c| !c.is_control() && !is_format_char(*c))
+            .collect(),
+    )
+}
+
+/// Where sudo got to on a channel.
+enum Step {
+    /// sftp-server runs: the channel carries SFTP from now on.
+    Started,
+    /// sudo printed our prompt and waits for a password, for this user
+    /// (`%p`: the login user, or root/the target with `rootpw`/`targetpw`).
+    Prompted(Option<String>),
+}
+
+/// One `sudo … sftp-server` on its own channel, before SFTP starts.
+struct Waiting {
+    channel: SshChannel,
+    /// Random, per channel: only sudo's real prompt contains it.
+    marker: String,
+    stderr: Vec<u8>,
+    /// sudo printed the prompt and waits for input.
+    prompted: bool,
+    asks_for: Option<String>,
+    /// A password was already given to this sudo (a new prompt means retry).
+    answered: bool,
+}
+
+impl Waiting {
+    async fn start(handle: &SshHandle, server: &str, user: &str) -> Result<Self> {
+        let marker = format!("TDK{}", &uuid::Uuid::new_v4().simple().to_string()[..16]);
+        // `--prompt`: sudo writes it (to stderr, with -S) exactly when it wants
+        // a password; `%p` is whose. `-e -l INFO`: sftp-server says when it
+        // runs. `-d %d`: start in that user's home. LC_ALL=C: English text.
+        let command =
+            format!("sh -c 'LC_ALL=C exec sudo -S --prompt={marker}/%p/ -u {user} -- {server} -e -l INFO -d %d'");
+        let channel = exec_channel(handle, &command).await?;
+        Ok(Self {
+            channel,
+            marker,
+            stderr: Vec::new(),
+            prompted: false,
+            asks_for: None,
+            answered: false,
+        })
+    }
+
+    /// Reads sudo's output until sftp-server runs or sudo prompts.
+    async fn advance(&mut self) -> Result<Step> {
+        let read = async {
+            while let Some(msg) = self.channel.wait().await {
+                match msg {
+                    ChannelMsg::ExtendedData { data, .. } => {
+                        if self.stderr.len() < MAX_SUDO_OUTPUT {
+                            self.stderr.extend_from_slice(&data);
+                        }
+                        let text = String::from_utf8_lossy(&self.stderr).into_owned();
+                        if text.contains(SFTP_STARTED) {
+                            return Ok(Step::Started);
+                        }
+                        let open = format!("{}/", self.marker);
+                        if let Some(at) = text.find(&open) {
+                            let rest = &text[at + open.len()..];
+                            let Some(close) = rest.find('/') else { continue };
+                            let who = &rest[..close];
+                            let who = validate_user(who).is_ok().then(|| who.to_owned());
+                            // Keep what came before the prompt (lecture,
+                            // "Sorry, try again"), drop the prompt itself.
+                            let kept = text.as_bytes()[..at].to_vec();
+                            self.stderr = kept;
+                            return Ok(Step::Prompted(who));
+                        }
+                    }
+                    ChannelMsg::Failure => {
+                        return Err(Error::Sudo("the server refused to run sudo".into()));
+                    }
+                    ChannelMsg::ExitStatus { .. } | ChannelMsg::Eof | ChannelMsg::Close => {
+                        let text = String::from_utf8_lossy(&self.stderr).into_owned();
+                        return Err(Error::Sudo(sudo_message(&text, &self.marker)));
+                    }
+                    _ => {}
+                }
+            }
+            Err(Error::SessionClosed)
+        };
+        tokio::time::timeout(OPEN_TIMEOUT, read)
+            .await
+            .map_err(|_| Error::Timeout)?
+    }
+
+    async fn close(self) {
+        let _ = self.channel.close().await;
+    }
+}
+
+/// Opening a file browser through sudo, kept between password attempts: the
+/// same sudo processes receive the retries, like typing in a terminal (sudo
+/// itself allows three).
+pub struct SudoPending {
+    handle: SshHandle,
+    server: &'static str,
+    user: String,
+    /// Channels where sftp-server already runs (two are needed).
+    ready: Vec<SshStream>,
+    waiting: Option<Waiting>,
+}
+
+impl SudoPending {
+    /// Whose password sudo asks for, when it says.
+    pub fn asks_for(&self) -> Option<&str> {
+        self.waiting.as_ref().and_then(|w| w.asks_for.as_deref())
+    }
+
+    /// Stops the attempt: sudo gets end-of-file, channels close.
+    pub async fn cancel(mut self) {
+        if let Some(w) = self.waiting.take() {
+            w.close().await;
+        }
+    }
+
+    /// Moves on: starts the channels, answers prompts with `password` (each
+    /// sudo gets it at most once per call), and stops at the first prompt it
+    /// cannot answer.
+    async fn drive(mut self, password: Option<&str>) -> Result<OpenAs> {
+        loop {
+            if self.ready.len() == 2 {
+                let raw = RawSftpSession::new(self.ready.pop().expect("two"));
+                let inner = SftpSession::new(self.ready.pop().expect("one")).await?;
+                return Ok(OpenAs::Opened(Box::new(Sftp::assemble(inner, raw).await?)));
+            }
+            let mut w = match self.waiting.take() {
+                Some(w) => w,
+                None => Waiting::start(&self.handle, self.server, &self.user).await?,
+            };
+            if w.prompted {
+                let Some(pw) = password else {
+                    let retry = w.answered;
+                    self.waiting = Some(w);
+                    return Ok(OpenAs::PasswordRequired { pending: self, retry });
+                };
+                let mut line = Zeroizing::new(Vec::with_capacity(pw.len() + 1));
+                line.extend_from_slice(pw.as_bytes());
+                line.push(b'\n');
+                if let Err(e) = w.channel.data(&line[..]).await {
+                    w.close().await;
+                    return Err(e.into());
+                }
+                w.prompted = false;
+                w.answered = true;
+            }
+            match w.advance().await {
+                Ok(Step::Started) => self.ready.push(w.channel.into_stream()),
+                Ok(Step::Prompted(who)) => {
+                    w.prompted = true;
+                    w.asks_for = who;
+                    let rejected = w.answered;
+                    self.waiting = Some(w);
+                    // Our password was not accepted (or sudo wants something
+                    // else, e.g. a one-time code), or none was given: ask.
+                    if rejected || password.is_none() {
+                        return Ok(OpenAs::PasswordRequired {
+                            pending: self,
+                            retry: rejected,
+                        });
+                    }
+                }
+                Err(e) => {
+                    w.close().await;
+                    return Err(e);
+                }
+            }
+        }
+    }
+}
+
+impl Drop for SudoPending {
+    /// A forgotten attempt still closes its channel (sudo gets end-of-file).
+    fn drop(&mut self) {
+        if let Some(w) = self.waiting.take()
+            && let Ok(rt) = tokio::runtime::Handle::try_current()
+        {
+            rt.spawn(w.close());
+        }
+    }
+}
+
+/// Result of opening a file browser as another user.
+pub enum OpenAs {
+    Opened(Box<Sftp>),
+    /// sudo waits for a password (`retry`: the one given was not accepted).
+    PasswordRequired {
+        pending: SudoPending,
+        retry: bool,
+    },
+}
+
 impl Sftp {
     /// Starts the `sftp` subsystem on the session's SSH connection.
     pub async fn open(session: &SessionHandle) -> Result<Self> {
         let handle = session.ssh().ok_or(Error::NotSsh)?;
         let opened = async {
-            let files = handle.channel_open_session().await?;
-            files.request_subsystem(true, "sftp").await?;
-            let inner = SftpSession::new(files.into_stream()).await?;
-
-            let control = handle.channel_open_session().await?;
-            control.request_subsystem(true, "sftp").await?;
-            let raw = RawSftpSession::new(control.into_stream());
-            let version = raw.init().await?;
-            let posix_rename = version.extensions.get(POSIX_RENAME).is_some_and(|v| v == "1");
-            Ok::<_, Error>(Self {
-                inner,
-                raw,
-                posix_rename,
-            })
+            let start = || async {
+                let channel = handle.channel_open_session().await?;
+                channel.request_subsystem(true, "sftp").await?;
+                Ok::<_, Error>(channel.into_stream())
+            };
+            let inner = SftpSession::new(start().await?).await?;
+            let raw = RawSftpSession::new(start().await?);
+            Self::assemble(inner, raw).await
         };
         tokio::time::timeout(OPEN_TIMEOUT, opened)
             .await
             .map_err(|_| Error::Timeout)?
+    }
+
+    /// Starts `sftp-server` as `user` through `sudo` on the session's SSH
+    /// connection, like `sudo -iu user` in the terminal. Needs sudo rights for
+    /// it on the server. A password is only sent when sudo prints its prompt
+    /// (see [`Sftp::continue_as`]); it is never stored.
+    pub async fn open_as(session: &SessionHandle, user: &str) -> Result<OpenAs> {
+        validate_user(user)?;
+        let handle = session.ssh().ok_or(Error::NotSsh)?;
+        if session.ssh_user() == Some(user) {
+            return Ok(OpenAs::Opened(Box::new(Self::open(session).await?)));
+        }
+        let server = find_sftp_server(handle).await?;
+        SudoPending {
+            handle: handle.clone(),
+            server,
+            user: user.to_owned(),
+            ready: Vec::new(),
+            waiting: None,
+        }
+        .drive(None)
+        .await
+    }
+
+    /// Gives `password` to the sudo that is waiting for it.
+    pub async fn continue_as(pending: SudoPending, password: &str) -> Result<OpenAs> {
+        pending.drive(Some(password)).await
+    }
+
+    async fn assemble(inner: SftpSession, raw: RawSftpSession) -> Result<Self> {
+        let version = raw.init().await?;
+        let posix_rename = version.extensions.get(POSIX_RENAME).is_some_and(|v| v == "1");
+        Ok(Self {
+            inner,
+            raw,
+            posix_rename,
+        })
     }
 
     /// The canonical absolute form of `path` (`"."` is the login directory).
@@ -503,6 +828,37 @@ mod tests {
         ] {
             assert!(validate_name(bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn users() {
+        for ok in ["bob", "_svc", "www-data", "a.b", "u1", &"x".repeat(32)] {
+            assert!(validate_user(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            "-u",
+            "1abc",
+            ".x",
+            "a b",
+            "x;id",
+            "$(id)",
+            "a'b",
+            "a\"b",
+            "é",
+            &"x".repeat(33),
+        ] {
+            assert!(validate_user(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn sudo_messages() {
+        let lecture = "We trust you have received the usual lecture.\n\nTDKabc/bob/\nSorry, try again.\nsudo: 3 incorrect password attempts\n";
+        assert_eq!(sudo_message(lecture, "TDKabc"), "sudo: 3 incorrect password attempts");
+        assert_eq!(sudo_message("odd failure\n", "TDK"), "odd failure");
+        assert_eq!(sudo_message("", "TDK"), "sudo did not start the file server");
+        assert_eq!(sudo_message("sudo: \u{202e}bad\x07\n", "TDK"), "sudo: bad");
     }
 
     #[test]

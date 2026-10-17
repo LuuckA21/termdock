@@ -5,7 +5,8 @@
 #   eval "$(sudo scripts/e2e-sshd.sh)"
 #   cargo test -p termdock-core --test ssh_e2e
 #
-# Linux only, needs root (creates the user `tdtest`) and openssh-server.
+# Linux only, needs root and openssh-server. Creates the users `tdtest`,
+# `tdother` and `tdnopw`, and sudo rules for tdtest (/etc/sudoers.d/termdock-e2e).
 set -euo pipefail
 
 USER_NAME=tdtest
@@ -39,6 +40,21 @@ CFG
 { common; echo "Port 2222"; echo "PidFile $DIR/sshd.pid"; echo "PasswordAuthentication yes"; echo "KbdInteractiveAuthentication no"; } >"$DIR/sshd_config"
 { common; echo "Port 2223"; echo "PidFile $DIR/sshd-kbd.pid"; echo "PasswordAuthentication no"; echo "KbdInteractiveAuthentication yes"; } >"$DIR/sshd_kbd_config"
 
+# Users to open SFTP as through sudo: tdother needs tdtest's password,
+# tdnopw does not. Only the throw-away test user gets these rules.
+SUDO_OUT=""
+if command -v sudo >/dev/null && [ -d /etc/sudoers.d ]; then
+  for u in tdother tdnopw; do id "$u" >/dev/null 2>&1 || useradd -m -s /bin/bash "$u"; done
+  RULES=$(mktemp)
+  printf '%s\n' "$USER_NAME ALL=(tdother) ALL" "$USER_NAME ALL=(tdnopw) NOPASSWD: ALL" >"$RULES"
+  if visudo -cqf "$RULES"; then
+    install -m 440 "$RULES" /etc/sudoers.d/termdock-e2e
+    SUDO_OUT="export TERMDOCK_E2E_SUDO_USER=tdother
+export TERMDOCK_E2E_SUDO_NOPW_USER=tdnopw"
+  fi
+  rm -f "$RULES"
+fi
+
 /usr/sbin/sshd -f "$DIR/sshd_config" -E "$DIR/sshd.log"
 /usr/sbin/sshd -f "$DIR/sshd_kbd_config" -E "$DIR/sshd-kbd.log"
 
@@ -49,4 +65,5 @@ export TERMDOCK_E2E_USER=$USER_NAME
 export TERMDOCK_E2E_PASSWORD=$PASSWORD
 export TERMDOCK_E2E_KEY=$DIR/user_key
 export TERMDOCK_E2E_KEY_PASS=$KEY_PASS
+$SUDO_OUT
 OUT

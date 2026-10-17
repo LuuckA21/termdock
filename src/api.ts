@@ -10,6 +10,7 @@ import type {
   PromptAnswer,
   SessionNotice,
   PickedFile,
+  SftpOpened,
   RemoteListing,
   TermSize,
   TransferProgress,
@@ -50,7 +51,12 @@ export const api = {
   answerPrompt: (promptId: Uuid, answer: PromptAnswer) =>
     invoke<boolean>("answer_prompt", { promptId, answer }),
 
-  sftpOpen: (session: number) => invoke<{ id: number; home: string }>("sftp_open", { session }),
+  /** `user`: open as that user through sudo (which may ask for a password). */
+  sftpOpen: (session: number, user: string | null) => invoke<SftpOpened>("sftp_open", { session, user }),
+  /** Answers the sudo prompt of a pending open; the password is not kept. */
+  sftpSudoPassword: (pending: number, password: string) =>
+    invoke<SftpOpened>("sftp_sudo_password", { pending, password }),
+  sftpSudoCancel: (pending: number) => invoke<void>("sftp_sudo_cancel", { pending }),
   sftpClose: (id: number) => invoke<void>("sftp_close", { id }),
   sftpList: (id: number, path: string) => invoke<RemoteListing>("sftp_list", { id, path }),
   sftpMkdir: (id: number, dir: string, name: string) => invoke<void>("sftp_mkdir", { id, dir, name }),

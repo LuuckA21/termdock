@@ -66,6 +66,12 @@ pub enum Error {
 
     #[error("{0:?} is not a regular file")]
     NotRegular(String),
+
+    #[error("sudo: {0}")]
+    Sudo(String),
+
+    #[error("sftp-server was not found on the server, so files cannot be opened as another user")]
+    NoSftpServer,
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

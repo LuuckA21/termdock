@@ -7,6 +7,19 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-17
+
+### Aggiunto
+
+- Pannelli divisi come Windows Terminal: dividendo si sceglie cosa aprire nel nuovo pannello (la stessa connessione, una shell locale, qualsiasi connessione salvata o un indirizzo `utente@host`), così server A e server B possono stare affiancati. Invio mantiene il comportamento precedente (stessa connessione).
+- Menu della scheda → *Affianca a*: mette una scheda aperta accanto a un'altra, mantenendo le sue sessioni.
+- Menu dei preferiti: *Apri a destra* / *Apri sotto*.
+- File browser come altro utente: dopo `sudo -iu utente` nel terminale propone di aprire i file come quell'utente (tramite sudo sul server; la password di sudo è chiesta solo se serve e mai salvata). Si può anche scegliere qualsiasi utente dal menu utente del file browser; si torna all'utente di login con un clic.
+
+### Modificato
+
+- Nei pannelli stretti il percorso del file browser va su una riga a sé.
+
 ## [0.6.0] - 2026-10-17
 
 ### Aggiunto
@@ -102,7 +115,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/LuuckA21/termdock/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/LuuckA21/termdock/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/LuuckA21/termdock/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/LuuckA21/termdock/compare/v0.4.1...v0.5.0
