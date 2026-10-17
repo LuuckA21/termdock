@@ -19,6 +19,8 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Quick connect**: type `user@host:port` in the bar and press Enter.
 - Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click).
 - **Split panes**, like Windows Terminal: divide a tab side by side or top/bottom as many times as needed and choose what opens in the new pane (the same connection, a local shell, any saved connection or a `user@host` address), e.g. server A on the left and server B on the right. Already open tabs can be put side by side without reconnecting (tab menu → *Move next to*), and favourites open directly on the right or below. Drag the dividers to resize, move between panes with `Alt+arrows`.
+- **Saved layouts**: save a tab's arrangement (which connection or shell is in each pane, and the sizes) with `Ctrl+Shift+L` and reopen it from the *Layouts* menu with one click; one layout can open automatically at startup.
+- **Find in terminal**: `Ctrl+Shift+F` searches the scrollback with highlighted matches, next/previous (`Enter` / `Shift+Enter`), match case and regular expressions.
 - **Themes and fonts**: dark, light or system theme; terminal colour schemes (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); font, size, line height, cursor style and scrollback, with a live preview in Settings; `Ctrl` + `+` / `-` / `0` changes the font size.
 - **Automatic updates**: a new version is announced at start (and once a day), installed only after you confirm, and verified against the signing key built into the app; it can be turned off in Settings.
 - **Multilingual interface** (English, Italiano): choose it in Settings (`Ctrl+,`) or leave *Automatic* to follow the system language; the switch is immediate and open sessions keep running.
@@ -30,6 +32,8 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | `Ctrl+Shift+T` | new local shell (default one) |
 | `Ctrl+Shift+E` / `Ctrl+Shift+O` | split the pane right / down (then choose what to open; Enter = same connection) |
 | `Ctrl+Shift+S` | file browser (SFTP) for the SSH terminal |
+| `Ctrl+Shift+F` | find in the terminal |
+| `Ctrl+Shift+L` | save the tab as a layout |
 | `Alt+←↑→↓` | move to the next pane (with several panes) |
 | `Ctrl+Shift+W` | close the pane (the tab with its last pane) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | next / previous tab |
@@ -88,7 +92,7 @@ Data is stored in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json` and `known_hosts`; passwords live only in the keychain. Interface preferences such as language and appearance are kept in the web view's local storage.)
+(`profiles.json` and `known_hosts`; passwords live only in the keychain. Interface preferences such as language and appearance, and saved layouts, are kept in the web view's local storage.)
 
 ## Development
 

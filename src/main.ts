@@ -9,10 +9,12 @@ import { describe, FavoritesBar, setDotColor } from "./favorites";
 import { FilesPane } from "./files";
 import { onLanguageChange, t } from "./i18n";
 import { openManager, type ManagerOptions } from "./manager";
-import { showMenu } from "./menu";
+import { firstLeaf, getLayouts, MAX_PANES, paneCount, saveLayout as saveLayoutAs, startupLayout, type LayoutLeaf, type LayoutNode } from "./layouts";
+import { askLayoutName, manageLayouts } from "./layoutsui";
+import { showMenu, showMenuBelow } from "./menu";
 import { DEFAULTS, getPrefs, setPrefs } from "./prefs";
 import { openSettings } from "./settings";
-import { Tab, type Direction, type SplitDir } from "./tabs";
+import { Tab, type Direction, type Snapshot, type SplitDir } from "./tabs";
 import type { Pane } from "./pane";
 import { pickPane, type PaneChoice } from "./picker";
 import { TerminalPane } from "./terminal";
@@ -45,7 +47,9 @@ export class App {
     });
     window.addEventListener("beforeunload", () => this.tabs.forEach((tab) => tab.dispose()));
     this.renderTabs();
-    this.openDefaultShell();
+    const startup = startupLayout();
+    if (startup) this.openLayout(startup.id);
+    else this.openDefaultShell();
     startUpdateChecks();
   }
 
@@ -214,6 +218,92 @@ export class App {
     this.activate(into);
   }
 
+  /** Saves the tab's split layout (terminals only) under a name. */
+  async saveLayout(tab: Tab | null = this.active): Promise<void> {
+    if (!tab) return;
+    const snapshot = tab.snapshot((pane) =>
+      pane instanceof TerminalPane ? { target: pane.opts.target, title: pane.opts.title } : null,
+    );
+    if (!snapshot) return;
+    const toNode = (s: Snapshot<{ target: OpenTarget; title: string }>): LayoutNode =>
+      s.kind === "pane"
+        ? { kind: "pane", target: s.value.target, title: s.value.title }
+        : { kind: "split", dir: s.dir, ratio: s.ratio, a: toNode(s.a), b: toNode(s.b) };
+    const root = toNode(snapshot);
+    if (paneCount(root) > MAX_PANES) {
+      await alertBox(t("layouts"), t("layoutTooMany", { count: MAX_PANES }));
+      return;
+    }
+    const name = await askLayoutName(t("layoutSave"), tab.title);
+    if (name) saveLayoutAs(name, root);
+    this.focusActive();
+  }
+
+  /**
+   * Opens a saved layout in a new tab. Connections or shells that no longer
+   * exist open the default local shell instead, and the user is told.
+   */
+  openLayout(id: string): void {
+    const layout = getLayouts().find((l) => l.id === id);
+    if (!layout) return;
+    const missing: string[] = [];
+    const fallback = this.shells.find((x) => x.isDefault) ?? this.shells[0];
+    const resolve = (leaf: LayoutLeaf): PaneChoice | null => {
+      const { target } = leaf;
+      if (target.kind === "profile") {
+        const p = this.profiles.find((x) => x.id === target.id);
+        if (p) return { title: p.name, subtitle: describe(p), target, color: p.color };
+      } else if (target.kind === "shell") {
+        const s = this.shells.find((x) => x.id === target.id);
+        if (s) return { title: s.name, subtitle: s.shell.program, target };
+      } else {
+        return { title: target.address, subtitle: target.address, target };
+      }
+      missing.push(leaf.title);
+      return fallback ? { title: fallback.name, subtitle: fallback.shell.program, target: { kind: "shell", id: fallback.id } } : null;
+    };
+    const make = (leaf: LayoutLeaf): TerminalPane | null => {
+      const c = resolve(leaf);
+      return c ? this.newPane(c.title, c.subtitle, c.target, c.color) : null;
+    };
+    const first = make(firstLeaf(layout.root));
+    if (!first) return;
+    const tab = new Tab(first);
+    const panes = [first];
+    // `pane` fills the area of `node`: split it as the saved tree says.
+    const place = (node: LayoutNode, pane: TerminalPane): void => {
+      if (node.kind === "pane") return;
+      const created = make(firstLeaf(node.b));
+      if (!created) return place(node.a, pane);
+      panes.push(created);
+      tab.split(pane, node.dir, created, node.ratio);
+      place(node.a, pane);
+      place(node.b, created);
+    };
+    place(layout.root, first);
+    this.tabs.push(tab);
+    this.terminals.append(tab.el);
+    tab.setActive(first, false);
+    this.activate(tab);
+    for (const pane of panes) void pane.connect();
+    if (missing.length) void alertBox(layout.name, t("layoutMissing", { names: missing.join(", ") }));
+  }
+
+  /** The layouts menu (toolbar button). */
+  layoutsMenu(anchor: HTMLElement): void {
+    const startup = startupLayout()?.id;
+    showMenuBelow(anchor, [
+      ...getLayouts().map((l) => ({
+        label: l.name,
+        icon: icon("splitRight"),
+        hint: l.id === startup ? t("layoutAtStartup") : t("layoutPanes", { count: paneCount(l.root) }),
+        action: () => this.openLayout(l.id),
+      })),
+      { label: t("layoutSave"), icon: icon("plus"), hint: "Ctrl+Shift+L", action: () => void this.saveLayout() },
+      { label: t("layoutManage"), icon: icon("edit"), action: () => void manageLayouts((id) => this.openLayout(id)) },
+    ]);
+  }
+
   /** A pane that gets the focus (click, Alt+arrow) becomes the active one. */
   private paneFocused(pane: Pane): void {
     const tab = this.tabs.find((x) => x.has(pane));
@@ -331,10 +421,12 @@ export class App {
                 ...(active.opts.target.kind !== "shell" && active.session !== null
                   ? [{ label: t("openFiles"), icon: icon("folder"), hint: "Ctrl+Shift+S", action: () => this.openFiles() }]
                   : []),
+                { label: t("find"), hint: "Ctrl+Shift+F", action: () => active.find() },
                 { label: t("copy"), action: () => void active.copy() },
                 { label: t("paste"), action: () => void active.paste() },
               ]
             : []),
+          { label: t("layoutSave"), icon: icon("plus"), hint: "Ctrl+Shift+L", action: () => void this.saveLayout(tab) },
           ...(count > 1 ? [{ label: t("closePane"), hint: "Ctrl+Shift+W", action: () => this.closePane() }] : []),
           { label: t("closeTab"), icon: icon("close"), action: () => this.closeTab(tab) },
         ]);
@@ -381,6 +473,12 @@ export class App {
           return once(() => void this.split("down"));
         case "KeyS":
           return once(() => this.openFiles());
+        case "KeyL":
+          return once(() => void this.saveLayout());
+        case "KeyF": {
+          const pane = this.active?.active;
+          return pane instanceof TerminalPane ? once(() => pane.find()) : null;
+        }
       }
       if (/^Digit[1-9]$/.test(e.code)) {
         const p = this.favoriteProfiles()[Number(e.code.slice(5)) - 1];

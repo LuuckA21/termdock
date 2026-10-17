@@ -52,7 +52,7 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - The UI builds DOM nodes with `textContent` only; profile colours are validated (`#rrggbb`) both in the backend and before use.
 - Text that is not session output but is shown in the terminal (server banner, exit signal, error and status messages) is stripped of control characters, so a server cannot inject escape sequences through it before the user has even authenticated.
 - Local shells can only be started from the detected list (by id) or from a saved profile.
-- Interface preferences (language, appearance, update checks) live in the web view's local storage and hold no secrets. They are validated on every read; the font setting is reduced to a single family name before it reaches CSS or xterm.js.
+- Interface preferences (language, appearance, update checks) and saved layouts live in the web view's local storage and hold no secrets: a layout stores only connection ids, shell ids and quick-connect addresses, and opening it goes through the same host-key and authentication steps as any connection. They are validated on every read; the font setting is reduced to a single family name before it reaches CSS or xterm.js.
 - `freezePrototype` is disabled because it breaks xterm.js; the UI does not merge untrusted objects, so prototype pollution has no entry point.
 
 ### Jump hosts and port forwarding (`ssh.rs`, `forward.rs`)

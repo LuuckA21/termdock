@@ -494,6 +494,7 @@ textarea.input {
 
 .terminal-host {
   padding: 6px 4px 4px 8px;
+  container-type: inline-size;
 }
 
 /* With several panes, the one with the keyboard focus is outlined. */
@@ -1201,4 +1202,115 @@ dialog.picker {
 
 .picker-detail {
   font-size: 12px;
+}
+
+/* ---------- find bar (terminal search) ---------- */
+
+.search-bar {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--fg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+  font-size: 12px;
+}
+
+.search-input {
+  width: 200px;
+  padding: 4px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.search-input.invalid {
+  border-color: var(--danger);
+}
+
+.search-count {
+  min-width: 70px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.search-toggle {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.search-toggle:hover {
+  background: var(--bg-3);
+}
+
+.search-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Narrow panes: a smaller box. */
+@container (max-width: 420px) {
+  .search-input {
+    width: 110px;
+  }
+}
+
+/* ---------- layouts dialog ---------- */
+
+dialog.layouts {
+  width: min(560px, 92vw);
+}
+
+.layout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(50vh, 420px);
+  overflow: auto;
+}
+
+.layout-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.layout-startup {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+.layout-startup span:nth-of-type(1) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-startup span:nth-of-type(2) {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.icon-btn.danger:hover {
+  color: var(--danger);
 }

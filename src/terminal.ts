@@ -1,5 +1,6 @@
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 
@@ -9,6 +10,7 @@ import { h } from "./dom";
 import { t } from "./i18n";
 import { fontStack, getPrefs, onPrefsChange, terminalScheme } from "./prefs";
 import type { Pane, PaneOptions, PaneState } from "./pane";
+import { SearchBar } from "./search";
 import type { PromptAnswer, SessionNotice } from "./types";
 
 
@@ -39,6 +41,8 @@ export class TerminalPane implements Pane {
   readonly term: Terminal;
   state: PaneState = "connecting";
   private readonly fit = new FitAddon();
+  private readonly searchAddon = new SearchAddon({ highlightLimit: 1000 });
+  private readonly searchBar: SearchBar;
   private sessionId: number | null = null;
   /** Aborted when the pane closes or reconnects: closes its pending dialogs. */
   private prompts = new AbortController();
@@ -60,10 +64,13 @@ export class TerminalPane implements Pane {
       ...TerminalPane.prefsOptions(),
     });
     this.term.loadAddon(this.fit);
+    this.term.loadAddon(this.searchAddon);
     const unicode = new Unicode11Addon();
     this.term.loadAddon(unicode);
     this.term.unicode.activeVersion = "11";
     this.term.open(this.el);
+    this.searchBar = new SearchBar(this.term, this.searchAddon);
+    this.el.append(this.searchBar.el);
 
     this.term.attachCustomKeyEventHandler((e) => this.handleKey(e));
     this.term.onData((d) => this.input(d, false));
@@ -152,6 +159,11 @@ export class TerminalPane implements Pane {
 
   blur(): void {
     this.term.blur();
+  }
+
+  /** Opens the find bar (Ctrl+Shift+F). */
+  find(): void {
+    this.searchBar.open();
   }
 
   /** The backend session id while connected (for SFTP on the same connection). */
