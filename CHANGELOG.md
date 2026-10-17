@@ -7,6 +7,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-17
+
+### Added
+
+- Split panes: `Ctrl+Shift+E` splits the active pane to the right, `Ctrl+Shift+O` downwards (also from the tab's right-click menu). The new pane opens the same connection or shell; dividers can be dragged and `Alt+arrows` move between panes.
+- Appearance settings: dark, light or system theme, terminal colour schemes (Termdock Dark/Light, Solarized Dark/Light, Dracula, Nord, Gruvbox Dark), font, size, line height, cursor style and blinking, scrollback, with a live preview.
+- `Ctrl` + `+` / `-` / `0` makes the terminal font larger, smaller or resets it.
+
+### Changed
+
+- `Ctrl+Shift+W` closes the active pane; a tab closes with its last pane (the × on the tab still closes the whole tab).
+
 ## [0.4.1] - 2026-10-17
 
 ### Changed
@@ -66,7 +78,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/LuuckA21/termdock/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/LuuckA21/termdock/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/LuuckA21/termdock/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/LuuckA21/termdock/compare/v0.2.0...v0.3.0

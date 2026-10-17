@@ -7,33 +7,10 @@ import { api, errorText } from "./api";
 import { askSecret, confirmHostKey } from "./dialogs";
 import { h } from "./dom";
 import { t } from "./i18n";
+import { fontStack, getPrefs, onPrefsChange, terminalScheme } from "./prefs";
 import type { OpenTarget, PromptAnswer, SessionNotice } from "./types";
 
-export type TabState = "connecting" | "open" | "closed";
-
-const THEME = {
-  background: "#0f1420",
-  foreground: "#d7dce8",
-  cursor: "#ffd166",
-  cursorAccent: "#0f1420",
-  selectionBackground: "#3d5af166",
-  black: "#1b2130",
-  red: "#ff6b6b",
-  green: "#7ee0b0",
-  yellow: "#ffd166",
-  blue: "#6c8cff",
-  magenta: "#c792ea",
-  cyan: "#5fd7e0",
-  white: "#d7dce8",
-  brightBlack: "#5a6378",
-  brightRed: "#ff8787",
-  brightGreen: "#9ff0c8",
-  brightYellow: "#ffe08a",
-  brightBlue: "#8fa8ff",
-  brightMagenta: "#ddb3ff",
-  brightCyan: "#8ae9ef",
-  brightWhite: "#ffffff",
-};
+export type PaneState = "connecting" | "open" | "closed";
 
 const DIM = "\x1b[2m";
 
@@ -52,19 +29,24 @@ const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
 
-export interface TabOptions {
+export interface PaneOptions {
   title: string;
   subtitle: string;
   color?: string;
   target: OpenTarget;
   vaultAvailable: boolean;
-  onStateChange: (tab: TerminalTab) => void;
+  onStateChange: (pane: TerminalPane) => void;
+  /** The pane got keyboard focus (click or programmatic). */
+  onFocus: (pane: TerminalPane) => void;
+  /** Keys the app handles itself (tabs, panes, settings…): xterm.js ignores them. */
+  isAppShortcut: (e: KeyboardEvent) => boolean;
 }
 
-export class TerminalTab {
+/** One terminal session with its xterm.js view; tabs hold one or more panes. */
+export class TerminalPane {
   readonly el: HTMLElement;
   readonly term: Terminal;
-  state: TabState = "connecting";
+  state: PaneState = "connecting";
   private readonly fit = new FitAddon();
   private sessionId: number | null = null;
   /** Aborted when the tab closes or reconnects: closes its pending dialogs. */
@@ -72,20 +54,16 @@ export class TerminalTab {
   /** Bumped on every (re)connect so late events of an old session are ignored. */
   private generation = 0;
   private readonly resizeObserver: ResizeObserver;
+  private readonly unsubscribePrefs: () => void;
   private disposed = false;
 
-  constructor(readonly opts: TabOptions) {
-    this.el = h("div", { class: "terminal-host", role: "tabpanel" });
+  constructor(readonly opts: PaneOptions) {
+    this.el = h("div", { class: "terminal-host" });
     this.term = new Terminal({
       allowProposedApi: true,
-      cursorBlink: true,
-      fontFamily: '"Cascadia Mono", "JetBrains Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
-      fontSize: 14,
-      lineHeight: 1.1,
-      scrollback: 10000,
-      theme: THEME,
       macOptionIsMeta: true,
       rightClickSelectsWord: true,
+      ...TerminalPane.prefsOptions(),
     });
     this.term.loadAddon(this.fit);
     const unicode = new Unicode11Addon();
@@ -106,8 +84,27 @@ export class TerminalTab {
       else void this.paste();
     });
 
+    this.term.textarea?.addEventListener("focus", () => this.opts.onFocus(this));
+
     this.resizeObserver = new ResizeObserver(() => this.refit());
     this.resizeObserver.observe(this.el);
+    this.unsubscribePrefs = onPrefsChange(() => {
+      Object.assign(this.term.options, TerminalPane.prefsOptions());
+      this.refit();
+    });
+  }
+
+  private static prefsOptions() {
+    const p = getPrefs();
+    return {
+      theme: terminalScheme().colors,
+      fontFamily: fontStack(),
+      fontSize: p.fontSize,
+      lineHeight: p.lineHeight,
+      cursorStyle: p.cursorStyle,
+      cursorBlink: p.cursorBlink,
+      scrollback: p.scrollback,
+    };
   }
 
   get title(): string {
@@ -169,6 +166,7 @@ export class TerminalTab {
     this.generation++;
     this.prompts.abort();
     this.resizeObserver.disconnect();
+    this.unsubscribePrefs();
     if (this.sessionId !== null) void api.closeSession(this.sessionId);
     this.sessionId = null;
     this.term.dispose();
@@ -206,12 +204,8 @@ export class TerminalTab {
       e.preventDefault();
       return false;
     }
-    // Let the app-level shortcuts through (handled in main.ts).
-    if (mod && e.shiftKey && /^(KeyT|KeyW|KeyK|KeyM|Digit\d)$/.test(e.code)) return false;
-    if (mod && !e.shiftKey && e.code === "Comma") return false;
-    if (e.ctrlKey && e.code === "Tab") return false;
-    if (e.altKey && !mod && /^Digit[1-9]$/.test(e.code)) return false;
-    return true;
+    // App-level shortcuts are handled in main.ts.
+    return !this.opts.isAppShortcut(e);
   }
 
   private async onNotice(n: SessionNotice): Promise<void> {
@@ -255,7 +249,7 @@ export class TerminalTab {
     this.setState("closed");
   }
 
-  private setState(s: TabState): void {
+  private setState(s: PaneState): void {
     this.state = s;
     this.opts.onStateChange(this);
   }
