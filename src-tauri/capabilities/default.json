@@ -25,6 +25,17 @@
     "allow-preview-ssh-config",
     "allow-import-ssh-config",
     "allow-check-update",
-    "allow-install-update"
+    "allow-install-update",
+    "allow-sftp-open",
+    "allow-sftp-close",
+    "allow-sftp-list",
+    "allow-sftp-mkdir",
+    "allow-sftp-rename",
+    "allow-sftp-remove",
+    "allow-sftp-cancel",
+    "allow-sftp-download",
+    "allow-sftp-pick-upload",
+    "allow-sftp-upload",
+    "allow-sftp-forget-picks"
   ]
 }

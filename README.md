@@ -11,6 +11,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Favorites bar**, always visible: one click opens the connection in a new tab, drag to reorder, right click to edit or unpin, `Ctrl+Shift+1…9` opens the first nine.
 - **SSH** with a full terminal (xterm-256color, truecolor, Unicode, resizing).
 - **Jump hosts (ProxyJump)**: a connection can go through a bastion, even a chain of them; every hop verifies its own host key and authenticates separately.
+- **File browser (SFTP)**: `Ctrl+Shift+S` opens the files of the server next to its terminal, on the same authenticated connection (no second login): browse, download, upload, new folder, rename, delete.
 - **Port forwarding** saved in the connection: local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`); the status of each tunnel is shown in the terminal.
 - **Import from `~/.ssh/config`**: preview with warnings, then imports Host, HostName, User, Port, IdentityFile, ProxyJump and the forwards.
 - **Local shells** in a real PTY: PowerShell 7, Windows PowerShell, cmd, WSL and Git Bash on Windows (ConPTY); bash, zsh, fish, pwsh… on macOS and Linux.
@@ -28,6 +29,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | --- | --- |
 | `Ctrl+Shift+T` | new local shell (default one) |
 | `Ctrl+Shift+E` / `Ctrl+Shift+O` | split the pane right / down |
+| `Ctrl+Shift+S` | file browser (SFTP) for the SSH terminal |
 | `Alt+←↑→↓` | move to the next pane (with several panes) |
 | `Ctrl+Shift+W` | close the pane (the tab with its last pane) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | next / previous tab |
@@ -68,6 +70,7 @@ crates/termdock-core   UI-independent logic, tested in isolation
   ├─ hostkeys.rs        known_hosts: TOFU, changed/revoked keys
   ├─ ssh.rs             SSH client (russh): algorithms, authentication, jump hosts
   ├─ forward.rs         port forwarding -L / -R / -D (SOCKS5)
+  ├─ sftp.rs            SFTP on the terminal's connection (file browser)
   ├─ sshconfig.rs       ~/.ssh/config import
   ├─ local.rs           local shells through a PTY (portable-pty / ConPTY)
   └─ shells.rs          detection of the available shells
@@ -110,7 +113,7 @@ eval "$(sudo scripts/e2e-sshd.sh)"
 cargo test -p termdock-core --test ssh_e2e
 ```
 
-The end-to-end tests cover: unknown host key refused, trust on first use, wrong password and retries, password remembered in the keychain and forgotten when rejected, encrypted private key with passphrase, keyboard-interactive, jump host with `-L` / `-R` / `-D` forwards, session close and **changed host key (MITM simulation)**.
+The end-to-end tests cover: unknown host key refused, trust on first use, wrong password and retries, password remembered in the keychain and forgotten when rejected, encrypted private key with passphrase, keyboard-interactive, jump host with `-L` / `-R` / `-D` forwards, SFTP (upload, overwrite, download, cancel, rename, delete, rejected names), session close and **changed host key (MITM simulation)**.
 
 Claude Code cloud sessions are prepared by `.claude/hooks/session-start.sh`, and the project skills in `.claude/skills/` describe the PR/release procedure and how to run the app headless.
 

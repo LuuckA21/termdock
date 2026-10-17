@@ -11,6 +11,7 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 - **Barra preferiti** sempre visibile: un clic apre la connessione in una nuova scheda, trascina per riordinare, tasto destro per modificare o togliere dai preferiti, `Ctrl+Shift+1…9` apre i primi nove.
 - **SSH** con terminale completo (xterm-256color, truecolor, Unicode, ridimensionamento).
 - **Jump host (ProxyJump)**: una connessione può passare da un bastion, anche a catena; ogni salto verifica la propria host key e si autentica separatamente.
+- **File browser (SFTP)**: `Ctrl+Shift+S` apre i file del server accanto al suo terminale, sulla stessa connessione già autenticata (nessun secondo login): navigazione, download, upload, nuova cartella, rinomina, eliminazione.
 - **Port forwarding** salvato nella connessione: locale (`-L`), remoto (`-R`) e dinamico SOCKS5 (`-D`); lo stato di ogni tunnel compare nel terminale.
 - **Import da `~/.ssh/config`**: anteprima con avvisi, poi importa Host, HostName, User, Port, IdentityFile, ProxyJump e i forwarding.
 - **Shell locali** in PTY reale: PowerShell 7, Windows PowerShell, cmd, WSL e Git Bash su Windows (ConPTY); bash, zsh, fish, pwsh… su macOS e Linux.
@@ -28,6 +29,7 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 | --- | --- |
 | `Ctrl+Shift+T` | nuova shell locale (predefinita) |
 | `Ctrl+Shift+E` / `Ctrl+Shift+O` | dividi il pannello a destra / in basso |
+| `Ctrl+Shift+S` | file browser (SFTP) del terminale SSH |
 | `Alt+←↑→↓` | passa al pannello vicino (con più pannelli) |
 | `Ctrl+Shift+W` | chiudi il pannello (la scheda con l'ultimo pannello) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | scheda successiva / precedente |
@@ -68,6 +70,7 @@ crates/termdock-core   logica senza interfaccia, testata in isolamento
   ├─ hostkeys.rs        known_hosts: TOFU, chiavi cambiate/revocate
   ├─ ssh.rs             client SSH (russh): algoritmi, autenticazione, jump host
   ├─ forward.rs         port forwarding -L / -R / -D (SOCKS5)
+  ├─ sftp.rs            SFTP sulla connessione del terminale (file browser)
   ├─ sshconfig.rs       import da ~/.ssh/config
   ├─ local.rs           shell locali via PTY (portable-pty / ConPTY)
   └─ shells.rs          rilevamento delle shell disponibili
@@ -110,7 +113,7 @@ eval "$(sudo scripts/e2e-sshd.sh)"
 cargo test -p termdock-core --test ssh_e2e
 ```
 
-I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi ed eliminata se rifiutata, chiave privata cifrata con passphrase, keyboard-interactive, jump host con forwarding `-L` / `-R` / `-D`, chiusura sessione e **host key cambiata (simulazione MITM)**.
+I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi ed eliminata se rifiutata, chiave privata cifrata con passphrase, keyboard-interactive, jump host con forwarding `-L` / `-R` / `-D`, SFTP (upload, sovrascrittura, download, annullamento, rinomina, eliminazione, nomi rifiutati), chiusura sessione e **host key cambiata (simulazione MITM)**.
 
 Le sessioni cloud di Claude Code vengono preparate da `.claude/hooks/session-start.sh`, e le skill del progetto in `.claude/skills/` descrivono la procedura di PR/release e come avviare l'app senza interfaccia grafica.
 

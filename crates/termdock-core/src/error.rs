@@ -48,6 +48,24 @@ pub enum Error {
 
     #[error("session is closed")]
     SessionClosed,
+
+    #[error("SFTP: {0}")]
+    Sftp(String),
+
+    #[error("file transfer needs an SSH session")]
+    NotSsh,
+
+    #[error("invalid file name: {0:?}")]
+    InvalidName(String),
+
+    #[error("{0:?} already exists")]
+    Exists(String),
+
+    #[error("cancelled")]
+    Cancelled,
+
+    #[error("{0:?} is not a regular file")]
+    NotRegular(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

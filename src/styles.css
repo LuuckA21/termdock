@@ -36,6 +36,11 @@
   box-sizing: border-box;
 }
 
+/* Component styles (display: flex/grid…) must not override the attribute. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -479,18 +484,140 @@ textarea.input {
   background: var(--accent);
 }
 
-.terminal-host {
+.pane {
   position: relative;
   flex: 1 1 0px;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.terminal-host {
   padding: 6px 4px 4px 8px;
 }
 
 /* With several panes, the one with the keyboard focus is outlined. */
-.terminal-host.focused {
+.pane.focused {
   box-shadow: inset 0 0 0 1px var(--accent-2);
+}
+
+/* ---------- file browser (SFTP) ---------- */
+
+.files-pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  color: var(--fg);
+}
+
+.files-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.files-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.files-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+  padding: 4px 0;
+}
+
+.files-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 72px 150px 90px;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.files-row:hover {
+  background: var(--bg-3);
+}
+
+.files-row.selected {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.files-list:focus .files-row.selected {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.files-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-size {
+  text-align: right;
+}
+
+.files-size,
+.files-date,
+.files-mode {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.files-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.files-status-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-status-text.error {
+  color: var(--danger);
+}
+
+.files-status progress {
+  width: 140px;
+  accent-color: var(--accent);
+}
+
+/* Narrow panes: keep name and size only. */
+@container (max-width: 520px) {
+  .files-row {
+    grid-template-columns: 16px minmax(0, 1fr) 72px;
+  }
+  .files-date,
+  .files-mode {
+    display: none;
+  }
+}
+
+.files-pane {
+  container-type: inline-size;
 }
 
 .terminal-host .xterm {

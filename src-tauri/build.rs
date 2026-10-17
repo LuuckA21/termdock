@@ -17,6 +17,17 @@ const COMMANDS: &[&str] = &[
     "import_ssh_config",
     "check_update",
     "install_update",
+    "sftp_open",
+    "sftp_close",
+    "sftp_list",
+    "sftp_mkdir",
+    "sftp_rename",
+    "sftp_remove",
+    "sftp_cancel",
+    "sftp_download",
+    "sftp_pick_upload",
+    "sftp_upload",
+    "sftp_forget_picks",
 ];
 
 fn main() {

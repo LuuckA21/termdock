@@ -51,7 +51,7 @@ pub fn spawn(shell: &LocalShell, size: TermSize, sink: EventSink) -> Result<Sess
     let mut reader = pair.master.try_clone_reader().map_err(pty_err)?;
     let writer = pair.master.take_writer().map_err(pty_err)?;
     let mut killer = child.clone_killer();
-    let (handle, mut rx) = SessionHandle::new();
+    let (handle, mut rx) = SessionHandle::new(None);
     let (exit_tx, exit_rx) = std_mpsc::channel();
 
     // Waiter: reaps the child and then asks the control thread to release the

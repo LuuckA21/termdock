@@ -9,7 +9,10 @@ import type {
   ProfileList,
   PromptAnswer,
   SessionNotice,
+  PickedFile,
+  RemoteListing,
   TermSize,
+  TransferProgress,
   UpdateInfo,
   UpdateProgress,
   Uuid,
@@ -47,6 +50,23 @@ export const api = {
   answerPrompt: (promptId: Uuid, answer: PromptAnswer) =>
     invoke<boolean>("answer_prompt", { promptId, answer }),
 
+  sftpOpen: (session: number) => invoke<{ id: number; home: string }>("sftp_open", { session }),
+  sftpClose: (id: number) => invoke<void>("sftp_close", { id }),
+  sftpList: (id: number, path: string) => invoke<RemoteListing>("sftp_list", { id, path }),
+  sftpMkdir: (id: number, dir: string, name: string) => invoke<void>("sftp_mkdir", { id, dir, name }),
+  sftpRename: (id: number, dir: string, from: string, to: string) =>
+    invoke<void>("sftp_rename", { id, dir, from, to }),
+  sftpRemove: (id: number, dir: string, name: string) => invoke<void>("sftp_remove", { id, dir, name }),
+  sftpCancel: (transfer: number) => invoke<void>("sftp_cancel", { transfer }),
+  /** Shows a native save dialog; resolves with the saved path, or null if cancelled. */
+  sftpDownload: (id: number, dir: string, name: string, onProgress: (p: TransferProgress) => void) =>
+    invoke<string | null>("sftp_download", { id, dir, name, onProgress: progressChannel(onProgress) }),
+  /** Shows a native file picker; resolves with tokens for the picked files. */
+  sftpPickUpload: () => invoke<PickedFile[]>("sftp_pick_upload"),
+  sftpForgetPicks: (tokens: string[]) => invoke<void>("sftp_forget_picks", { tokens }),
+  sftpUpload: (id: number, dir: string, token: string, overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
+    invoke<void>("sftp_upload", { id, dir, token, overwrite, onProgress: progressChannel(onProgress) }),
+
   checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   installUpdate: (onProgress: (p: UpdateProgress) => void) => {
     const progress = new Channel<UpdateProgress>();
@@ -54,6 +74,12 @@ export const api = {
     return invoke<void>("install_update", { onProgress: progress });
   },
 };
+
+function progressChannel(fn: (p: TransferProgress) => void): Channel<TransferProgress> {
+  const channel = new Channel<TransferProgress>();
+  channel.onmessage = fn;
+  return channel;
+}
 
 export function errorText(e: unknown): string {
   if (typeof e === "string") return e;

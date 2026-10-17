@@ -374,7 +374,7 @@ pub async fn connect(params: SshConnect, sink: EventSink) -> Result<SessionHandl
     let forward_tasks = forward::start(&handle, &forwards, &ui, &remote_forwards).await;
 
     let (mut read_half, write_half) = channel.split();
-    let (session, mut rx) = SessionHandle::new();
+    let (session, mut rx) = SessionHandle::new(Some(handle.clone()));
 
     // Input side.
     let writer_handle = handle.clone();

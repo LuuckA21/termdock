@@ -1,5 +1,6 @@
 mod commands;
 mod prompts;
+mod sftp;
 mod state;
 mod updates;
 
@@ -17,10 +18,13 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Native file dialogs, driven by the backend only (see sftp.rs).
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState::new(&dir)?);
             app.manage(updates::PendingUpdate::default());
+            app.manage(sftp::SftpState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -42,6 +46,17 @@ pub fn run() {
             commands::import_ssh_config,
             updates::check_update,
             updates::install_update,
+            sftp::sftp_open,
+            sftp::sftp_close,
+            sftp::sftp_list,
+            sftp::sftp_mkdir,
+            sftp::sftp_rename,
+            sftp::sftp_remove,
+            sftp::sftp_cancel,
+            sftp::sftp_download,
+            sftp::sftp_pick_upload,
+            sftp::sftp_upload,
+            sftp::sftp_forget_picks,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Termdock");

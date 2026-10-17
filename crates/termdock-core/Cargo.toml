@@ -9,6 +9,8 @@ authors.workspace = true
 
 [dependencies]
 russh = "0.64"
+russh-sftp = "3.0.1"
+tokio-util = "0.7"
 keyring = "4"
 portable-pty = "0.9"
 directories = "6"

@@ -8,9 +8,9 @@ import { askSecret, confirmHostKey } from "./dialogs";
 import { h } from "./dom";
 import { t } from "./i18n";
 import { fontStack, getPrefs, onPrefsChange, terminalScheme } from "./prefs";
-import type { OpenTarget, PromptAnswer, SessionNotice } from "./types";
+import type { Pane, PaneOptions, PaneState } from "./pane";
+import type { PromptAnswer, SessionNotice } from "./types";
 
-export type PaneState = "connecting" | "open" | "closed";
 
 const DIM = "\x1b[2m";
 
@@ -29,21 +29,12 @@ const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
 
-export interface PaneOptions {
-  title: string;
-  subtitle: string;
-  color?: string;
-  target: OpenTarget;
+export interface TerminalOptions extends PaneOptions {
   vaultAvailable: boolean;
-  onStateChange: (pane: TerminalPane) => void;
-  /** The pane got keyboard focus (click or programmatic). */
-  onFocus: (pane: TerminalPane) => void;
-  /** Keys the app handles itself (tabs, panes, settings…): xterm.js ignores them. */
-  isAppShortcut: (e: KeyboardEvent) => boolean;
 }
 
-/** One terminal session with its xterm.js view; tabs hold one or more panes. */
-export class TerminalPane {
+/** One terminal session with its xterm.js view. */
+export class TerminalPane implements Pane {
   readonly el: HTMLElement;
   readonly term: Terminal;
   state: PaneState = "connecting";
@@ -57,8 +48,8 @@ export class TerminalPane {
   private readonly unsubscribePrefs: () => void;
   private disposed = false;
 
-  constructor(readonly opts: PaneOptions) {
-    this.el = h("div", { class: "terminal-host" });
+  constructor(readonly opts: TerminalOptions) {
+    this.el = h("div", { class: "pane terminal-host" });
     this.term = new Terminal({
       allowProposedApi: true,
       macOptionIsMeta: true,
@@ -150,6 +141,15 @@ export class TerminalPane {
   focus(): void {
     this.term.focus();
     this.refit();
+  }
+
+  blur(): void {
+    this.term.blur();
+  }
+
+  /** The backend session id while connected (for SFTP on the same connection). */
+  get session(): number | null {
+    return this.sessionId;
   }
 
   refit(): void {

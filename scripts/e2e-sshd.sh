@@ -32,6 +32,7 @@ ListenAddress 127.0.0.1
 HostKey $DIR/host_ed25519
 PubkeyAuthentication yes
 UsePAM yes
+Subsystem sftp internal-sftp
 LogLevel VERBOSE
 CFG
 }

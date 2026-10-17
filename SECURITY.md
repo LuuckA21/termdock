@@ -48,7 +48,7 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 ### Desktop shell (Tauri 2)
 
 - Strict Content-Security-Policy: scripts only from the app bundle, no `eval`, no remote origins, no frames/objects/workers.
-- Every IPC command must be allowed explicitly in `src-tauri/capabilities/default.json` (generated per-command permissions). No file-system, shell, HTTP or opener plugins are included. The UI may use the clipboard plugin (read/write text); the updater plugin is driven by the backend only and none of its own commands is allowed.
+- Every IPC command must be allowed explicitly in `src-tauri/capabilities/default.json` (generated per-command permissions). No file-system, shell, HTTP or opener plugins are included. The UI may use the clipboard plugin (read/write text); the updater and dialog plugins are driven by the backend only and none of their own commands is allowed.
 - The UI builds DOM nodes with `textContent` only; profile colours are validated (`#rrggbb`) both in the backend and before use.
 - Text that is not session output but is shown in the terminal (server banner, exit signal, error and status messages) is stripped of control characters, so a server cannot inject escape sequences through it before the user has even authenticated.
 - Local shells can only be started from the detected list (by id) or from a saved profile.
@@ -71,6 +71,20 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - The backend reads only `~/.ssh/config`; the UI cannot choose another file.
 - `ProxyCommand`, `Match`, `Include`, unknown tokens and Unix-socket forwards are reported, never executed or guessed.
 - Imported profiles go through the same validation as manual ones.
+
+### File transfer (`sftp.rs`, `src-tauri/src/sftp.rs`, `src/files.ts`)
+
+The SSH server is treated as untrusted: it controls names, listings, sizes, contents and error messages.
+
+- SFTP runs on new channels of the terminal's own SSH connection: same verified host key, no new credentials, nothing stored. File browsers end with their terminal session.
+- The UI never names a local file. Downloads are saved where the user picks in a native save dialog opened by the backend; uploads accept only single-use tokens (valid 10 minutes) for files the user picked in a native open dialog, opened at that moment so they cannot be swapped afterwards. The dialogs carry the system's own titles (the UI cannot word them), and the dialog plugin's own IPC commands are not allowed, so they cannot widen any file-system scope.
+- Remote names are shown with control, invisible-format and bidirectional characters replaced (no `evil<U+202E>gpj.exe` spoofing) and never become local paths; the save dialog's default name is stripped of separators, reserved Windows names and invisible characters. Names the server sent in another encoding are listed but not touched.
+- New names (folder, rename, upload) must be one path component: no `/`, NUL, control or invisible characters, `.` or `..`, at most 255 bytes.
+- Listings are read in steps and stop at 20,000 entries or after 30 seconds, whatever the server sends; the SFTP library also bounds packets (256 KiB) and times out each request.
+- Downloads accept only regular files (checked on the opened file, so links to devices or FIFOs are refused) and read at most the size reported when the file was opened. They are written to a temporary file next to the destination and moved into place only when complete; a failed or cancelled transfer leaves nothing behind. Saved files are private (`0600`) on Unix; on Windows they get the Mark of the Web (`Zone.Identifier`), so SmartScreen checks them before they run.
+- Uploads go to a random hidden name created exclusively with mode `0600` (a file or link planted by someone else cannot redirect the write). Only when complete, and for an existing name only after the user confirmed, the file takes the target's place: atomically with `posix-rename@openssh.com`, otherwise by setting the old file aside and putting it back on failure. A replaced file keeps its permissions; a new one gets the local file's.
+- Cancel works at once; closing a browser or its tab cancels its transfers and lets them clean up before the connection closes.
+- Delete is never recursive (only files, links and empty folders) and its confirmation defaults to *Cancel*.
 
 ### Updates (`src-tauri/src/updates.rs`, `scripts/updater-manifest.mjs`)
 
@@ -96,5 +110,6 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 ## Known limitations
 
 - Release builds are not code-signed until signing certificates are configured in the release workflow; verify downloads accordingly.
+- Downloaded files are only as trustworthy as the server they come from; on macOS they are not marked with the quarantine flag yet.
 - Agent forwarding and X11 forwarding are not implemented (and therefore cannot be abused).
 - Typed secrets transit the web view's memory before reaching the backend; they are cleared from the input immediately after submission.

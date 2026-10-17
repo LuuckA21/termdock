@@ -92,6 +92,8 @@ export function confirmBox(message: string, okLabel: string, danger = false): Pr
       { label: okLabel, value: true, kind: danger ? "danger" : "primary" },
     ],
     cancelValue: false,
+    // Destructive actions need a deliberate click: Enter cancels.
+    focusButton: danger ? 0 : 1,
   });
 }
 

@@ -1,14 +1,14 @@
 // A tab holds a binary tree of panes: every split divides one pane in two,
 // side by side ("right") or stacked ("down"), with a draggable divider.
 import { h } from "./dom";
-import type { PaneState, TerminalPane } from "./terminal";
+import type { Pane, PaneState } from "./pane";
 
 export type SplitDir = "right" | "down";
 export type Direction = "left" | "right" | "up" | "down";
 
 interface PaneNode {
   kind: "pane";
-  pane: TerminalPane;
+  pane: Pane;
   parent: SplitNode | null;
 }
 
@@ -31,10 +31,10 @@ const elementOf = (n: Node): HTMLElement => (n.kind === "pane" ? n.pane.el : n.e
 
 export class Tab {
   readonly el = h("div", { class: "tab-panel", role: "tabpanel" });
-  private readonly nodes = new Map<TerminalPane, PaneNode>();
-  private current: TerminalPane;
+  private readonly nodes = new Map<Pane, PaneNode>();
+  private current: Pane;
 
-  constructor(first: TerminalPane) {
+  constructor(first: Pane) {
     this.leaf(first, null);
     this.current = first;
     this.el.append(first.el);
@@ -42,7 +42,7 @@ export class Tab {
   }
 
   /** The pane with focus in this tab: title, state and colour of the tab. */
-  get active(): TerminalPane {
+  get active(): Pane {
     return this.current;
   }
 
@@ -58,16 +58,16 @@ export class Tab {
     return this.nodes.size;
   }
 
-  get panes(): TerminalPane[] {
+  get panes(): Pane[] {
     return [...this.nodes.keys()];
   }
 
-  has(pane: TerminalPane): boolean {
+  has(pane: Pane): boolean {
     return this.nodes.has(pane);
   }
 
   /** Marks `pane` as the active one; `focus` also moves the keyboard focus. */
-  setActive(pane: TerminalPane, focus: boolean): void {
+  setActive(pane: Pane, focus: boolean): void {
     if (!this.nodes.has(pane)) return;
     this.current = pane;
     this.highlight();
@@ -75,7 +75,7 @@ export class Tab {
   }
 
   /** Splits `target` in two; `created` takes the right or bottom half. */
-  split(target: TerminalPane, dir: SplitDir, created: TerminalPane): void {
+  split(target: Pane, dir: SplitDir, created: Pane): void {
     const node = this.nodes.get(target);
     if (!node) return;
     const split: SplitNode = {
@@ -93,9 +93,8 @@ export class Tab {
 
     const divider = h("div", { class: "divider", role: "separator", "aria-orientation": dir === "right" ? "vertical" : "horizontal" });
     divider.addEventListener("pointerdown", (e) => this.drag(split, divider, e));
-    // Moving a focused element does not fire "blur": xterm.js would keep
-    // drawing it as focused.
-    target.term.blur();
+    // Moving a focused element does not fire "blur".
+    target.blur();
     target.el.replaceWith(split.el);
     split.el.append(target.el, divider, created.el);
     this.size(split);
@@ -108,7 +107,7 @@ export class Tab {
    * Removes and disposes `pane`. Returns true when it was the last one, so
    * the caller closes the tab.
    */
-  remove(pane: TerminalPane): boolean {
+  remove(pane: Pane): boolean {
     const node = this.nodes.get(pane);
     if (!node) return this.nodes.size === 0;
     this.nodes.delete(pane);
@@ -138,9 +137,9 @@ export class Tab {
   }
 
   /** The closest pane next to the active one in `dir`, by on-screen position. */
-  neighbor(dir: Direction): TerminalPane | null {
+  neighbor(dir: Direction): Pane | null {
     const from = this.current.el.getBoundingClientRect();
-    let best: TerminalPane | null = null;
+    let best: Pane | null = null;
     let bestDistance = Infinity;
     for (const pane of this.nodes.keys()) {
       if (pane === this.current) continue;
@@ -167,7 +166,7 @@ export class Tab {
     return best;
   }
 
-  private leaf(pane: TerminalPane, parent: SplitNode | null): PaneNode {
+  private leaf(pane: Pane, parent: SplitNode | null): PaneNode {
     const node: PaneNode = { kind: "pane", pane, parent };
     this.nodes.set(pane, node);
     return node;
@@ -180,7 +179,7 @@ export class Tab {
     else if (parent) parent.b = next;
   }
 
-  private firstPane(node: Node): TerminalPane {
+  private firstPane(node: Node): Pane {
     return node.kind === "pane" ? node.pane : this.firstPane(node.a);
   }
 

@@ -62,6 +62,35 @@ export type UpdateProgress =
   | { stage: "downloading"; downloaded: number; total: number | null }
   | { stage: "installing" };
 
+export type EntryKind = "dir" | "file" | "link" | "other";
+
+export interface RemoteEntry {
+  name: string;
+  kind: EntryKind;
+  size: number | null;
+  /** Seconds since the Unix epoch. */
+  modified: number | null;
+  mode: number | null;
+}
+
+export interface RemoteListing {
+  path: string;
+  entries: RemoteEntry[];
+  truncated: boolean;
+}
+
+export interface TransferProgress {
+  transfer: number;
+  done: number;
+  total: number | null;
+}
+
+export interface PickedFile {
+  token: string;
+  name: string;
+  size: number;
+}
+
 export interface DetectedShell {
   id: string;
   name: string;
