@@ -87,7 +87,7 @@ export interface TransferProgress {
 
 export type SftpOpened =
   | { status: "open"; id: number; home: string; user: string; loginUser: string }
-  | { status: "passwordRequired"; retry: boolean };
+  | { status: "passwordRequired"; pending: number; retry: boolean; asksFor: string | null };
 
 export interface PickedFile {
   token: string;

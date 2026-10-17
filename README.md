@@ -114,7 +114,7 @@ eval "$(sudo scripts/e2e-sshd.sh)"
 cargo test -p termdock-core --test ssh_e2e
 ```
 
-The end-to-end tests cover: unknown host key refused, trust on first use, wrong password and retries, password remembered in the keychain and forgotten when rejected, encrypted private key with passphrase, keyboard-interactive, jump host with `-L` / `-R` / `-D` forwards, SFTP (upload, overwrite, download, cancel, rename, delete, rejected names), SFTP as another user through sudo (without password, wrong and right password, refused user, unsafe names), session close and **changed host key (MITM simulation)**.
+The end-to-end tests cover: unknown host key refused, trust on first use, wrong password and retries, password remembered in the keychain and forgotten when rejected, encrypted private key with passphrase, keyboard-interactive, jump host with `-L` / `-R` / `-D` forwards, SFTP (upload, overwrite, download, cancel, rename, delete, rejected names), SFTP as another user through sudo (without password, password only after the prompt, wrong then right, three tries, refused user, unsafe names), session close and **changed host key (MITM simulation)**.
 
 Claude Code cloud sessions are prepared by `.claude/hooks/session-start.sh`, and the project skills in `.claude/skills/` describe the PR/release procedure and how to run the app headless.
 

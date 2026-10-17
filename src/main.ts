@@ -196,7 +196,8 @@ export class App {
    * their sessions: two tabs become one split view. `from` closes.
    */
   private mergeTab(from: Tab, into: Tab): void {
-    if (from === into) return;
+    // The menu may be older than the tabs: both must still be open.
+    if (from === into || !this.tabs.includes(from) || !this.tabs.includes(into)) return;
     const panes = from.panes;
     const first = panes[0];
     if (!first) return;

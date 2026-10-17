@@ -28,6 +28,8 @@ const COMMANDS: &[&str] = &[
     "sftp_pick_upload",
     "sftp_upload",
     "sftp_forget_picks",
+    "sftp_sudo_password",
+    "sftp_sudo_cancel",
 ];
 
 fn main() {

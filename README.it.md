@@ -114,7 +114,7 @@ eval "$(sudo scripts/e2e-sshd.sh)"
 cargo test -p termdock-core --test ssh_e2e
 ```
 
-I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi ed eliminata se rifiutata, chiave privata cifrata con passphrase, keyboard-interactive, jump host con forwarding `-L` / `-R` / `-D`, SFTP (upload, sovrascrittura, download, annullamento, rinomina, eliminazione, nomi rifiutati), SFTP come altro utente tramite sudo (senza password, password errata e giusta, utente non consentito, nomi non sicuri), chiusura sessione e **host key cambiata (simulazione MITM)**.
+I test end-to-end coprono: rifiuto della host key sconosciuta, trust-on-first-use, password errata e ritentativi, password ricordata nel portachiavi ed eliminata se rifiutata, chiave privata cifrata con passphrase, keyboard-interactive, jump host con forwarding `-L` / `-R` / `-D`, SFTP (upload, sovrascrittura, download, annullamento, rinomina, eliminazione, nomi rifiutati), SFTP come altro utente tramite sudo (senza password, password solo dopo il prompt, errata e poi giusta, tre tentativi, utente non consentito, nomi non sicuri), chiusura sessione e **host key cambiata (simulazione MITM)**.
 
 Le sessioni cloud di Claude Code vengono preparate da `.claude/hooks/session-start.sh`, e le skill del progetto in `.claude/skills/` descrivono la procedura di PR/release e come avviare l'app senza interfaccia grafica.
 

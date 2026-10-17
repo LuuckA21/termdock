@@ -70,9 +70,6 @@ pub enum Error {
     #[error("sudo: {0}")]
     Sudo(String),
 
-    #[error("sudo: wrong password")]
-    SudoWrongPassword,
-
     #[error("sftp-server was not found on the server, so files cannot be opened as another user")]
     NoSftpServer,
 }

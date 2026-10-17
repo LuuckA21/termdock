@@ -85,6 +85,10 @@ export class FilesPane implements Pane {
   /** The user the browser acts as, and the terminal's login user. */
   private user = "";
   private loginUser = "";
+  /** Set while switching user (sudo, password dialog). */
+  private switching = false;
+  /** Closes an open password dialog when the pane goes away. */
+  private readonly closing = new AbortController();
   private readonly unsubscribeTitle: () => void;
   private readonly userBtn: HTMLButtonElement;
   private readonly userName: HTMLElement;
@@ -183,6 +187,7 @@ export class FilesPane implements Pane {
 
   dispose(): void {
     this.disposed = true;
+    this.closing.abort();
     this.unsubscribeTitle();
     if (this.transfer !== null) void api.sftpCancel(this.transfer);
     if (this.id !== null) void api.sftpClose(this.id).catch(() => {});
@@ -204,21 +209,25 @@ export class FilesPane implements Pane {
    * On success it replaces the current one; on failure the current one stays.
    */
   private async open(user: string | null): Promise<void> {
+    if (this.switching) return;
+    this.switching = true;
+    this.setBusy(true);
     this.say(user ? t("filesOpeningAs", { user }) : t("filesOpening"));
-    let password: string | null = null;
     try {
+      let res = await api.sftpOpen(this.opts.session, user);
       for (;;) {
-        const res = await api.sftpOpen(this.opts.session, user, password);
         if (res.status === "passwordRequired") {
-          password = await this.askPassword(user ?? "", res.retry);
-          if (password === null) {
+          // sudo printed its prompt and waits: the password goes to it only.
+          const password = await this.askPassword(user ?? "", res.asksFor ?? this.loginUser, res.retry);
+          if (password === null || this.disposed) {
+            void api.sftpSudoCancel(res.pending).catch(() => {});
             this.say(t("filesSudoCancelled"));
             if (this.id === null) this.fail(t("filesSudoCancelled"));
             return;
           }
+          res = await api.sftpSudoPassword(res.pending, password);
           continue;
         }
-        password = null;
         if (this.disposed) {
           void api.sftpClose(res.id);
           return;
@@ -240,12 +249,17 @@ export class FilesPane implements Pane {
       }
     } catch (e) {
       this.fail(e);
+    } finally {
+      this.switching = false;
+      if (this.state === "open") this.setBusy(this.busy);
     }
   }
 
   /** Switches the browser to another user (null: back to the login user). */
-  private switchUser(user: string | null): void {
-    if (this.busy || this.state === "closed") return;
+  private async switchUser(user: string | null): Promise<void> {
+    if (this.busy || this.switching || this.state === "closed") return;
+    // The suggestion comes from the server (terminal title): root needs a yes.
+    if (user === "root" && !(await confirmBox(t("filesRootConfirm"), t("filesOpenAs", { user }), true))) return;
     void this.open(user);
   }
 
@@ -256,7 +270,7 @@ export class FilesPane implements Pane {
     this.suggestion.hidden = !show;
     if (!show) return;
     const btn = h("button", { type: "button", class: "btn btn-primary" }, t("filesOpenAs", { user: other }));
-    btn.addEventListener("click", () => this.switchUser(other === this.loginUser ? null : other));
+    btn.addEventListener("click", () => void this.switchUser(other === this.loginUser ? null : other));
     clear(this.suggestion);
     this.suggestion.append(icon("user"), h("span", {}, t("filesTerminalUser", { user: other })), btn);
   }
@@ -265,11 +279,12 @@ export class FilesPane implements Pane {
     if (this.state !== "open") return;
     const items = [];
     const other = titleUser(this.opts.source.remoteTitle);
-    if (other && other !== this.user) {
-      items.push({ label: t("filesOpenAs", { user: other }), action: () => this.switchUser(other === this.loginUser ? null : other) });
+    // The login user is covered by "Back to" below.
+    if (other && other !== this.user && other !== this.loginUser) {
+      items.push({ label: t("filesOpenAs", { user: other }), action: () => void this.switchUser(other === this.loginUser ? null : other) });
     }
     if (this.user !== this.loginUser) {
-      items.push({ label: t("filesBackTo", { user: this.loginUser }), action: () => this.switchUser(null) });
+      items.push({ label: t("filesBackTo", { user: this.loginUser }), action: () => void this.switchUser(null) });
     }
     items.push({ label: t("filesOpenAsOther"), icon: icon("user"), action: () => void this.askUser() });
     showMenu(x, y, items);
@@ -297,16 +312,16 @@ export class FilesPane implements Pane {
         return warn.hidden ? name : undefined;
       },
     });
-    if (user) this.switchUser(user === this.loginUser ? null : user);
+    if (user) await this.switchUser(user === this.loginUser ? null : user);
   }
 
-  /** The login user's password for sudo; null when cancelled. Never stored. */
-  private askPassword(user: string, retry: boolean): Promise<string | null> {
+  /** The password sudo asks for (`who`'s); null when cancelled. Never stored. */
+  private async askPassword(user: string, who: string, retry: boolean): Promise<string | null> {
     const input = h("input", { class: "input", type: "password", autocomplete: "off" });
-    return modal<string | null>({
+    const password = await modal<string | null>({
       title: t("filesSudoTitle", { user }),
       body: [
-        h("p", {}, t("filesSudoBody", { login: this.loginUser || "?", host: this.opts.title, user })),
+        h("p", {}, t("filesSudoBody", { who: who || "?", host: this.opts.title, user })),
         h("p", { class: "warn", hidden: !retry }, t("filesSudoWrong")),
         h("label", { class: "field" }, h("span", {}, t("authPassword")), input),
       ],
@@ -317,7 +332,10 @@ export class FilesPane implements Pane {
       cancelValue: null,
       initialFocus: input,
       onSubmit: () => input.value || undefined,
+      signal: this.closing.signal,
     });
+    input.value = "";
+    return password;
   }
 
   private setState(s: PaneState): void {

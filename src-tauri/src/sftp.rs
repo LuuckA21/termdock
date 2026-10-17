@@ -18,7 +18,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
-use termdock_core::sftp::{CancellationToken, Listing, OpenAs, Sftp, is_format_char};
+use termdock_core::sftp::{CancellationToken, Listing, OpenAs, Sftp, SudoPending, is_format_char};
 use tokio::sync::oneshot;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -57,7 +57,20 @@ struct Inner {
     browsers: Mutex<HashMap<u32, Browser>>,
     transfers: Mutex<HashMap<u32, Transfer>>,
     picked: Mutex<HashMap<Uuid, Picked>>,
+    /// sudo attempts waiting for a password, by id.
+    sudo: Mutex<HashMap<u32, PendingSudo>>,
 }
+
+struct PendingSudo {
+    session: u32,
+    user: String,
+    login_user: String,
+    pending: SudoPending,
+    at: Instant,
+}
+
+/// A sudo prompt left unanswered this long is closed.
+const SUDO_TTL: Duration = Duration::from_secs(5 * 60);
 
 /// Cheap to clone, so the session's exit handler can hold it.
 #[derive(Clone, Default)]
@@ -120,11 +133,25 @@ impl SftpState {
     pub fn session_ended(&self, session: u32) {
         let (closed, _) = self.detach(Some(session), None);
         drop(closed);
+        // Dropped attempts close their channels themselves.
+        self.0.sudo.lock().unwrap().retain(|_, p| p.session != session);
     }
 
     /// The terminal session is being closed: cancel its transfers, let them
     /// clean up, then close the SFTP channels (before the SSH connection).
     pub async fn close_session(&self, session: u32) {
+        let pending: Vec<PendingSudo> = {
+            let mut sudo = self.0.sudo.lock().unwrap();
+            let ids: Vec<u32> = sudo
+                .iter()
+                .filter(|(_, p)| p.session == session)
+                .map(|(id, _)| *id)
+                .collect();
+            ids.iter().filter_map(|id| sudo.remove(id)).collect()
+        };
+        for p in pending {
+            p.pending.cancel().await;
+        }
         let (closed, running) = self.detach(Some(session), None);
         self.drain(&running).await;
         for sftp in closed {
@@ -168,8 +195,15 @@ pub enum Opened {
         /// The user the terminal logged in as.
         login_user: String,
     },
-    /// sudo needs the login user's password (`retry`: the one given was wrong).
-    PasswordRequired { retry: bool },
+    /// sudo waits for a password: answer with `sftp_sudo_password(pending, …)`.
+    #[serde(rename_all = "camelCase")]
+    PasswordRequired {
+        pending: u32,
+        /// The password given was not accepted.
+        retry: bool,
+        /// Whose password sudo asks for, when it says.
+        asks_for: Option<String>,
+    },
 }
 
 #[derive(Clone, Serialize)]
@@ -199,33 +233,134 @@ fn throttled(transfer: u32, channel: Channel<Progress>) -> impl FnMut(u64, Optio
 }
 
 /// Opens a file browser on a terminal's SSH connection, as the login user or,
-/// through sudo, as `user`. The sudo `password` is used for this call only.
+/// through sudo, as `user`.
 #[tauri::command]
 pub async fn sftp_open(
     state: State<'_, AppState>,
     sftp: State<'_, SftpState>,
     session: u32,
     user: Option<String>,
-    password: Option<String>,
 ) -> CmdResult<Opened> {
-    let password = password.map(Zeroizing::new);
-    let live = |s: &State<'_, AppState>| s.sessions.lock().unwrap().get(&session).cloned();
-    let handle = live(&state).ok_or_else(|| CmdError::msg("the terminal session is closed"))?;
+    let handle = live_session(&state, session)?;
     let login_user = handle.ssh_user().unwrap_or_default().to_owned();
-    let (fs, user) = match user {
-        None => (Sftp::open(&handle).await?, login_user.clone()),
-        Some(user) => match Sftp::open_as(&handle, &user, password.as_deref().map(String::as_str)).await? {
-            OpenAs::Opened(fs) => (*fs, user),
-            OpenAs::PasswordRequired { retry } => return Ok(Opened::PasswordRequired { retry }),
-        },
-    };
+    match user {
+        None => {
+            let fs = Sftp::open(&handle).await?;
+            register(&state, &sftp, session, fs, login_user.clone(), login_user).await
+        }
+        Some(user) => {
+            let result = Sftp::open_as(&handle, &user).await?;
+            settle(&state, &sftp, session, user, login_user, result).await
+        }
+    }
+}
+
+/// Gives the password to the sudo waiting in `pending`. It goes to that sudo
+/// only (it printed its prompt), is not kept, and a wrong one asks again.
+#[tauri::command]
+pub async fn sftp_sudo_password(
+    state: State<'_, AppState>,
+    sftp: State<'_, SftpState>,
+    pending: u32,
+    password: String,
+) -> CmdResult<Opened> {
+    let password = Zeroizing::new(password);
+    let p = sftp
+        .0
+        .sudo
+        .lock()
+        .unwrap()
+        .remove(&pending)
+        .ok_or_else(|| CmdError::msg("sudo is no longer waiting: try again"))?;
+    if live_session(&state, p.session).is_err() {
+        p.pending.cancel().await;
+        return Err(CmdError::msg("the terminal session is closed"));
+    }
+    let result = Sftp::continue_as(p.pending, &password).await?;
+    settle(&state, &sftp, p.session, p.user, p.login_user, result).await
+}
+
+/// Stops a sudo attempt waiting for a password.
+#[tauri::command]
+pub async fn sftp_sudo_cancel(sftp: State<'_, SftpState>, pending: u32) -> CmdResult<()> {
+    let removed = sftp.0.sudo.lock().unwrap().remove(&pending);
+    if let Some(p) = removed {
+        p.pending.cancel().await;
+    }
+    Ok(())
+}
+
+fn live_session(state: &State<'_, AppState>, session: u32) -> CmdResult<termdock_core::session::SessionHandle> {
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .get(&session)
+        .cloned()
+        .ok_or_else(|| CmdError::msg("the terminal session is closed"))
+}
+
+/// Registers an opened browser, or keeps a sudo attempt that needs a password.
+async fn settle(
+    state: &State<'_, AppState>,
+    sftp: &State<'_, SftpState>,
+    session: u32,
+    user: String,
+    login_user: String,
+    result: OpenAs,
+) -> CmdResult<Opened> {
+    match result {
+        OpenAs::Opened(fs) => register(state, sftp, session, *fs, user, login_user).await,
+        OpenAs::PasswordRequired { pending, retry } => {
+            let asks_for = pending.asks_for().map(str::to_owned);
+            let id = sftp.next_id();
+            let expired: Vec<PendingSudo> = {
+                let mut sudo = sftp.0.sudo.lock().unwrap();
+                let old: Vec<u32> = sudo
+                    .iter()
+                    .filter(|(_, p)| p.at.elapsed() >= SUDO_TTL)
+                    .map(|(id, _)| *id)
+                    .collect();
+                let expired = old.iter().filter_map(|id| sudo.remove(id)).collect();
+                sudo.insert(
+                    id,
+                    PendingSudo {
+                        session,
+                        user,
+                        login_user,
+                        pending,
+                        at: Instant::now(),
+                    },
+                );
+                expired
+            };
+            for p in expired {
+                p.pending.cancel().await;
+            }
+            Ok(Opened::PasswordRequired {
+                pending: id,
+                retry,
+                asks_for,
+            })
+        }
+    }
+}
+
+/// Keeps the browser if its terminal is still open, so a browser can never
+/// outlive its session.
+async fn register(
+    state: &State<'_, AppState>,
+    sftp: &State<'_, SftpState>,
+    session: u32,
+    fs: Sftp,
+    user: String,
+    login_user: String,
+) -> CmdResult<Opened> {
     let home = fs.canonicalize(".").await?;
     let id = sftp.next_id();
     {
-        // Registered only if the terminal is still open, so a browser can
-        // never outlive its session.
         let mut browsers = sftp.0.browsers.lock().unwrap();
-        if live(&state).is_some() {
+        if state.sessions.lock().unwrap().contains_key(&session) {
             browsers.insert(
                 id,
                 Browser {
