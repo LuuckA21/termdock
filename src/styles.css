@@ -565,6 +565,24 @@ dialog.modal h2 {
   font-size: 12px;
 }
 
+.update-notes h3 {
+  margin: 8px 0 4px;
+  font-size: 12px;
+}
+
+.update-notes h3:first-child {
+  margin-top: 0;
+}
+
+.update-notes ul,
+.update-notes p {
+  margin: 0 0 6px;
+}
+
+.update-notes ul {
+  padding-left: 18px;
+}
+
 dialog.update-progress {
   width: min(420px, 92vw);
 }
