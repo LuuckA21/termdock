@@ -71,9 +71,9 @@ export async function check(manual: boolean): Promise<string | null> {
 }
 
 async function offer(update: UpdateInfo): Promise<void> {
-  const notes = localizedNotes(update.notes);
+  const notes = notesView(localizedNotes(update.notes));
   const body: Node[] = [h("p", {}, t("updateBody", { version: update.version, current: update.currentVersion }))];
-  if (notes) body.push(h("div", { class: "update-notes pre selectable" }, notes));
+  if (notes.length) body.push(h("div", { class: "update-notes selectable" }, ...notes));
   body.push(h("p", { class: "muted" }, update.installable ? t("updateRestartNote") : t("updatePackageManaged")));
 
   const choice = await modal<"install" | "copy" | "later">({
@@ -155,14 +155,43 @@ async function copyReleasesLink(): Promise<void> {
 
 /**
  * Release notes hold the English changelog, then "---", "**Italiano**" and the
- * Italian one: keep the part in the UI language and drop Markdown markers.
+ * Italian one: keep the part in the UI language.
  */
 function localizedNotes(notes: string): string {
   const [en, it] = notes.split(/\n-{3,}\s*\n\s*\*\*Italiano\*\*\s*\n/);
-  const text = currentLanguage() === "it" && it ? it : en;
-  return text
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/`([^`\n]+)`/g, "$1")
-    .trim();
+  return (currentLanguage() === "it" && it ? it : en).trim();
+}
+
+/**
+ * Renders the changelog subset of Markdown the notes use (headings, bullet
+ * items, paragraphs) as plain DOM text; inline markers are dropped.
+ */
+function notesView(markdown: string): Node[] {
+  const inline = (s: string) => s.replace(/\*\*(.+?)\*\*/g, "$1").replace(/`([^`\n]+)`/g, "$1").trim();
+  const nodes: Node[] = [];
+  let list: HTMLUListElement | null = null;
+  let last: HTMLElement | null = null;
+  for (const line of markdown.split("\n")) {
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    const item = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (!line.trim()) {
+      list = null;
+      last = null;
+    } else if (heading) {
+      list = null;
+      last = h("h3", {}, inline(heading[1]));
+      nodes.push(last);
+    } else if (item) {
+      if (!list) nodes.push((list = h("ul")));
+      last = h("li", {}, inline(item[1]));
+      list.append(last);
+    } else if (last && last.tagName !== "H3") {
+      // Continuation of the previous item or paragraph.
+      last.append(` ${inline(line)}`);
+    } else {
+      last = h("p", {}, inline(line));
+      nodes.push(last);
+    }
+  }
+  return nodes;
 }

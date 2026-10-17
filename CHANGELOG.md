@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-17
+
+### Changed
+
+- The update dialog shows the release notes as headings and bullet lists instead of raw text.
+
 ## [0.4.0] - 2026-10-16
 
 ### Added
@@ -60,7 +66,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/LuuckA21/termdock/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/LuuckA21/termdock/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/LuuckA21/termdock/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LuuckA21/termdock/compare/v0.1.0...v0.2.0
