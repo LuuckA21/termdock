@@ -44,6 +44,13 @@ export interface ProfileList {
   favorites: Uuid[];
 }
 
+/** The editor chosen in Settings for Edit; null means the system text editor. */
+export interface EditorInfo {
+  name: string;
+  /** Full path, shown as a hint. */
+  path: string;
+}
+
 export interface AppInfo {
   version: string;
   vaultAvailable: boolean;

@@ -33,6 +33,9 @@ const COMMANDS: &[&str] = &[
     "sftp_edit",
     "sftp_edit_resolve",
     "sftp_edit_stop",
+    "editor_get",
+    "editor_pick",
+    "editor_reset",
 ];
 
 fn main() {

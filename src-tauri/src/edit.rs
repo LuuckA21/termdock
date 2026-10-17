@@ -1,6 +1,7 @@
 //! "Edit" in the file browser: a remote text file is copied to a private
-//! temporary folder, opened in the system's *text editor* (never run, never
-//! opened with whatever program its content or extension suggests), and
+//! temporary folder, opened in the system's *text editor* or the one chosen
+//! in Settings (never run, never opened with whatever program its content or
+//! extension suggests; see `editor`), and
 //! uploaded back each time it is saved there. If the file changed on the
 //! server meanwhile, the user is asked before it is overwritten.
 
@@ -16,6 +17,7 @@ use tauri::ipc::Channel;
 use termdock_core::sftp::{CancellationToken, FileType, Sftp, validate_name};
 
 use crate::commands::{CmdError, CmdResult};
+use crate::editor::EditorChoice;
 use crate::sftp::SftpState;
 
 /// Larger files are better downloaded and handled by hand.
@@ -143,6 +145,7 @@ fn owned_by_us(_meta: &std::fs::Metadata) -> bool {
 pub async fn sftp_edit(
     sftp: State<'_, SftpState>,
     edits: State<'_, Arc<EditState>>,
+    editor: State<'_, EditorChoice>,
     id: u32,
     dir: String,
     name: String,
@@ -205,7 +208,7 @@ pub async fn sftp_edit(
             },
         );
     }
-    if let Err(e) = open_in_text_editor(&path) {
+    if let Err(e) = editor.open(&path) {
         edits.stop(edit_id);
         return Err(CmdError::msg(e));
     }
@@ -371,71 +374,4 @@ fn editor_file_name(name: &str) -> String {
     } else {
         safe
     }
-}
-
-/// Opens `path` in the system's text editor: Notepad (full path) on Windows,
-/// the default text editor on macOS (`open -t`). On Linux, the application
-/// registered for text/plain is started on it (`gtk-launch`), or GIO opens
-/// it by its `.txt` name; anything that would pick the program from the
-/// file's content is not used.
-fn open_in_text_editor(path: &Path) -> Result<(), String> {
-    #[cfg(windows)]
-    let mut cmd = {
-        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
-        let mut c = std::process::Command::new(PathBuf::from(root).join("System32").join("notepad.exe"));
-        c.arg(path);
-        c
-    };
-    #[cfg(target_os = "macos")]
-    let mut cmd = {
-        let mut c = std::process::Command::new("/usr/bin/open");
-        c.arg("-t").arg(path);
-        c
-    };
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let mut cmd = linux_text_editor(path)
-        .ok_or_else(|| "no text editor found (gtk-launch or gio is needed): download the file instead".to_owned())?;
-    let mut child = cmd.spawn().map_err(|e| format!("could not open a text editor: {e}"))?;
-    // Reap it when it exits (open/gio return at once; editors later).
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn linux_text_editor(path: &Path) -> Option<std::process::Command> {
-    // The desktop's text/plain application, started explicitly.
-    let handler = std::process::Command::new("xdg-mime")
-        .args(["query", "default", "text/plain"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_owned())
-        .filter(|id| {
-            id.ends_with(".desktop")
-                && id.len() < 256
-                && id
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
-        });
-    if let Some(id) = handler
-        && on_path("gtk-launch")
-    {
-        let mut c = std::process::Command::new("gtk-launch");
-        c.arg(id.trim_end_matches(".desktop")).arg(path);
-        return Some(c);
-    }
-    // GIO picks the application from the name first: a .txt name is text.
-    if on_path("gio") {
-        let mut c = std::process::Command::new("gio");
-        c.arg("open").arg(path);
-        return Some(c);
-    }
-    None
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn on_path(program: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
 }

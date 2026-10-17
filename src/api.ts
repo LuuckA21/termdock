@@ -10,6 +10,7 @@ import type {
   PromptAnswer,
   SessionNotice,
   EditEvent,
+  EditorInfo,
   PickedFile,
   SftpOpened,
   RemoteListing,
@@ -79,6 +80,10 @@ export const api = {
   },
   sftpEditResolve: (edit: number, overwrite: boolean) => invoke<void>("sftp_edit_resolve", { edit, overwrite }),
   sftpEditStop: (edit: number) => invoke<void>("sftp_edit_stop", { edit }),
+  editorGet: () => invoke<EditorInfo | null>("editor_get"),
+  /** Shows a native file picker for the editor; resolves with the new choice, or null if cancelled. */
+  editorPick: () => invoke<EditorInfo | null>("editor_pick"),
+  editorReset: () => invoke<void>("editor_reset"),
   sftpUpload: (id: number, dir: string, token: string, overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
     invoke<void>("sftp_upload", { id, dir, token, overwrite, onProgress: progressChannel(onProgress) }),
 

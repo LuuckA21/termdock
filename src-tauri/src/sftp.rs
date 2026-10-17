@@ -702,7 +702,7 @@ const O_NONBLOCK: i32 = 0x0004;
 const O_NONBLOCK: i32 = 0o4000;
 
 /// Native dialog attached to the main window, with the system's own title.
-fn dialog(app: &AppHandle) -> FileDialogBuilder<tauri::Wry> {
+pub(crate) fn dialog(app: &AppHandle) -> FileDialogBuilder<tauri::Wry> {
     let mut d = app.dialog().file();
     if let Some(window) = app.get_webview_window("main") {
         d = d.set_parent(&window);

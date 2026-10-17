@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api, errorText } from "./api";
 import { modal } from "./dialogs";
 import { h } from "./dom";
 import { LANGUAGES, languageSetting, setLanguage, systemLanguage, t, type LanguageSetting } from "./i18n";
@@ -15,6 +15,7 @@ import {
   type ThemeSetting,
 } from "./prefs";
 import { SCHEMES, type SchemeId } from "./schemes";
+import type { EditorInfo } from "./types";
 import { autoCheckEnabled, check, setAutoCheck } from "./updates";
 
 const FONT_SUGGESTIONS = [
@@ -160,6 +161,42 @@ export async function openSettings(): Promise<void> {
     checkNow.disabled = false;
   });
 
+  // ---- editor for Edit: kept by the backend, changed at once (the program
+  // is only ever picked in the system's own file dialog)
+  const editorName = h("span", { class: "editor-name" });
+  const editorStatus = h("p", { class: "muted", role: "status" });
+  const editorChoose = h("button", { type: "button", class: "btn" }, t("editorChoose"));
+  const editorReset = h("button", { type: "button", class: "btn btn-ghost" }, t("editorSystem"));
+  const showEditor = (info: EditorInfo | null) => {
+    editorName.textContent = info ? info.name : t("editorSystemName");
+    editorName.title = info ? info.path : "";
+    editorReset.hidden = !info;
+  };
+  showEditor(null);
+  api.editorGet().then(showEditor).catch(() => undefined);
+  const editorAction = async (run: () => Promise<void>) => {
+    editorChoose.disabled = editorReset.disabled = true;
+    editorStatus.textContent = "";
+    try {
+      await run();
+    } catch (e) {
+      editorStatus.textContent = errorText(e);
+    }
+    editorChoose.disabled = editorReset.disabled = false;
+  };
+  editorChoose.addEventListener("click", () =>
+    editorAction(async () => {
+      const info = await api.editorPick();
+      if (info) showEditor(info);
+    }),
+  );
+  editorReset.addEventListener("click", () =>
+    editorAction(async () => {
+      await api.editorReset();
+      showEditor(null);
+    }),
+  );
+
   const chosen = await modal<{ language: LanguageSetting; autoUpdate: boolean; prefs: Prefs } | null>({
     title: t("settings"),
     className: "settings",
@@ -183,6 +220,14 @@ export async function openSettings(): Promise<void> {
         h("label", { class: "check" }, cursorBlink, h("span", {}, t("cursorBlink"))),
         preview,
         h("div", { class: "settings-row" }, h("span"), restore),
+      ),
+      h(
+        "fieldset",
+        { class: "settings-group" },
+        h("legend", {}, t("editorGroup")),
+        h("div", { class: "settings-row" }, editorName, h("span", { class: "editor-buttons" }, editorReset, editorChoose)),
+        h("p", { class: "muted" }, t("editorHelp")),
+        editorStatus,
       ),
       h(
         "fieldset",
