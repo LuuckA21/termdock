@@ -5,6 +5,7 @@ import { describe, setDotColor } from "./favorites";
 import { forwardsEditor } from "./forwards";
 import { openImport } from "./importer";
 import { t } from "./i18n";
+import { shortcutSummary } from "./keys";
 import type { App } from "./main";
 import type { Profile, SshAuth, Uuid } from "./types";
 
@@ -143,7 +144,7 @@ export function openManager(app: App, opts: ManagerOptions): void {
       closeBtn,
     ),
     h("div", { class: "mgr-body" }, h("aside", { class: "mgr-side" }, search, list), editor),
-    h("footer", { class: "mgr-foot muted" }, t("shortcutsBody")),
+    h("footer", { class: "mgr-foot muted" }, shortcutSummary()),
   );
   dlg.addEventListener("cancel", (e) => {
     e.preventDefault();

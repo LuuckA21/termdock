@@ -12,6 +12,7 @@ import { onLanguageChange, t } from "./i18n";
 import { openManager, type ManagerOptions } from "./manager";
 import { firstLeaf, getLayouts, MAX_PANES, paneCount, saveLayout as saveLayoutAs, startupLayout, type LayoutLeaf, type LayoutNode } from "./layouts";
 import { askLayoutName, manageLayouts } from "./layoutsui";
+import { actionFor, digitFor, keyHint, onKeysChange, withKey } from "./keys";
 import { showMenu, showMenuBelow } from "./menu";
 import { DEFAULTS, getPrefs, setPrefs } from "./prefs";
 import { openSettings } from "./settings";
@@ -44,6 +45,11 @@ export class App {
     this.listenForDrops();
     // Language switched in Settings: redraw the chrome; open terminals keep running.
     onLanguageChange(() => {
+      this.favbar.render();
+      this.renderTabs();
+    });
+    // Shortcuts changed in Settings: redraw the hints.
+    onKeysChange(() => {
       this.favbar.render();
       this.renderTabs();
     });
@@ -305,7 +311,7 @@ export class App {
         hint: l.id === startup ? t("layoutAtStartup") : t("layoutPanes", { count: paneCount(l.root) }),
         action: () => this.openLayout(l.id),
       })),
-      { label: t("layoutSave"), icon: icon("plus"), hint: "Ctrl+Shift+L", action: () => void this.saveLayout() },
+      { label: t("layoutSave"), icon: icon("plus"), hint: keyHint("saveLayout"), action: () => void this.saveLayout() },
       { label: t("layoutManage"), icon: icon("edit"), action: () => void manageLayouts((id) => this.openLayout(id)) },
     ]);
   }
@@ -341,7 +347,7 @@ export class App {
     });
   }
 
-  /** A pane that gets the focus (click, Alt+arrow) becomes the active one. */
+  /** A pane that gets the focus (click, keyboard) becomes the active one. */
   private paneFocused(pane: Pane): void {
     const tab = this.tabs.find((x) => x.has(pane));
     if (!tab) return;
@@ -442,8 +448,8 @@ export class App {
         this.activate(tab);
         const active = tab.active;
         showMenu(e.clientX, e.clientY, [
-          { label: t("splitRight"), icon: icon("splitRight"), hint: "Ctrl+Shift+E", action: () => void this.split("right") },
-          { label: t("splitDown"), icon: icon("splitDown"), hint: "Ctrl+Shift+O", action: () => void this.split("down") },
+          { label: t("splitRight"), icon: icon("splitRight"), hint: keyHint("splitRight"), action: () => void this.split("right") },
+          { label: t("splitDown"), icon: icon("splitDown"), hint: keyHint("splitDown"), action: () => void this.split("down") },
           // Put this tab next to another one (Windows Terminal style split of two connections).
           ...this.tabs
             .filter((other) => other !== tab)
@@ -456,21 +462,21 @@ export class App {
           ...(active instanceof TerminalPane
             ? [
                 ...(active.opts.target.kind !== "shell" && active.session !== null
-                  ? [{ label: t("openFiles"), icon: icon("folder"), hint: "Ctrl+Shift+S", action: () => this.openFiles() }]
+                  ? [{ label: t("openFiles"), icon: icon("folder"), hint: keyHint("files"), action: () => this.openFiles() }]
                   : []),
-                { label: t("find"), hint: "Ctrl+Shift+F", action: () => active.find() },
-                { label: t("copy"), action: () => void active.copy() },
-                { label: t("paste"), action: () => void active.paste() },
+                { label: t("find"), hint: keyHint("find"), action: () => active.find() },
+                { label: t("copy"), hint: keyHint("copy"), action: () => void active.copy() },
+                { label: t("paste"), hint: keyHint("paste"), action: () => void active.paste() },
               ]
             : []),
-          { label: t("layoutSave"), icon: icon("plus"), hint: "Ctrl+Shift+L", action: () => void this.saveLayout(tab) },
-          ...(count > 1 ? [{ label: t("closePane"), hint: "Ctrl+Shift+W", action: () => this.closePane() }] : []),
+          { label: t("layoutSave"), icon: icon("plus"), hint: keyHint("saveLayout"), action: () => void this.saveLayout(tab) },
+          ...(count > 1 ? [{ label: t("closePane"), hint: keyHint("closePane"), action: () => this.closePane() }] : []),
           { label: t("closeTab"), icon: icon("close"), action: () => this.closeTab(tab) },
         ]);
       });
       this.tabbar.append(el);
     }
-    const add = h("button", { class: "icon-btn tab-add", type: "button", title: `${t("newTab")} (Ctrl+Shift+T)` }, icon("plus"));
+    const add = h("button", { class: "icon-btn tab-add", type: "button", title: withKey(t("newTab"), "newShell") }, icon("plus"));
     add.addEventListener("click", () => this.openDefaultShell());
     this.tabbar.append(add);
   }
@@ -489,59 +495,65 @@ export class App {
     // Dialogs (settings, host key, password…) keep their keys: nothing may
     // act on the tabs behind them.
     if (document.querySelector("dialog[open]")) return null;
-    const mod = e.ctrlKey || e.metaKey;
-    const ctrlShift = mod && e.shiftKey && !e.altKey;
     // A held key must not open or close a burst of panes and sessions; the
     // repeats are still swallowed so they do not reach the terminal.
     const once = (action: () => void) => (e.repeat ? () => {} : action);
-    if (ctrlShift) {
-      switch (e.code) {
-        case "KeyT":
-          return once(() => this.openDefaultShell());
-        case "KeyW":
-          return once(() => this.closePane());
-        case "KeyK":
-          return () => document.getElementById("quick-connect")?.focus();
-        case "KeyM":
-          return once(() => this.openManager({}));
-        case "KeyE":
-          return once(() => void this.split("right"));
-        case "KeyO":
-          return once(() => void this.split("down"));
-        case "KeyS":
-          return once(() => this.openFiles());
-        case "KeyL":
-          return once(() => void this.saveLayout());
-        case "KeyF": {
-          const pane = this.active?.active;
-          return pane instanceof TerminalPane ? once(() => pane.find()) : null;
-        }
-      }
-      if (/^Digit[1-9]$/.test(e.code)) {
-        const p = this.favoriteProfiles()[Number(e.code.slice(5)) - 1];
-        return p ? once(() => this.openProfile(p)) : null;
-      }
+    const digit = digitFor(e);
+    if (digit?.action === "openFavorite") {
+      const p = this.favoriteProfiles()[digit.n - 1];
+      return p ? once(() => this.openProfile(p)) : null;
     }
-    if (mod && !e.shiftKey && !e.altKey && e.code === "Comma") return () => void openSettings();
-    // Font size: Ctrl + "+" / "-" / "0" (by character, so it works on any keyboard layout).
-    if (mod && !e.altKey && (e.key === "+" || e.key === "=")) return () => this.zoom(1);
-    if (mod && !e.altKey && !e.shiftKey && e.key === "-") return () => this.zoom(-1);
-    if (mod && !e.altKey && !e.shiftKey && e.key === "0") return () => this.zoom(0);
-    if (e.ctrlKey && !e.altKey && e.code === "Tab") return () => this.cycle(e.shiftKey ? -1 : 1);
-    if (e.altKey && !mod && !e.shiftKey) {
-      if (/^Digit[1-9]$/.test(e.code)) {
-        const tab = this.tabs[Number(e.code.slice(5)) - 1];
-        return tab ? () => this.activate(tab) : null;
+    if (digit?.action === "goToTab") {
+      const tab = this.tabs[digit.n - 1];
+      return tab ? () => this.activate(tab) : null;
+    }
+    const action = actionFor(e);
+    switch (action) {
+      case "newShell":
+        return once(() => this.openDefaultShell());
+      case "closePane":
+        return once(() => this.closePane());
+      case "quickConnect":
+        return () => document.getElementById("quick-connect")?.focus();
+      case "connections":
+        return once(() => this.openManager({}));
+      case "splitRight":
+        return once(() => void this.split("right"));
+      case "splitDown":
+        return once(() => void this.split("down"));
+      case "files":
+        return once(() => this.openFiles());
+      case "saveLayout":
+        return once(() => void this.saveLayout());
+      case "find": {
+        const pane = this.active?.active;
+        return pane instanceof TerminalPane ? once(() => pane.find()) : null;
       }
-      // Alt+arrows move between panes, only inside a terminal and when there
-      // are several: otherwise the shell or text field gets them (word movement).
-      const dir = ({ ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" } as const)[
-        e.code as "ArrowLeft"
-      ];
-      // Not from text fields (the file browser's path): they keep word movement.
-      const inTerminal =
-        e.target instanceof Element && this.terminals.contains(e.target) && !e.target.closest("input");
-      if (dir && inTerminal && this.active && this.active.count > 1) return () => this.moveFocus(dir);
+      case "settings":
+        return () => void openSettings();
+      case "zoomIn":
+        return () => this.zoom(1);
+      case "zoomOut":
+        return () => this.zoom(-1);
+      case "zoomReset":
+        return () => this.zoom(0);
+      case "nextTab":
+        return () => this.cycle(1);
+      case "prevTab":
+        return () => this.cycle(-1);
+      case "movePaneLeft":
+      case "movePaneRight":
+      case "movePaneUp":
+      case "movePaneDown": {
+        // Only inside a terminal and with several panes: otherwise the shell
+        // or the text field (the file browser's path) keeps the key.
+        const inTerminal =
+          e.target instanceof Element && this.terminals.contains(e.target) && !e.target.closest("input");
+        if (!inTerminal || !this.active || this.active.count < 2) return null;
+        const dir = ({ movePaneLeft: "left", movePaneRight: "right", movePaneUp: "up", movePaneDown: "down" } as const)[action];
+        return () => this.moveFocus(dir);
+      }
+      // Copy and paste are handled by the terminal itself.
     }
     return null;
   }

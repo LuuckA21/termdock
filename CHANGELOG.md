@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-17
+
+### Added
+
+- Settings → *Keys*: change, remove or reset every keyboard shortcut (click it and press the new keys), and choose the modifiers of *Go to tab 1…9* and *Open favorite 1…9* or turn them off. Combinations already in use are moved only after confirmation; Ctrl+letter, Alt+letter and Ctrl+Alt (AltGr on Windows) combinations get a warning. Tooltips, menus and the shortcut list follow the chosen keys.
+
 ## [0.10.1] - 2026-10-17
 
 ### Changed
@@ -159,7 +165,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/LuuckA21/termdock/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/LuuckA21/termdock/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.1

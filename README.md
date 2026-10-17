@@ -43,8 +43,10 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | `Ctrl+Shift+M` | connection manager |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
 | `Ctrl` + `+` / `-` / `0` | larger / smaller / default font size |
-| `Ctrl+,` | settings (language, appearance, updates) |
+| `Ctrl+,` | settings (language, appearance, keys, files, updates) |
 | right click in the terminal | copy the selection, otherwise paste |
+
+These are the defaults (`Cmd` works in place of `Ctrl` on macOS). Every shortcut can be changed or turned off in **Settings → Keys**: click it and press the new keys; a combination already in use is moved only after confirmation, and keys that terminal programs or AltGr typing need get a warning first.
 
 ## Security
 

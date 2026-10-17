@@ -7,6 +7,12 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-17
+
+### Aggiunto
+
+- Impostazioni → *Tasti*: cambia, rimuovi o ripristina ogni scorciatoia da tastiera (fai clic e premi i nuovi tasti), e scegli i modificatori di *Vai alla scheda 1…9* e *Apri preferito 1…9* o disattivali. Le combinazioni già usate vengono spostate solo dopo conferma; per Ctrl+lettera, Alt+lettera e Ctrl+Alt (AltGr su Windows) compare un avviso. Suggerimenti, menu ed elenco delle scorciatoie seguono i tasti scelti.
+
 ## [0.10.1] - 2026-10-17
 
 ### Modificato
@@ -159,7 +165,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/LuuckA21/termdock/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/LuuckA21/termdock/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.1
