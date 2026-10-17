@@ -7,6 +7,13 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-17
+
+### Aggiunto
+
+- Ricerca nel terminale (`Ctrl+Shift+F`, o dal menu della scheda): risultati evidenziati nello storico, successivo/precedente, maiuscole/minuscole, espressioni regolari e conteggio dei risultati.
+- Layout salvati: salva i pannelli di una scheda (connessioni, shell, direzione degli split e dimensioni) con `Ctrl+Shift+L` o dal menu della scheda, riaprili dal nuovo menu *Layout* e scegline uno da aprire all'avvio. Le connessioni eliminate nel frattempo si aprono come terminale locale, con un avviso.
+
 ## [0.7.0] - 2026-10-17
 
 ### Aggiunto
@@ -115,7 +122,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/LuuckA21/termdock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/LuuckA21/termdock/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/LuuckA21/termdock/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/LuuckA21/termdock/compare/v0.5.0...v0.5.1

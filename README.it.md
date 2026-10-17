@@ -19,6 +19,8 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 - **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.
 - Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro).
 - **Pannelli divisi**, come Windows Terminal: dividi una scheda affiancando o sovrapponendo i pannelli quante volte serve e scegli cosa aprire nel nuovo pannello (la stessa connessione, una shell locale, qualsiasi connessione salvata o un indirizzo `utente@host`), per esempio server A a sinistra e server B a destra. Le schede già aperte si possono affiancare senza riconnettersi (menu della scheda → *Affianca a*) e i preferiti si aprono direttamente a destra o sotto. Trascina i divisori per ridimensionarli, spostati tra i pannelli con `Alt+frecce`.
+- **Layout salvati**: salva la disposizione di una scheda (quale connessione o shell c'è in ogni pannello e le dimensioni) con `Ctrl+Shift+L` e riaprila dal menu *Layout* con un clic; un layout può aprirsi automaticamente all'avvio (le sue connessioni partono subito, con le solite richieste di host key e password).
+- **Ricerca nel terminale**: `Ctrl+Shift+F` cerca nello storico con i risultati evidenziati, successivo/precedente (`Invio` / `Maiusc+Invio`), maiuscole/minuscole ed espressioni regolari.
 - **Temi e caratteri**: tema scuro, chiaro o di sistema; schemi di colori del terminale (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); carattere, dimensione, interlinea, stile del cursore e scrollback, con anteprima dal vivo nelle Impostazioni; `Ctrl` + `+` / `-` / `0` cambia la dimensione del carattere.
 - **Aggiornamenti automatici**: una nuova versione viene segnalata all'avvio (e una volta al giorno), installata solo dopo la tua conferma e verificata con la chiave di firma inclusa nell'app; si può disattivare nelle Impostazioni.
 - **Interfaccia multilingua** (English, Italiano): si sceglie nelle Impostazioni (`Ctrl+,`) oppure si lascia *Automatica* per seguire la lingua del sistema; il cambio è immediato e le sessioni aperte restano attive.
@@ -30,6 +32,8 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 | `Ctrl+Shift+T` | nuova shell locale (predefinita) |
 | `Ctrl+Shift+E` / `Ctrl+Shift+O` | dividi il pannello a destra / in basso (poi scegli cosa aprire; Invio = stessa connessione) |
 | `Ctrl+Shift+S` | file browser (SFTP) del terminale SSH |
+| `Ctrl+Shift+F` | cerca nel terminale |
+| `Ctrl+Shift+L` | salva la scheda come layout |
 | `Alt+←↑→↓` | passa al pannello vicino (con più pannelli) |
 | `Ctrl+Shift+W` | chiudi il pannello (la scheda con l'ultimo pannello) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | scheda successiva / precedente |
@@ -88,7 +92,7 @@ I dati sono salvati in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json` e `known_hosts`; le password stanno solo nel portachiavi. Le preferenze dell'interfaccia, come lingua e aspetto, sono nel local storage della web view.)
+(`profiles.json` e `known_hosts`; le password stanno solo nel portachiavi. Le preferenze dell'interfaccia, come lingua e aspetto, e i layout salvati sono nel local storage della web view.)
 
 ## Sviluppo
 

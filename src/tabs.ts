@@ -25,6 +25,11 @@ interface SplitNode {
 
 type Node = PaneNode | SplitNode;
 
+/** A tab's layout, with a value per pane (see `Tab.snapshot`). */
+export type Snapshot<T> =
+  | { kind: "pane"; value: T }
+  | { kind: "split"; dir: SplitDir; ratio: number; a: Snapshot<T>; b: Snapshot<T> };
+
 const MIN_RATIO = 0.1;
 
 const elementOf = (n: Node): HTMLElement => (n.kind === "pane" ? n.pane.el : n.el);
@@ -74,8 +79,8 @@ export class Tab {
     if (focus) pane.focus();
   }
 
-  /** Splits `target` in two; `created` takes the right or bottom half. */
-  split(target: Pane, dir: SplitDir, created: Pane): void {
+  /** Splits `target` in two; `created` takes the right or bottom half (`1 - ratio`). */
+  split(target: Pane, dir: SplitDir, created: Pane, ratio = 0.5): void {
     const node = this.nodes.get(target);
     if (!node) return;
     const split: SplitNode = {
@@ -83,7 +88,7 @@ export class Tab {
       dir,
       a: node,
       b: this.leaf(created, null),
-      ratio: 0.5,
+      ratio: Math.min(1 - MIN_RATIO, Math.max(MIN_RATIO, ratio)),
       el: h("div", { class: `split split-${dir}` }),
       parent: node.parent,
     };
@@ -144,6 +149,34 @@ export class Tab {
     for (const pane of this.nodes.keys()) pane.dispose();
     this.nodes.clear();
     this.el.remove();
+  }
+
+  /**
+   * The split tree with each pane mapped by `leaf`; panes it maps to null
+   * are left out (their sibling takes the whole space). Null if none is kept.
+   */
+  snapshot<T>(leaf: (pane: Pane) => T | null): Snapshot<T> | null {
+    const root = this.root();
+    return root ? this.snap(root, leaf) : null;
+  }
+
+  private root(): Node | null {
+    const any = this.nodes.values().next().value;
+    if (!any) return null;
+    let node: Node = any;
+    while (node.parent) node = node.parent;
+    return node;
+  }
+
+  private snap<T>(node: Node, leaf: (pane: Pane) => T | null): Snapshot<T> | null {
+    if (node.kind === "pane") {
+      const value = leaf(node.pane);
+      return value === null ? null : { kind: "pane", value };
+    }
+    const a = this.snap(node.a, leaf);
+    const b = this.snap(node.b, leaf);
+    if (!a || !b) return a ?? b;
+    return { kind: "split", dir: node.dir, ratio: Number(node.ratio.toFixed(3)), a, b };
   }
 
   /** The closest pane next to the active one in `dir`, by on-screen position. */

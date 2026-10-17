@@ -52,7 +52,7 @@ Viene annunciato `kex-strict-c-v00@openssh.com`, che mitiga l'attacco Terrapin (
 - L'interfaccia costruisce i nodi DOM solo con `textContent`; i colori dei profili sono validati (`#rrggbb`) sia nel backend sia prima dell'uso.
 - Il testo mostrato nel terminale che non è output della sessione (banner del server, segnale di uscita, messaggi di errore e di stato) viene ripulito dai caratteri di controllo, così un server non può iniettare sequenze di escape attraverso di esso, nemmeno prima che l'utente si sia autenticato.
 - Le shell locali si possono avviare solo dall'elenco rilevato (per id) o da un profilo salvato.
-- Le preferenze dell'interfaccia (lingua, aspetto, controllo aggiornamenti) stanno nel local storage della web view e non contengono segreti. Sono validate a ogni lettura; il nome del carattere è ridotto a un solo nome di famiglia prima di arrivare al CSS o a xterm.js.
+- Le preferenze dell'interfaccia (lingua, aspetto, controllo aggiornamenti) e i layout salvati stanno nel local storage della web view e non contengono segreti: un layout memorizza il suo nome e, per ogni pannello, l'id di una connessione o di una shell oppure un indirizzo di connessione rapida e il titolo del pannello; aprirlo (anche automaticamente all'avvio, se scelto) passa dagli stessi controlli di host key e autenticazione di qualsiasi connessione. Sono validate a ogni lettura; il nome del carattere è ridotto a un solo nome di famiglia prima di arrivare al CSS o a xterm.js.
 - `freezePrototype` è disattivato perché rompe xterm.js; l'interfaccia non unisce oggetti non fidati, quindi la prototype pollution non ha punti di ingresso.
 
 ### Jump host e port forwarding (`ssh.rs`, `forward.rs`)

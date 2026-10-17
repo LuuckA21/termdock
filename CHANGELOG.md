@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-17
+
+### Added
+
+- Find in terminal (`Ctrl+Shift+F`, or the tab menu): highlighted matches in the scrollback, next/previous, match case, regular expressions and a result count.
+- Saved layouts: save a tab's panes (connections, shells, split directions and sizes) with `Ctrl+Shift+L` or the tab menu, reopen them from the new *Layouts* menu, and choose one to open at startup. Connections deleted since then open as a local terminal, with a notice.
+
 ## [0.7.0] - 2026-10-17
 
 ### Added
@@ -115,7 +122,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/LuuckA21/termdock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/LuuckA21/termdock/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/LuuckA21/termdock/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/LuuckA21/termdock/compare/v0.5.0...v0.5.1
