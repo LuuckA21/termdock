@@ -1,5 +1,6 @@
 mod commands;
 mod edit;
+mod editor;
 mod prompts;
 mod sftp;
 mod state;
@@ -30,6 +31,7 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState::new(&dir)?);
+            app.manage(editor::EditorChoice::load(&dir));
             app.manage(updates::PendingUpdate::default());
             edit::remove_stale_copies();
             let sftp_state = sftp::SftpState::default();
@@ -72,6 +74,9 @@ pub fn run() {
             edit::sftp_edit,
             edit::sftp_edit_resolve,
             edit::sftp_edit_stop,
+            editor::editor_get,
+            editor::editor_pick,
+            editor::editor_reset,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Termdock");

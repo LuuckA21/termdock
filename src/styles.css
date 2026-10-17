@@ -836,6 +836,20 @@ dialog.settings .modal-body {
   display: none;
 }
 
+.editor-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.editor-buttons {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
 .update-notes {
   max-height: 40vh;
   overflow: auto;

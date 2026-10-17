@@ -41,6 +41,9 @@
     "allow-sftp-sudo-cancel",
     "allow-sftp-edit",
     "allow-sftp-edit-resolve",
-    "allow-sftp-edit-stop"
+    "allow-sftp-edit-stop",
+    "allow-editor-get",
+    "allow-editor-pick",
+    "allow-editor-reset"
   ]
 }

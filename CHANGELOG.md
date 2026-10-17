@@ -7,7 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-## [0.9.2] - 2026-10-17
+## [0.10.0] - 2026-10-17
+
+### Added
+
+- Settings → *Editing remote files*: choose the program *Edit* (`F4`) opens files with, picked in the system's file dialog; *Use the system editor* goes back to the default.
 
 ### Fixed
 
@@ -149,8 +153,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.2...HEAD
-[0.9.2]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.9.2
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.1
 [0.9.0]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/LuuckA21/termdock/compare/v0.7.0...v0.8.0
