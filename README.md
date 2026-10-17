@@ -119,6 +119,8 @@ In-app updates need the updater signing key, created once by the owner:
 npm run tauri signer generate -- -w ~/.tauri/termdock.key
 ```
 
+Without Node.js, [minisign](https://jedisct1.github.io/minisign/) produces compatible keys: run `minisign -G -p termdock.pub -s termdock.key` (it asks for the password), then use the **Base64 encoding** of each file where the steps below mention its content (PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("termdock.key"))`; macOS/Linux: `base64 < termdock.key | tr -d '\n'`).
+
 The public key (`~/.tauri/termdock.key.pub`) goes into `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. The private key goes into an offline backup (without it, installed copies can no longer be updated) and into GitHub: *Settings → Environments → New environment* `release`, *Deployment branches and tags* limited to the branch `main` and the tag pattern `v*`, then the environment secrets `TAURI_SIGNING_PRIVATE_KEY` (content of `~/.tauri/termdock.key`) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Do not store them as repository secrets: those can be read by workflows on any branch.
 
 The release workflow checks the key before tagging, signs every package, verifies them with `scripts/updater-manifest.mjs` and attaches `latest.json`, which installed apps read once the release is published. **Publish a draft only if it has `latest.json`**: without it, installed copies stop finding updates. deb/rpm installs are only notified (the package manager updates them).
