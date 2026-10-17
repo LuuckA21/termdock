@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-10-17
+## [0.9.1] - 2026-10-17
 
 ### Added
 
@@ -19,6 +19,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - Favourites are reordered by dragging with the pointer (the window now takes file drops from the system).
 - Uploading over an existing file also keeps its owner and group where the server allows it, and uploading over a link replaces the file it points to instead of the link.
+
+### Fixed
+
+- Releases: the draft release is created once before the builds, so every platform's packages land in the same draft (0.9.0 was not published because of this).
+
+## [0.9.0] - 2026-10-17
+
+Not published: the release build put the macOS packages in a second draft. Its changes ship in 0.9.1.
 
 ## [0.8.0] - 2026-10-17
 
@@ -135,7 +143,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.1
 [0.9.0]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/LuuckA21/termdock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/LuuckA21/termdock/compare/v0.6.0...v0.7.0
