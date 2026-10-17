@@ -32,7 +32,9 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** Builds a 16px stroke icon from static path data (no innerHTML). */
-export function icon(name: keyof typeof ICONS): SVGSVGElement {
+export type IconName = keyof typeof ICONS;
+
+export function icon(name: IconName): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("width", "16");
@@ -71,6 +73,12 @@ const ICONS = {
   home: ["M3 11l9-7 9 7", "M5 10v10h14V10"],
   refresh: ["M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7"],
   splitDown: ["M4 5h16v14H4z", "M4 12h16"],
+  palette: [
+    "M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z",
+    "M7.5 11.5h.01",
+    "M10.5 7.5h.01",
+    "M15.5 8.5h.01",
+  ],
   settings: [
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
     "M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z",

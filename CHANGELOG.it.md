@@ -7,6 +7,12 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-17
+
+### Modificato
+
+- Le Impostazioni sono più grandi e divise in schede (Generale, Aspetto, File, Aggiornamenti), con un'anteprima del terminale più ampia; si riaprono sull'ultima scheda usata.
+
 ## [0.10.0] - 2026-10-17
 
 ### Aggiunto
@@ -153,7 +159,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/LuuckA21/termdock/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.1
 [0.9.0]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.0
