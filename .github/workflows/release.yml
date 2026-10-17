@@ -40,6 +40,7 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       release: ${{ steps.version.outputs.release }}
+      release_id: ${{ steps.draft.outputs.id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -109,6 +110,35 @@ jobs:
             -f object="$GITHUB_SHA" -f type=commit --jq .sha)
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$sha" >/dev/null
           echo "Created $TAG on $GITHUB_SHA"
+      # One draft for all the build legs: tauri-action creates the release only
+      # after building, so parallel legs finishing together each made their own.
+      - name: Create the draft release
+        id: draft
+        if: steps.version.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          releases=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.tag_name == \"$TAG\") | \"\(.id) \(.draft)\"")
+          count=$(printf '%s' "$releases" | grep -c . || true)
+          if [ "$count" -gt 1 ]; then
+            echo "::error::$count releases exist for $TAG; delete the extra drafts first"
+            exit 1
+          elif [ "$count" -eq 1 ]; then
+            read -r id draft <<< "$releases"
+            if [ "$draft" != true ]; then
+              echo "::error::$TAG is already published"
+              exit 1
+            fi
+            echo "Reusing draft release $id"
+          else
+            node scripts/version.mjs release-notes > "$RUNNER_TEMP/notes.md"
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases" -f tag_name="$TAG" -f name="Termdock $TAG" \
+              -F body=@"$RUNNER_TEMP/notes.md" -F draft=true -F prerelease=false --jq .id)
+            echo "Created draft release $id"
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -146,18 +176,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Release notes
-        shell: bash
-        run: node scripts/version.mjs release-notes > "$RUNNER_TEMP/notes.md"
-      - name: Read release notes
-        id: notes
-        shell: bash
-        run: |
-          {
-            echo "body<<TERMDOCK_NOTES_EOF"
-            cat "$RUNNER_TEMP/notes.md"
-            echo "TERMDOCK_NOTES_EOF"
-          } >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -167,11 +185,8 @@ jobs:
           # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
           # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID (macOS notarization).
         with:
-          tagName: ${{ needs.prepare.outputs.tag }}
-          releaseName: Termdock ${{ needs.prepare.outputs.tag }}
-          releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: true
-          prerelease: false
+          # The draft created by `prepare`: every leg uploads to the same one.
+          releaseId: ${{ needs.prepare.outputs.release_id }}
           # Written by the `updater` job once every platform is uploaded:
           # parallel jobs updating one latest.json could overwrite each other.
           includeUpdaterJson: false

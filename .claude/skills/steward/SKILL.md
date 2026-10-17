@@ -52,9 +52,10 @@ UI changes are checked in the running app, not only by the type checker
 
 ## Release verification (every version bump)
 
-1. Watch the Release run: `prepare` (updater key check, tag), three `build`
-   legs, then `updater`.
-2. The draft release must contain installers, `.sig` files and `latest.json`.
+1. Watch the Release run: `prepare` (updater key check, tag, the one draft
+   release), three `build` legs uploading to that draft, then `updater`.
+2. There must be exactly one draft for the tag, containing installers, `.sig`
+   files and `latest.json`.
    A draft without `latest.json` (a failed leg) must never be published: fix,
    bump the patch version, release again.
 3. Tell the owner the draft is ready; only the owner publishes. Older

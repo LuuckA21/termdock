@@ -7,7 +7,7 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-10-17
+## [0.9.1] - 2026-10-17
 
 ### Aggiunto
 
@@ -19,6 +19,14 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 - I preferiti si riordinano trascinandoli con il puntatore (la finestra ora riceve i file rilasciati dal sistema).
 - Caricare su un file esistente ne mantiene anche proprietario e gruppo se il server lo consente, e caricare su un link sostituisce il file a cui punta invece del link.
+
+### Corretto
+
+- Release: la bozza della release è creata una volta sola prima delle build, così i pacchetti di ogni piattaforma finiscono nella stessa bozza (la 0.9.0 non è stata pubblicata per questo motivo).
+
+## [0.9.0] - 2026-10-17
+
+Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda bozza. Le sue modifiche sono nella 0.9.1.
 
 ## [0.8.0] - 2026-10-17
 
@@ -135,7 +143,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.1
 [0.9.0]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/LuuckA21/termdock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/LuuckA21/termdock/compare/v0.6.0...v0.7.0
