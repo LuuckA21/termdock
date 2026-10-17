@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-17
+
+### Changed
+
+- Settings is larger and split into tabs (General, Appearance, Files, Updates), with a bigger terminal preview; it reopens on the last tab used.
+
 ## [0.10.0] - 2026-10-17
 
 ### Added
@@ -153,7 +159,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/LuuckA21/termdock/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.1
 [0.9.0]: https://github.com/LuuckA21/termdock/compare/v0.8.0...v0.9.0

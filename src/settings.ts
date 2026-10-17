@@ -1,6 +1,6 @@
 import { api, errorText } from "./api";
 import { modal } from "./dialogs";
-import { h } from "./dom";
+import { h, icon, type IconName } from "./dom";
 import { LANGUAGES, languageSetting, setLanguage, systemLanguage, t, type LanguageSetting } from "./i18n";
 import {
   DEFAULTS,
@@ -48,7 +48,21 @@ function field(label: string, control: HTMLElement): HTMLElement {
   return h("label", { class: "field" }, h("span", {}, label), control);
 }
 
-/** Settings dialog. Choices are applied when the dialog is confirmed. */
+type TabId = "general" | "appearance" | "files" | "updates";
+
+/** Tabs in order; each id is also the label's translation key. */
+const TABS: { id: TabId; icon: IconName }[] = [
+  { id: "general", icon: "settings" },
+  { id: "appearance", icon: "palette" },
+  { id: "files", icon: "folder" },
+  { id: "updates", icon: "download" },
+];
+
+/** The tab shown when Settings opens again (this run only). */
+let lastTab: TabId = "general";
+
+/** Settings dialog, in tabs. Choices are applied when the dialog is confirmed
+ * (except the editor for Edit, which the backend keeps and changes at once). */
 export async function openSettings(): Promise<void> {
   const system = LANGUAGES.find((l) => l.code === systemLanguage())?.name ?? "English";
   const language = h(
@@ -110,7 +124,11 @@ export async function openSettings(): Promise<void> {
     const next = formPrefs();
     const { colors } = terminalScheme(next);
     preview.replaceChildren(
-      h("div", {}, h("span", { "data-c": "green" }, "user@host"), ":", h("span", { "data-c": "blue" }, "~"), "$ ls -l"),
+      h("div", {}, h("span", { "data-c": "green" }, "user@host"), ":", h("span", { "data-c": "blue" }, "~/app"), "$ git status -s"),
+      h("div", {}, h("span", { "data-c": "green" }, " M"), " src/main.rs"),
+      h("div", {}, h("span", { "data-c": "red" }, "??"), " notes.txt"),
+      h("div", {}, h("span", { "data-c": "green" }, "user@host"), ":", h("span", { "data-c": "blue" }, "~/app"), "$ ls"),
+      h("div", {}, h("span", { "data-c": "blue" }, "src"), "  ", h("span", { "data-c": "cyan" }, "logs"), "  Cargo.toml  ", h("span", { "data-c": "yellow" }, "run.sh")),
       h(
         "div",
         {},
@@ -197,53 +215,92 @@ export async function openSettings(): Promise<void> {
     }),
   );
 
+  // ---- tabs
+  const panel = (id: TabId, ...children: Node[]) =>
+    h("section", { class: "settings-panel", id: `settings-panel-${id}`, role: "tabpanel", "aria-labelledby": `settings-tab-${id}` }, ...children);
+  const panels: Record<TabId, HTMLElement> = {
+    general: panel("general", field(t("language"), language), h("p", { class: "muted" }, t("languageHelp"))),
+    appearance: panel(
+      "appearance",
+      h("div", { class: "settings-grid" }, field(t("theme"), theme), field(t("colorScheme"), scheme)),
+      field(t("font"), fontFamily),
+      fontList,
+      h(
+        "div",
+        { class: "settings-grid" },
+        field(t("fontSize"), fontSize),
+        field(t("lineHeight"), lineHeight),
+        field(t("cursor"), cursorStyle),
+        field(t("scrollback"), scrollback),
+      ),
+      h("label", { class: "check" }, cursorBlink, h("span", {}, t("cursorBlink"))),
+      h("div", { class: "field" }, h("span", {}, t("preview")), preview),
+      h("div", { class: "settings-row" }, h("span"), restore),
+    ),
+    files: panel(
+      "files",
+      h("h4", {}, t("editorGroup")),
+      h("div", { class: "settings-row editor-row" }, editorName, h("span", { class: "editor-buttons" }, editorReset, editorChoose)),
+      h("p", { class: "muted" }, t("editorHelp")),
+      editorStatus,
+    ),
+    updates: panel(
+      "updates",
+      h("label", { class: "check" }, autoUpdate, h("span", {}, t("updateAuto"))),
+      h("div", { class: "settings-row" }, version, checkNow),
+      status,
+    ),
+  };
+  const tabs = TABS.map(({ id, icon: name }) =>
+    h(
+      "button",
+      { type: "button", class: "settings-tab", role: "tab", id: `settings-tab-${id}`, "aria-controls": `settings-panel-${id}` },
+      icon(name),
+      h("span", {}, t(id)),
+    ),
+  );
+  const showTab = (index: number, focus: boolean) => {
+    tabs.forEach((tab, i) => {
+      const on = i === index;
+      tab.setAttribute("aria-selected", String(on));
+      tab.tabIndex = on ? 0 : -1;
+      panels[TABS[i].id].hidden = !on;
+    });
+    lastTab = TABS[index].id;
+    if (focus) tabs[index].focus();
+  };
+  tabs.forEach((tab, i) => tab.addEventListener("click", () => showTab(i, false)));
+  const tabList = h("div", { class: "settings-tabs", role: "tablist", "aria-orientation": "vertical" }, ...tabs);
+  tabList.addEventListener("keydown", (e) => {
+    const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    if (current < 0) return;
+    const next =
+      e.key === "ArrowDown" || e.key === "ArrowRight"
+        ? (current + 1) % tabs.length
+        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+          ? (current - 1 + tabs.length) % tabs.length
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? tabs.length - 1
+              : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    showTab(next, true);
+  });
+  const startTab = Math.max(0, TABS.findIndex((tab) => tab.id === lastTab));
+  showTab(startTab, false);
+
   const chosen = await modal<{ language: LanguageSetting; autoUpdate: boolean; prefs: Prefs } | null>({
     title: t("settings"),
     className: "settings",
-    body: [
-      field(t("language"), language),
-      h(
-        "fieldset",
-        { class: "settings-group" },
-        h("legend", {}, t("appearance")),
-        h("div", { class: "settings-grid" }, field(t("theme"), theme), field(t("colorScheme"), scheme)),
-        field(t("font"), fontFamily),
-        fontList,
-        h(
-          "div",
-          { class: "settings-grid" },
-          field(t("fontSize"), fontSize),
-          field(t("lineHeight"), lineHeight),
-          field(t("cursor"), cursorStyle),
-          field(t("scrollback"), scrollback),
-        ),
-        h("label", { class: "check" }, cursorBlink, h("span", {}, t("cursorBlink"))),
-        preview,
-        h("div", { class: "settings-row" }, h("span"), restore),
-      ),
-      h(
-        "fieldset",
-        { class: "settings-group" },
-        h("legend", {}, t("editorGroup")),
-        h("div", { class: "settings-row" }, editorName, h("span", { class: "editor-buttons" }, editorReset, editorChoose)),
-        h("p", { class: "muted" }, t("editorHelp")),
-        editorStatus,
-      ),
-      h(
-        "fieldset",
-        { class: "settings-group" },
-        h("legend", {}, t("updates")),
-        h("label", { class: "check" }, autoUpdate, h("span", {}, t("updateAuto"))),
-        h("div", { class: "settings-row" }, version, checkNow),
-        status,
-      ),
-    ],
+    body: [tabList, h("div", { class: "settings-panels" }, ...Object.values(panels))],
     buttons: [
       { label: t("cancel"), value: null },
       { label: t("save"), value: null, kind: "primary" },
     ],
     cancelValue: null,
-    initialFocus: language,
+    initialFocus: tabs[startTab],
     onSubmit: () => ({ language: language.value as LanguageSetting, autoUpdate: autoUpdate.checked, prefs: formPrefs() }),
   });
   if (!chosen) return;
