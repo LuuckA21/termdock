@@ -122,3 +122,42 @@ jobs:
           # Pinned: install-action would otherwise take whatever is newest.
           tool: cargo-audit@0.22.2
       - run: cargo audit
+
+  # The Linux packages as the release builds them (Ubuntu 22.04 container,
+  # see build-linux in release.yml; keep the package lists in step), without
+  # the updater signature: proves they still build there and need no glibc
+  # newer than 2.35.
+  linux-packages:
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - name: System packages
+        run: |
+          apt-get update
+          apt-get upgrade -y
+          apt-get install -y --no-install-recommends build-essential ca-certificates curl wget file git \
+            pkg-config xdg-utils libssl-dev libxdo-dev libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libdbus-1-dev
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: linux-packages
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the packages
+        run: npm run tauri -- build --ci --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Check the glibc the app needs
+        run: scripts/glibc-max.sh target/release/termdock 2.35
+      - run: ls -l target/release/bundle/deb target/release/bundle/rpm target/release/bundle/appimage

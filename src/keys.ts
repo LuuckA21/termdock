@@ -22,13 +22,14 @@ export type Action =
   | "find"
   | "copy"
   | "paste"
+  | "snippets"
   | "zoomIn"
   | "zoomOut"
   | "zoomReset"
   | "settings";
 
 /** Shortcut families over the digits 1…9. */
-export type DigitAction = "goToTab" | "openFavorite";
+export type DigitAction = "goToTab" | "openFavorite" | "sendSnippet";
 /** Modifiers of a digit family; "off" disables it. */
 // No Ctrl+Alt: on Windows, AltGr (needed for @ # [ ] on many layouts) arrives as Ctrl+Alt.
 export type DigitMods = "alt" | "mod" | "mod+shift" | "off";
@@ -78,6 +79,7 @@ export const ACTION_GROUPS: { label: MsgKey; actions: { id: Action; label: MsgKe
       { id: "find", label: "find" },
       { id: "copy", label: "copy" },
       { id: "paste", label: "paste" },
+      { id: "snippets", label: "keySnippets" },
       { id: "zoomIn", label: "keyZoomIn" },
       { id: "zoomOut", label: "keyZoomOut" },
       { id: "zoomReset", label: "keyZoomReset" },
@@ -92,6 +94,7 @@ export const ACTION_GROUPS: { label: MsgKey; actions: { id: Action; label: MsgKe
 export const DIGIT_ACTIONS: { id: DigitAction; label: MsgKey; group: MsgKey }[] = [
   { id: "goToTab", label: "keyGoToTab", group: "keysGroupTabs" },
   { id: "openFavorite", label: "keyOpenFavorite", group: "keysGroupConnections" },
+  { id: "sendSnippet", label: "keySendSnippet", group: "keysGroupTerminal" },
 ];
 
 const ACTIONS: Action[] = ACTION_GROUPS.flatMap((g) => g.actions.map((a) => a.id));
@@ -116,6 +119,7 @@ const DEFAULTS: Record<Action, Chord[]> = {
   find: [c("mod+shift+KeyF")],
   copy: [c("mod+shift+KeyC")],
   paste: [c("mod+shift+KeyV")],
+  snippets: [c("mod+shift+KeyP")],
   zoomIn: [c("mod+key:+"), c("mod+key:=")],
   zoomOut: [c("mod+key:-")],
   zoomReset: [c("mod+key:0")],
@@ -128,6 +132,8 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
 const DIGIT_DEFAULTS: Record<DigitAction, DigitMods> = {
   goToTab: isMac ? "mod" : "alt",
   openFavorite: "mod+shift",
+  // Off until chosen: every free modifier is already taken by the others.
+  sendSnippet: "off",
 };
 
 export interface KeyMap {

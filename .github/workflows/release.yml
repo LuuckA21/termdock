@@ -2,6 +2,8 @@ name: Release
 
 # Builds installers for Windows (MSI/NSIS), macOS (universal DMG) and Linux
 # (AppImage/deb/rpm) into a DRAFT release, to be tested and published by hand.
+# Linux packages are built in an Ubuntu 22.04 container (glibc 2.35), so they
+# also run on distributions older than the runner's.
 #
 # Normal flow: a PR bumps the version with `node scripts/version.mjs set X.Y.Z`;
 # when it lands on main this workflow sees a version without a tag, creates the
@@ -157,19 +159,12 @@ jobs:
             args: ""
           - os: macos-latest
             args: "--target universal-apple-darwin"
-          - os: ubuntu-24.04
-            args: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.tag }}
           persist-credentials: false
-      - name: Linux system dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libdbus-1-dev
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
@@ -196,8 +191,56 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
+  # Linux on its own: built inside Ubuntu 22.04 (pinned by digest), not on
+  # the runner's newer system, so the packages need only glibc 2.35. Keep the
+  # package list in step with the linux-packages job in ci.yml.
+  build-linux:
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    environment: release
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      # No FUSE in a container: AppImage tools unpack themselves instead.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - name: System packages
+        run: |
+          apt-get update
+          apt-get upgrade -y
+          apt-get install -y --no-install-recommends build-essential ca-certificates curl wget file git \
+            pkg-config xdg-utils libssl-dev libxdo-dev libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libdbus-1-dev
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          includeUpdaterJson: false
+      - name: Check the glibc the app needs
+        run: scripts/glibc-max.sh target/release/termdock 2.35
+
   updater:
-    needs: [prepare, build]
+    needs: [prepare, build, build-linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

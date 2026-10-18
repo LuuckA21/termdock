@@ -7,6 +7,16 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-18
+
+### Aggiunto
+
+- Snippet: comandi o blocchi di testo salvati, scritti nel terminale attivo dal nuovo menu *Snippet* (barra in alto, menu della scheda, `Ctrl+Shift+P`), volendo seguiti da Invio; ognuno può essere limitato alle connessioni di un gruppo, e i primi nove possono avere scorciatoie `1…9`. Si gestiscono nella nuova scheda Impostazioni → Snippet.
+
+### Modificato
+
+- I pacchetti Linux sono compilati in Ubuntu 22.04, quindi funzionano anche sulle distribuzioni con glibc 2.35 (Ubuntu 22.04, Debian 12 e successive); la CI li compila a ogni modifica e fallisce se serve una glibc più recente.
+
 ## [0.13.0] - 2026-10-18
 
 ### Aggiunto
@@ -217,7 +227,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/LuuckA21/termdock/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/LuuckA21/termdock/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/LuuckA21/termdock/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/LuuckA21/termdock/compare/v0.11.0...v0.12.0

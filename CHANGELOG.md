@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-18
+
+### Added
+
+- Snippets: saved commands or blocks of text typed into the active terminal from the new *Snippets* menu (top bar, tab menu, `Ctrl+Shift+P`), optionally followed by Enter; each can be limited to the connections of one group, and the first nine can get `1…9` shortcuts. Managed in the new Settings → Snippets tab.
+
+### Changed
+
+- Linux packages are built in Ubuntu 22.04, so they also run on distributions with glibc 2.35 (Ubuntu 22.04, Debian 12 and newer); CI builds them on every change and fails if a newer glibc is needed.
+
 ## [0.13.0] - 2026-10-18
 
 ### Added
@@ -217,7 +227,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/LuuckA21/termdock/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/LuuckA21/termdock/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/LuuckA21/termdock/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/LuuckA21/termdock/compare/v0.11.0...v0.12.0
