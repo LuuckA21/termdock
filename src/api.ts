@@ -12,10 +12,12 @@ import type {
   EditEvent,
   EditorInfo,
   PickedFile,
+  PlanInfo,
+  RunProgress,
+  RunSummary,
   SftpOpened,
   RemoteListing,
   TermSize,
-  TransferProgress,
   UpdateInfo,
   UpdateProgress,
   Uuid,
@@ -66,11 +68,23 @@ export const api = {
     invoke<void>("sftp_rename", { id, dir, from, to }),
   sftpRemove: (id: number, dir: string, name: string) => invoke<void>("sftp_remove", { id, dir, name }),
   sftpCancel: (transfer: number) => invoke<void>("sftp_cancel", { transfer }),
-  /** Shows a native save dialog; resolves with the saved path, or null if cancelled. */
-  sftpDownload: (id: number, dir: string, name: string, onProgress: (p: TransferProgress) => void) =>
-    invoke<string | null>("sftp_download", { id, dir, name, onProgress: progressChannel(onProgress) }),
   /** Shows a native file picker; resolves with tokens for the picked files. */
   sftpPickUpload: () => invoke<PickedFile[]>("sftp_pick_upload"),
+  /** Shows a native folder picker; resolves with tokens for the picked folders. */
+  sftpPickUploadFolders: () => invoke<PickedFile[]>("sftp_pick_upload_folders"),
+  /** Plans uploading picked files/folders into `dir` (the tokens are used up). */
+  sftpPlanUpload: (id: number, dir: string, tokens: string[]) =>
+    invoke<PlanInfo>("sftp_plan_upload", { id, dir, tokens }),
+  /** Asks where to save `dir/name` (file or folder) and plans it; null if the dialog was cancelled. */
+  sftpPlanDownload: (id: number, dir: string, name: string) =>
+    invoke<PlanInfo | null>("sftp_plan_download", { id, dir, name }),
+  /** Runs a plan; `replace`: what already exists is replaced, otherwise kept. */
+  sftpRunPlan: (plan: number, replace: boolean, onProgress: (p: RunProgress) => void) => {
+    const channel = new Channel<RunProgress>();
+    channel.onmessage = onProgress;
+    return invoke<RunSummary>("sftp_run_plan", { plan, replace, onProgress: channel });
+  },
+  sftpDropPlan: (plan: number) => invoke<void>("sftp_drop_plan", { plan }),
   sftpForgetPicks: (tokens: string[]) => invoke<void>("sftp_forget_picks", { tokens }),
   /** Opens a remote text file in the system text editor; saves are uploaded back. */
   sftpEdit: (id: number, dir: string, name: string, onEvent: (e: EditEvent) => void) => {
@@ -83,8 +97,6 @@ export const api = {
   /** Shows a native file picker for the editor; resolves with the new choice, or null if cancelled. */
   editorPick: () => invoke<EditorInfo | null>("editor_pick"),
   editorReset: () => invoke<void>("editor_reset"),
-  sftpUpload: (id: number, dir: string, token: string, overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
-    invoke<void>("sftp_upload", { id, dir, token, overwrite, onProgress: progressChannel(onProgress) }),
 
   checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   installUpdate: (onProgress: (p: UpdateProgress) => void) => {
@@ -93,12 +105,6 @@ export const api = {
     return invoke<void>("install_update", { onProgress: progress });
   },
 };
-
-function progressChannel(fn: (p: TransferProgress) => void): Channel<TransferProgress> {
-  const channel = new Channel<TransferProgress>();
-  channel.onmessage = fn;
-  return channel;
-}
 
 export function errorText(e: unknown): string {
   if (typeof e === "string") return e;

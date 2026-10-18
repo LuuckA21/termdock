@@ -653,9 +653,75 @@ textarea.input {
   color: var(--danger);
 }
 
-.files-status progress {
-  width: 140px;
+/* Transfer queue: under the files, a few rows tall at most. */
+.files-queue {
+  display: flex;
+  flex-direction: column;
+  max-height: 35%;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+}
+
+.files-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.files-queue-head .btn {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.files-queue-list {
+  overflow: auto;
+}
+
+.files-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 2px 10px;
+  font-size: 12px;
+}
+
+.files-queue-row > .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.files-queue-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-queue-row progress {
+  flex: none;
+  width: 100px;
   accent-color: var(--accent);
+}
+
+.files-queue-detail {
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-dim);
+}
+
+.files-queue-row[data-state="done"] .files-queue-detail {
+  color: var(--ok);
+}
+
+.files-queue-row[data-state="failed"] .files-queue-detail {
+  color: var(--danger);
 }
 
 /* Narrow panes: the path gets its own row. */

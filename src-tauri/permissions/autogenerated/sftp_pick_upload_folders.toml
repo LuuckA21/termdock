@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sftp-pick-upload-folders"
+description = "Enables the sftp_pick_upload_folders command without any pre-configured scope."
+commands.allow = ["sftp_pick_upload_folders"]
+
+[[permission]]
+identifier = "deny-sftp-pick-upload-folders"
+description = "Denies the sftp_pick_upload_folders command without any pre-configured scope."
+commands.deny = ["sftp_pick_upload_folders"]

@@ -10,8 +10,9 @@ import { clear, displayName, h, icon, setLabel } from "./dom";
 import { t, type MsgKey } from "./i18n";
 import { showMenu } from "./menu";
 import type { Pane, PaneOptions, PaneState } from "./pane";
+import { TransferQueue } from "./queue";
 import type { TerminalPane } from "./terminal";
-import type { EditEvent, PickedFile, RemoteEntry, RemoteListing, TransferProgress } from "./types";
+import type { EditEvent, PickedFile, PlanInfo, RemoteEntry, RemoteListing } from "./types";
 
 /**
  * Names the server sent in another encoding arrive with U+FFFD: they cannot
@@ -71,9 +72,8 @@ export class FilesPane implements Pane {
   private home = "/";
   private listing: RemoteListing | null = null;
   private selected: string | null = null;
-  /** Set while a download or upload runs, including its file dialog. */
+  /** Set while a transfer is being prepared (its file dialog, the plan). */
   private busy = false;
-  private transfer: number | null = null;
   private disposed = false;
   /** The user the browser acts as, and the terminal's login user. */
   private user = "";
@@ -96,8 +96,7 @@ export class FilesPane implements Pane {
   private readonly pathInput: HTMLInputElement;
   private readonly list: HTMLElement;
   private readonly status: HTMLElement;
-  private readonly progress: HTMLProgressElement;
-  private readonly cancelBtn: HTMLButtonElement;
+  private readonly queue: TransferQueue;
   private readonly actions: HTMLButtonElement[] = [];
   /** Buttons labelled by their tooltip, redone when the language changes. */
   private readonly labelled: [HTMLElement, MsgKey][] = [];
@@ -125,11 +124,8 @@ export class FilesPane implements Pane {
       this.menu(e.clientX, e.clientY, null);
     });
     this.status = h("span", { class: "files-status-text", role: "status" });
-    this.progress = h("progress", { max: "1", hidden: true });
-    this.cancelBtn = h("button", { type: "button", class: "btn btn-ghost", hidden: true });
-    this.cancelBtn.addEventListener("click", () => {
-      if (this.transfer !== null) void api.sftpCancel(this.transfer);
-    });
+    // Switching user closes this connection: not while transfers run on it.
+    this.queue = new TransferQueue(() => (this.userBtn.disabled = this.state !== "open" || this.queue.active));
 
     const tool = (name: Parameters<typeof icon>[0], label: MsgKey, action: () => void) => {
       const b = h("button", { type: "button", class: "icon-btn" }, icon(name));
@@ -168,6 +164,10 @@ export class FilesPane implements Pane {
       this.followBtn.setAttribute("aria-pressed", String(this.follow));
       if (this.follow) this.followTerminal();
     });
+    const uploadBtn: HTMLButtonElement = tool("upload", "filesUpload", () => {
+      const r = uploadBtn.getBoundingClientRect();
+      this.uploadMenu(r.left, r.bottom + 4);
+    });
     const bar = h(
       "div",
       { class: "files-bar" },
@@ -179,7 +179,7 @@ export class FilesPane implements Pane {
       this.followBtn,
       this.pathInput,
       tool("folderPlus", "filesNewFolder", () => void this.mkdir()),
-      tool("upload", "filesUpload", () => void this.upload()),
+      uploadBtn,
     );
     this.el = h(
       "div",
@@ -187,7 +187,8 @@ export class FilesPane implements Pane {
       bar,
       this.suggestion,
       this.list,
-      h("div", { class: "files-status" }, this.status, this.progress, this.cancelBtn),
+      this.queue.el,
+      h("div", { class: "files-status" }, this.status),
     );
     this.el.addEventListener("focusin", () => this.opts.onFocus(this));
     this.relabel();
@@ -206,8 +207,8 @@ export class FilesPane implements Pane {
   relabel(): void {
     this.pathInput.setAttribute("aria-label", t("filesPath"));
     this.list.setAttribute("aria-label", t("files"));
-    this.cancelBtn.textContent = t("cancel");
     for (const [el, key] of this.labelled) setLabel(el, t(key));
+    this.queue.relabel();
     this.cwdLabel();
     const empty = this.list.querySelector(".files-empty");
     if (empty) empty.textContent = t("filesEmpty");
@@ -235,7 +236,7 @@ export class FilesPane implements Pane {
     this.disposed = true;
     this.closing.abort();
     this.unsubscribeTitle();
-    if (this.transfer !== null) void api.sftpCancel(this.transfer);
+    this.queue.dispose();
     if (this.id !== null) void api.sftpClose(this.id).catch(() => {});
     this.el.remove();
   }
@@ -337,6 +338,10 @@ export class FilesPane implements Pane {
   /** Switches the browser to another user (null: back to the login user). */
   private async switchUser(user: string | null): Promise<void> {
     if (this.busy || this.switching || this.state === "closed") return;
+    if (this.queue.active) {
+      this.say(t("filesQueueBusy"), true);
+      return;
+    }
     // The suggestion comes from the server (terminal title): root needs a yes.
     if (user === "root" && !(await confirmBox(t("filesRootConfirm"), t("filesOpenAs", { user }), true))) return;
     void this.open(user);
@@ -470,6 +475,7 @@ export class FilesPane implements Pane {
 
   private setBusy(busy: boolean): void {
     for (const b of this.actions) b.disabled = busy;
+    if (!busy && this.queue.active) this.userBtn.disabled = true;
   }
 
   private async navigate(path: string): Promise<void> {
@@ -580,11 +586,12 @@ export class FilesPane implements Pane {
     if (this.state !== "open") return;
     const items = [];
     if (entry && !unusable(entry)) {
-      items.push({
-        label: entry.kind === "dir" ? t("filesOpen") : t("filesDownload"),
-        icon: icon(entry.kind === "dir" ? "folder" : "download"),
-        action: () => void this.activate(entry),
-      });
+      if (entry.kind === "dir") {
+        items.push({ label: t("filesOpen"), icon: icon("folder"), action: () => void this.activate(entry) });
+      }
+      if (entry.kind !== "other") {
+        items.push({ label: t("filesDownload"), icon: icon("download"), action: () => void this.download(entry) });
+      }
       if (entry.kind === "file" || entry.kind === "link") {
         items.push({ label: t("filesEdit"), icon: icon("edit"), hint: "F4", action: () => void this.editFile(entry) });
       }
@@ -592,7 +599,8 @@ export class FilesPane implements Pane {
       items.push({ label: t("delete"), danger: true, hint: "Del", action: () => void this.remove(entry) });
     }
     items.push({ label: t("filesNewFolder"), icon: icon("folderPlus"), action: () => void this.mkdir() });
-    items.push({ label: t("filesUpload"), icon: icon("upload"), action: () => void this.upload() });
+    items.push({ label: t("filesUploadFiles"), icon: icon("upload"), action: () => void this.upload(false) });
+    items.push({ label: t("filesUploadFolders"), icon: icon("folder"), action: () => void this.upload(true) });
     items.push({ label: t("filesRefresh"), icon: icon("refresh"), action: () => void this.refresh() });
     showMenu(x, y, items);
   }
@@ -680,69 +688,46 @@ export class FilesPane implements Pane {
     await this.run(() => api.sftpRemove(id, listing.path, entry.name));
   }
 
-  private startTransfer(label: string): (p: TransferProgress) => void {
-    this.busy = true;
-    this.setBusy(true);
-    this.progress.hidden = false;
-    this.progress.removeAttribute("value");
-    this.cancelBtn.hidden = false;
-    this.say(label);
-    return (p) => {
-      this.transfer = p.transfer;
-      if (p.total) {
-        this.progress.value = Math.min(p.done / p.total, 1);
-        this.say(`${label} ${Math.floor((p.done / p.total) * 100)}%`);
-      } else {
-        this.say(`${label} ${formatSize(p.done)}`);
-      }
-    };
+  private uploadMenu(x: number, y: number): void {
+    showMenu(x, y, [
+      { label: t("filesUploadFiles"), icon: icon("upload"), action: () => void this.upload(false) },
+      { label: t("filesUploadFolders"), icon: icon("folder"), action: () => void this.upload(true) },
+    ]);
   }
 
-  private endTransfer(): void {
-    this.busy = false;
-    this.transfer = null;
-    this.progress.hidden = true;
-    this.cancelBtn.hidden = true;
-    if (this.state === "open") this.setBusy(false);
-  }
-
+  /** Downloads a file (save dialog) or a whole folder (folder dialog). */
   private async download(entry: RemoteEntry): Promise<void> {
-    if (this.id === null || !this.listing || this.busy) return;
-    const name = displayName(entry.name);
-    const onProgress = this.startTransfer(t("filesDownloading", { name }));
+    // Captured before the dialog: Follow may move the browser meanwhile.
+    const { id, listing } = this;
+    if (id === null || !listing || this.busy) return;
+    this.busy = true;
+    let plan: PlanInfo | null;
     try {
-      const saved = await api.sftpDownload(this.id, this.listing.path, entry.name, onProgress);
-      this.say(saved ? t("filesSaved", { path: saved }) : "");
+      plan = await api.sftpPlanDownload(id, listing.path, entry.name);
     } catch (e) {
-      if (/cancelled/i.test(errorText(e))) this.say(t("filesCancelled"));
-      else this.fail(e);
+      this.fail(e);
+      return;
     } finally {
-      this.endTransfer();
+      this.busy = false;
     }
+    if (plan) await this.enqueue("download", displayName(entry.name), plan, listing.path);
   }
 
-  private async upload(): Promise<void> {
-    if (this.id === null || !this.listing || this.busy) return;
+  /** Uploads files or folders picked in the system's dialog. */
+  private async upload(folders: boolean): Promise<void> {
+    const { id, listing } = this;
+    if (id === null || !listing || this.busy) return;
     this.busy = true;
-    const { id } = this;
-    const dir = this.listing.path;
-    let picked;
+    let picked: PickedFile[];
     try {
-      picked = await api.sftpPickUpload();
+      picked = await (folders ? api.sftpPickUploadFolders() : api.sftpPickUpload());
     } catch (e) {
       this.busy = false;
       this.fail(e);
       return;
     }
-    await this.uploadAll(
-      dir,
-      picked.map((f) => ({
-        name: f.name,
-        send: (overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
-          api.sftpUpload(id, dir, f.token, overwrite, onProgress),
-        release: () => void api.sftpForgetPicks([f.token]).catch(() => {}),
-      })),
-    );
+    this.busy = false;
+    await this.uploadPicked(id, listing.path, picked);
   }
 
   /** Highlights the browser while files from the computer are dragged over it. */
@@ -751,94 +736,82 @@ export class FilesPane implements Pane {
   }
 
   /**
-   * Files dropped on the browser from the computer: the backend opened them
-   * and gives tokens, uploaded like files picked in the dialog. Returns
-   * false (tokens untouched) when the browser cannot take them now.
+   * Files and folders dropped on the browser from the computer: the backend
+   * gives tokens, uploaded like those picked in the dialogs. Returns false
+   * (tokens untouched) when the browser cannot take them now.
    */
-  dropFiles(files: PickedFile[], folders: number): boolean {
+  dropFiles(files: PickedFile[]): boolean {
     this.setDropHover(false);
     if (this.id === null || !this.listing || this.busy || this.state !== "open") return false;
-    if (folders) this.say(t("filesDropFolders", { count: folders }), true);
-    else if (!files.length) this.say(t("filesDropNothing"), true);
-    if (!files.length) return true;
-    this.busy = true;
-    const { id } = this;
-    const dir = this.listing.path;
-    void this.uploadAll(
-      dir,
-      files.map((f) => ({
-        name: f.name,
-        send: (overwrite: boolean, onProgress: (p: TransferProgress) => void) =>
-          api.sftpUpload(id, dir, f.token, overwrite, onProgress),
-        release: () => void api.sftpForgetPicks([f.token]).catch(() => {}),
-      })),
-    );
+    if (!files.length) {
+      this.say(t("filesDropNothing"), true);
+      return true;
+    }
+    void this.uploadPicked(this.id, this.listing.path, files);
     return true;
   }
 
-  /** Uploads one by one, asking before replacing; `busy` is set by the caller. */
-  private async uploadAll(
-    dir: string,
-    items: {
-      name: string;
-      send: (overwrite: boolean, onProgress: (p: TransferProgress) => void) => Promise<void>;
-      release?: () => void;
-    }[],
-  ): Promise<void> {
-    if (!this.listing || !items.length) {
-      this.busy = false;
-      return;
-    }
-    const existing = new Set(this.listing.entries.map((e) => e.name));
-    let uploaded = 0;
-    let next = 0;
+  private async uploadPicked(id: number, dir: string, picked: PickedFile[]): Promise<void> {
+    if (!picked.length) return;
+    this.busy = true;
+    let plan: PlanInfo;
     try {
-      for (; next < items.length; next++) {
-        const item = items[next]!;
-        const name = displayName(item.name);
-        let overwrite = false;
-        if (existing.has(item.name)) {
-          const choice = await modal<"replace" | "skip" | "stop">({
-            title: t("filesExistsTitle"),
-            body: [h("p", {}, t("filesExistsBody", { name }))],
-            buttons: [
-              { label: t("filesStop"), value: "stop" },
-              { label: t("filesSkip"), value: "skip" },
-              { label: t("filesReplace"), value: "replace", kind: "danger" },
-            ],
-            cancelValue: "stop",
-            focusButton: 1,
-          });
-          if (choice === "stop") break;
-          if (choice === "skip") {
-            item.release?.();
-            continue;
-          }
-          overwrite = true;
-        }
-        const onProgress = this.startTransfer(t("filesUploading", { name }));
-        try {
-          await item.send(overwrite, onProgress);
-          uploaded++;
-        } finally {
-          this.endTransfer();
-          this.busy = true;
-        }
-      }
-      this.say(t("filesUploaded", { count: uploaded }));
+      plan = await api.sftpPlanUpload(
+        id,
+        dir,
+        picked.map((p) => p.token),
+      );
     } catch (e) {
-      next++;
-      if (/cancelled/i.test(errorText(e))) this.say(t("filesCancelled"));
-      else this.fail(e);
+      this.fail(e);
+      return;
     } finally {
       this.busy = false;
-      // Skipped or stopped files: release what they hold at once.
-      for (const item of items.slice(next)) item.release?.();
     }
-    if (this.state === "open") {
-      await this.navigate(dir);
-      if (uploaded) this.say(t("filesUploaded", { count: uploaded }));
+    const what = picked.length === 1 ? displayName(picked[0]!.name) : t("jobItems", { count: picked.length });
+    await this.enqueue("upload", what, plan, dir);
+  }
+
+  /**
+   * Puts a planned transfer in the queue, asking first what to do with the
+   * files that already exist (replace them all or keep them all).
+   */
+  private async enqueue(kind: "upload" | "download", what: string, plan: PlanInfo, dir: string): Promise<void> {
+    if (plan.files + plan.folders === 0) {
+      void api.sftpDropPlan(plan.plan).catch(() => {});
+      this.say(t("filesNothing", { count: plan.skipped }), true);
+      return;
     }
+    let replace = false;
+    if (plan.existing) {
+      const names = plan.examples.map((n) => displayName(n)).join(", ");
+      const choice = await modal<"cancel" | "keep" | "replace">({
+        title: t("filesExistsTitle"),
+        body: [h("p", {}, t("filesExistsMany", { count: plan.existing, names }))],
+        buttons: [
+          { label: t("cancel"), value: "cancel" },
+          { label: t("filesKeepExisting"), value: "keep" },
+          { label: t("filesReplaceExisting"), value: "replace", kind: "danger" },
+        ],
+        cancelValue: "cancel",
+        focusButton: 1,
+      });
+      if (choice === "cancel" || this.disposed) {
+        void api.sftpDropPlan(plan.plan).catch(() => {});
+        return;
+      }
+      replace = choice === "replace";
+    }
+    this.queue.add({
+      kind,
+      title: kind === "upload" ? t("jobUpload", { what, dir: displayName(dir) }) : t("jobDownload", { what }),
+      plan: plan.plan,
+      replace,
+      leftOut: plan.skipped,
+      onEnd: () => {
+        // New files show up in the folder they went to, if it is on screen.
+        if (kind === "upload" && this.state === "open" && this.listing?.path === dir) void this.refresh();
+      },
+    });
   }
 }
 

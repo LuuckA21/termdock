@@ -29,6 +29,10 @@ use crate::ssh::SshHandle;
 
 /// Directory listings stop after this many entries (the UI says so).
 pub const MAX_ENTRIES: usize = 20_000;
+/// Most files and folders one folder transfer takes.
+pub const MAX_TREE_ITEMS: usize = 10_000;
+/// Deepest folder level a folder transfer goes into.
+pub const MAX_TREE_DEPTH: usize = 32;
 /// Longest name a listing accepts, and all names together.
 const MAX_LISTED_NAME: usize = 4096;
 const MAX_LISTING_BYTES: usize = 8 * 1024 * 1024;
@@ -88,6 +92,24 @@ pub struct Listing {
     pub path: String,
     pub entries: Vec<Entry>,
     pub truncated: bool,
+}
+
+/// A file or folder inside a transferred folder, by its path below that
+/// folder (one name per level).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeItem {
+    pub path: Vec<String>,
+    pub dir: bool,
+    pub size: u64,
+}
+
+/// What a folder holds, each folder before its content.
+#[derive(Debug, Default)]
+pub struct Tree {
+    pub items: Vec<TreeItem>,
+    /// Left out: links, special files, names that cannot be used, folders
+    /// deeper than [`MAX_TREE_DEPTH`].
+    pub skipped: usize,
 }
 
 /// Invisible characters that change how a name reads (Unicode "format"
@@ -636,6 +658,59 @@ impl Sftp {
         let (d, n) = real.rsplit_once('/').ok_or_else(|| Error::InvalidName(real.clone()))?;
         check_component(n)?;
         Ok((if d.is_empty() { "/".to_owned() } else { d.to_owned() }, n.to_owned()))
+    }
+
+    /// What `dir/name` is (a link counts as a link, it is not followed), or
+    /// `None` when there is nothing by that name.
+    pub async fn lookup(&self, dir: &str, name: &str) -> Result<Option<EntryKind>> {
+        check_component(name)?;
+        match self.inner.symlink_metadata(join(dir, name)).await {
+            Ok(meta) => Ok(Some(kind_of(meta.file_type()))),
+            Err(SftpError::Status(s)) if s.status_code == StatusCode::NoSuchFile => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Everything inside the folder `dir/name`, for downloading it whole.
+    /// Links inside are not followed (no loops, nothing from outside the
+    /// folder); `dir/name` itself may be a link, under the rule of
+    /// [`Sftp::resolve`]. Returns the folder's canonical path and its tree.
+    pub async fn walk(&self, dir: &str, name: &str) -> Result<(String, Tree)> {
+        let (dir, name) = self.resolve(dir, name).await?;
+        let root = join(&dir, &name);
+        let mut tree = Tree::default();
+        let mut pending = vec![(root.clone(), Vec::<String>::new())];
+        while let Some((path, below)) = pending.pop() {
+            let listing = self.list(&path).await?;
+            if listing.truncated {
+                return Err(Error::TooManyItems(MAX_TREE_ITEMS));
+            }
+            for entry in listing.entries {
+                let mut item = below.clone();
+                item.push(entry.name);
+                let usable = item.last().is_some_and(|n| check_component(n).is_ok());
+                match entry.kind {
+                    EntryKind::Dir if usable && item.len() < MAX_TREE_DEPTH => {
+                        pending.push((join(&path, item.last().unwrap()), item.clone()));
+                        tree.items.push(TreeItem {
+                            path: item,
+                            dir: true,
+                            size: 0,
+                        });
+                    }
+                    EntryKind::File if usable => tree.items.push(TreeItem {
+                        path: item,
+                        dir: false,
+                        size: entry.size.unwrap_or(0),
+                    }),
+                    _ => tree.skipped += 1,
+                }
+                if tree.items.len() > MAX_TREE_ITEMS {
+                    return Err(Error::TooManyItems(MAX_TREE_ITEMS));
+                }
+            }
+        }
+        Ok((root, tree))
     }
 
     /// Size and modification time (seconds) of the file at `dir/name`.

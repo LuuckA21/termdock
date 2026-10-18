@@ -86,10 +86,39 @@ export interface RemoteListing {
   truncated: boolean;
 }
 
-export interface TransferProgress {
+/** What a planned transfer will do, before it starts. */
+export interface PlanInfo {
+  plan: number;
+  files: number;
+  folders: number;
+  bytes: number;
+  /** Files that already exist at the destination, and a few of their paths. */
+  existing: number;
+  examples: string[];
+  /** Left out: links, special files, unusable names, name clashes. */
+  skipped: number;
+}
+
+export interface RunProgress {
   transfer: number;
+  /** Bytes copied, of `total`. */
   done: number;
-  total: number | null;
+  total: number;
+  /** Files finished, of `count`. */
+  files: number;
+  count: number;
+  /** The file being copied (a path below the transferred folder). */
+  current: string;
+}
+
+export interface RunSummary {
+  copied: number;
+  skipped: number;
+  failed: number;
+  /** The first errors, as "path: reason". */
+  errors: string[];
+  /** Stopped early after repeated failures. */
+  stopped: boolean;
 }
 
 export type SftpOpened =
@@ -105,7 +134,9 @@ export type EditEvent =
 export interface PickedFile {
   token: string;
   name: string;
+  /** Bytes for a file; 0 for a folder. */
   size: number;
+  folder: boolean;
 }
 
 export interface DetectedShell {
