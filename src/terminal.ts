@@ -273,17 +273,29 @@ export class TerminalPane implements Pane {
    * early or send key sequences; several lines are confirmed first when the
    * program does not use bracketed paste (each line would run at once).
    */
-  async paste(text?: string): Promise<void> {
+  /** Returns whether the text was sent. */
+  async paste(text?: string): Promise<boolean> {
     const raw = text ?? (await readText().catch(() => ""));
     const clean = cleanPaste(raw);
-    if (!clean || this.disposed) return;
+    if (!clean || this.disposed) return false;
     const lines = clean.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/).length;
     if (lines > 1 && !this.term.modes.bracketedPasteMode) {
       const ok = await confirmBox(t("pasteLines", { count: lines }), t("paste"));
-      if (!ok || this.disposed) return;
+      if (!ok || this.disposed) return false;
     }
     this.term.paste(clean);
     this.term.focus();
+    return true;
+  }
+
+  /**
+   * Types a snippet like a paste (control characters removed, several lines
+   * confirmed when the program would run each one), then Enter if `run`.
+   */
+  async sendSnippet(text: string, run: boolean): Promise<void> {
+    if (this.state !== "open") return;
+    const body = run ? text.replace(/[\r\n]+$/, "") : text;
+    if ((await this.paste(body)) && run && this.state === "open") this.input("\r", false);
   }
 
   /** `binary`: xterm.js delivers raw bytes (some mouse reports) as one char per byte. */

@@ -20,6 +20,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click).
 - **Split panes**, like Windows Terminal: divide a tab side by side or top/bottom as many times as needed and choose what opens in the new pane (the same connection, a local shell, any saved connection or a `user@host` address), e.g. server A on the left and server B on the right. Already open tabs can be put side by side without reconnecting (tab menu → *Move next to*), and favourites open directly on the right or below. Drag the dividers to resize, move between panes with `Alt+arrows`.
 - **Saved layouts**: save a tab's arrangement (which connection or shell is in each pane, and the sizes) with `Ctrl+Shift+L` and reopen it from the *Layouts* menu with one click; one layout can open automatically at startup (its connections then start right away, with the usual host-key and password prompts).
+- **Snippets**: saved texts (a command, a block of lines) typed into the active terminal from the *Snippets* menu or `Ctrl+Shift+P`, optionally with Enter so they run at once; each can be offered in every terminal or only for connections of one group, and the first nine can get `1…9` shortcuts in Settings → Keys. Managed in Settings → Snippets; they go in like a paste (control characters removed, several lines confirmed). They are plain text: never put passwords in them.
 - **Find in terminal**: `Ctrl+Shift+F` searches the scrollback with highlighted matches, next/previous (`Enter` / `Shift+Enter`), match case and regular expressions.
 - **Themes and fonts**: dark, light or system theme; terminal colour schemes (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); font, size, line height, cursor style and scrollback, with a live preview in Settings; `Ctrl` + `+` / `-` / `0` changes the font size.
 - **Automatic updates**: a new version is announced at start (and once a day), installed only after you confirm, and verified against the signing key built into the app; it can be turned off in Settings.
@@ -33,6 +34,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | `Ctrl+Shift+E` / `Ctrl+Shift+O` | split the pane right / down (then choose what to open; Enter = same connection) |
 | `Ctrl+Shift+S` | file browser (SFTP) for the SSH terminal |
 | `Ctrl+Shift+F` | find in the terminal |
+| `Ctrl+Shift+P` | snippets menu |
 | `Ctrl+Shift+L` | save the tab as a layout |
 | `Alt+←↑→↓` | move to the next pane (with several panes) |
 | `Ctrl+Shift+W` | close the pane (the tab with its last pane) |
@@ -43,7 +45,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | `Ctrl+Shift+M` | connection manager |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
 | `Ctrl` + `+` / `-` / `0` | larger / smaller / default font size |
-| `Ctrl+,` | settings (language, appearance, keys, files, updates) |
+| `Ctrl+,` | settings (language, appearance, keys, snippets, files, updates) |
 | right click in the terminal | copy the selection, otherwise paste |
 
 These are the defaults (`Cmd` works in place of `Ctrl` on macOS). Every shortcut can be changed or turned off in **Settings → Keys**: click it and press the new keys; a combination already in use is moved only after confirmation, and keys that terminal programs or AltGr typing need get a warning first.
@@ -103,11 +105,11 @@ Data is stored in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain. Interface preferences such as language, appearance and keyboard shortcuts, and saved layouts, are kept in the web view's local storage.)
+(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain. Interface preferences such as language, appearance and keyboard shortcuts, saved layouts and snippets are kept in the web view's local storage.)
 
 ## Development
 
-Requirements: stable [Rust](https://rustup.rs) (≥ 1.90), Node.js ≥ 22 and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system (on Linux: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libdbus-1-dev`). The released Linux packages are built on Ubuntu 24.04 and need a distribution at least as recent (glibc 2.39).
+Requirements: stable [Rust](https://rustup.rs) (≥ 1.90), Node.js ≥ 22 and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system (on Linux: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libdbus-1-dev`). The released Linux packages are built in Ubuntu 22.04 and need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 and later).
 
 ```sh
 npm ci

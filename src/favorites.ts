@@ -99,6 +99,15 @@ export class FavoritesBar {
     );
     layoutsBtn.addEventListener("click", () => this.app.layoutsMenu(layoutsBtn));
 
+    const snippetsBtn = h(
+      "button",
+      { class: "btn btn-ghost", type: "button", title: withKey(t("snippets"), "snippets") },
+      icon("snippet"),
+      h("span", {}, t("snippets")),
+      icon("chevron"),
+    );
+    snippetsBtn.addEventListener("click", () => this.app.snippetsMenu(snippetsBtn));
+
     const managerBtn = h(
       "button",
       { class: "btn btn-ghost", type: "button", title: withKey(t("connections"), "connections") },
@@ -122,6 +131,7 @@ export class FavoritesBar {
       h("label", { class: "quick" }, icon("bolt"), quick),
       shellBtn,
       layoutsBtn,
+      snippetsBtn,
       managerBtn,
       settingsBtn,
     );

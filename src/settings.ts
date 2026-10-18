@@ -17,6 +17,8 @@ import {
   type ThemeSetting,
 } from "./prefs";
 import { SCHEMES, type SchemeId } from "./schemes";
+import { copySnippets, setSnippets } from "./snippets";
+import { snippetsPanel } from "./snippetsui";
 import type { EditorInfo } from "./types";
 import { autoCheckEnabled, check, setAutoCheck } from "./updates";
 
@@ -50,13 +52,14 @@ function field(label: string, control: HTMLElement): HTMLElement {
   return h("label", { class: "field" }, h("span", {}, label), control);
 }
 
-type TabId = "general" | "appearance" | "keys" | "files" | "updates";
+type TabId = "general" | "appearance" | "keys" | "snippets" | "files" | "updates";
 
 /** Tabs in order; each id is also the label's translation key. */
 const TABS: { id: TabId; icon: IconName }[] = [
   { id: "general", icon: "settings" },
   { id: "appearance", icon: "palette" },
   { id: "keys", icon: "keyboard" },
+  { id: "snippets", icon: "snippet" },
   { id: "files", icon: "folder" },
   { id: "updates", icon: "download" },
 ];
@@ -65,8 +68,10 @@ const TABS: { id: TabId; icon: IconName }[] = [
 let lastTab: TabId = "general";
 
 /** Settings dialog, in tabs. Choices are applied when the dialog is confirmed
- * (except the editor for Edit, which the backend keeps and changes at once). */
-export async function openSettings(): Promise<void> {
+ * (except the editor for Edit, which the backend keeps and changes at once).
+ * `tab`: open on that tab instead of the last one shown. */
+export async function openSettings(tab?: TabId): Promise<void> {
+  if (tab) lastTab = tab;
   const system = LANGUAGES.find((l) => l.code === systemLanguage())?.name ?? "English";
   const language = h(
     "select",
@@ -218,8 +223,9 @@ export async function openSettings(): Promise<void> {
     }),
   );
 
-  // ---- keyboard shortcuts (a copy, saved with the rest)
+  // ---- keyboard shortcuts and snippets (copies, saved with the rest)
   const keyMap = getKeyMap();
+  const snippets = copySnippets();
 
   // ---- tabs
   const panel = (id: TabId, ...children: Node[]) =>
@@ -244,6 +250,7 @@ export async function openSettings(): Promise<void> {
       h("div", { class: "settings-row" }, h("span"), restore),
     ),
     keys: panel("keys", ...keysPanel(keyMap)),
+    snippets: panel("snippets", ...snippetsPanel(snippets)),
     files: panel(
       "files",
       h("h4", {}, t("editorGroup")),
@@ -314,5 +321,6 @@ export async function openSettings(): Promise<void> {
   setAutoCheck(chosen.autoUpdate);
   setPrefs(chosen.prefs);
   setKeyMap(keyMap);
+  setSnippets(snippets);
   setLanguage(chosen.language);
 }

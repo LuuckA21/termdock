@@ -1596,3 +1596,55 @@ dialog.layouts {
   opacity: 0.4;
   cursor: default;
 }
+
+/* ---------- snippets (Settings) ---------- */
+
+.snippet-list {
+  display: grid;
+  gap: 2px;
+  margin: 8px 0;
+}
+
+.snippet-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.snippet-row:hover {
+  background: var(--bg-3);
+}
+
+.snippet-row > .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-dim);
+}
+
+.snippet-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.snippet-name > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snippet-name .muted {
+  font-size: 12px;
+}
+
+dialog.modal.snippet-edit {
+  width: min(560px, 92vw);
+}
+
+.snippet-edit textarea {
+  min-height: 140px;
+  resize: vertical;
+}

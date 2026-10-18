@@ -12,10 +12,11 @@ import { onLanguageChange, t } from "./i18n";
 import { openManager, type ManagerOptions } from "./manager";
 import { firstLeaf, getLayouts, MAX_PANES, paneCount, saveLayout as saveLayoutAs, startupLayout, type LayoutLeaf, type LayoutNode } from "./layouts";
 import { askLayoutName, manageLayouts } from "./layoutsui";
-import { actionFor, digitFor, keyHint, onKeysChange, withKey } from "./keys";
+import { actionFor, digitFor, digitHint, keyHint, onKeysChange, withKey } from "./keys";
 import { showMenu, showMenuBelow } from "./menu";
 import { DEFAULTS, getPrefs, setPrefs } from "./prefs";
 import { openSettings } from "./settings";
+import { fitsGroup, getSnippets, type Snippet } from "./snippets";
 import { Tab, type Direction, type Snapshot, type SplitDir } from "./tabs";
 import type { Pane } from "./pane";
 import { pickPane, type PaneChoice } from "./picker";
@@ -325,6 +326,53 @@ export class App {
     ]);
   }
 
+  /** The group of the saved connection in `pane`; null for shells and quick connect. */
+  private groupOf(pane: TerminalPane): string | null {
+    const target = pane.opts.target;
+    if (target.kind !== "profile") return null;
+    return this.profiles.find((p) => p.id === target.id)?.group?.trim() || null;
+  }
+
+  /** The active terminal pane, if the active pane is one. */
+  private activeTerminal(): TerminalPane | null {
+    const pane = this.active?.active;
+    return pane instanceof TerminalPane ? pane : null;
+  }
+
+  private sendSnippet(pane: TerminalPane, s: Snippet): void {
+    void pane.sendSnippet(s.text, s.run);
+  }
+
+  /**
+   * The snippets menu (toolbar button, shortcut, tab menu): the snippets for
+   * the active terminal's group, numbered like their 1…9 shortcuts.
+   */
+  snippetsMenu(anchor?: HTMLElement): void {
+    const pane = this.activeTerminal();
+    const group = pane ? this.groupOf(pane) : null;
+    const items = getSnippets()
+      .map((s, i) => ({ s, n: i + 1 }))
+      .filter(({ s }) => pane && fitsGroup(s, group))
+      .map(({ s, n }) => ({
+        label: s.name,
+        icon: icon(s.run ? "terminal" : "snippet"),
+        hint: n <= 9 ? digitHint("sendSnippet", n) : "",
+        action: () => pane && this.sendSnippet(pane, s),
+      }));
+    const manage = { label: t("snippetsManage"), icon: icon("edit"), action: () => void openSettings("snippets") };
+    const none = {
+      label: pane ? t("snippetsNone") : t("snippetsNoTerminal"),
+      action: () => void openSettings("snippets"),
+    };
+    const all = [...(items.length ? items : [none]), manage];
+    if (anchor) {
+      showMenuBelow(anchor, all);
+    } else {
+      const r = (pane?.el ?? this.terminals).getBoundingClientRect();
+      showMenu(r.left + 24, r.top + 24, all);
+    }
+  }
+
   /** The file browser at a point of the window (CSS pixels), if any. */
   private filesAt(x: number, y: number): FilesPane | null {
     const el = document.elementFromPoint(x, y)?.closest(".files-pane");
@@ -491,6 +539,7 @@ export class App {
                 { label: t("find"), hint: keyHint("find"), action: () => active.find() },
                 { label: t("copy"), hint: keyHint("copy"), action: () => void active.copy() },
                 { label: t("paste"), hint: keyHint("paste"), action: () => void active.paste() },
+                { label: t("snippets"), icon: icon("snippet"), hint: keyHint("snippets"), action: () => this.snippetsMenu() },
               ]
             : []),
           { label: t("layoutSave"), icon: icon("plus"), hint: keyHint("saveLayout"), action: () => void this.saveLayout(tab) },
@@ -527,6 +576,12 @@ export class App {
       const p = this.favoriteProfiles()[digit.n - 1];
       return p ? once(() => this.openProfile(p)) : null;
     }
+    if (digit?.action === "sendSnippet") {
+      // Numbered over the whole list, like in Settings; only if it fits this terminal.
+      const pane = this.activeTerminal();
+      const s = getSnippets()[digit.n - 1];
+      return pane && s && fitsGroup(s, this.groupOf(pane)) ? once(() => this.sendSnippet(pane, s)) : null;
+    }
     if (digit?.action === "goToTab") {
       const tab = this.tabs[digit.n - 1];
       return tab ? () => this.activate(tab) : null;
@@ -555,6 +610,8 @@ export class App {
       }
       case "settings":
         return () => void openSettings();
+      case "snippets":
+        return once(() => this.snippetsMenu());
       case "zoomIn":
         return () => this.zoom(1);
       case "zoomOut":
