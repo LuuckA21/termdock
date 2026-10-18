@@ -5,13 +5,13 @@
 //! backend, and stored ones stay in the OS vault.
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
 use termdock_core::profile::{self, Profile, ProfileKind};
-use termdock_core::session::{EventSink, SessionEvent, TermSize};
+use termdock_core::session::{EventSink, SessionEvent, SessionHandle, TermSize};
 use termdock_core::shells::{self, DetectedShell};
 use termdock_core::ssh::{self, SshConnect};
 use termdock_core::sshconfig;
@@ -25,30 +25,40 @@ use crate::state::AppState;
 
 /// Errors are flattened to a message for the UI.
 #[derive(Debug, thiserror::Error)]
-#[error("{0}")]
-pub struct CmdError(String);
+#[error("{message}")]
+pub struct CmdError {
+    message: String,
+    /// Trying again later may work (see `CoreError::is_transient`).
+    retry: bool,
+}
 
 impl CmdError {
     pub fn msg(message: impl Into<String>) -> Self {
-        Self(message.into())
+        Self {
+            message: message.into(),
+            retry: false,
+        }
     }
 }
 
 impl From<CoreError> for CmdError {
     fn from(e: CoreError) -> Self {
-        Self(e.to_string())
+        Self {
+            retry: e.is_transient(),
+            message: e.to_string(),
+        }
     }
 }
 
 impl From<tauri_plugin_updater::Error> for CmdError {
     fn from(e: tauri_plugin_updater::Error) -> Self {
-        Self(e.to_string())
+        Self::msg(e.to_string())
     }
 }
 
 impl Serialize for CmdError {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.0)
+        s.serialize_str(&self.message)
     }
 }
 
@@ -135,7 +145,7 @@ pub fn delete_profile(state: State<'_, AppState>, id: Uuid) -> CmdResult<()> {
             .filter(|p| matches!(&p.kind, ProfileKind::Ssh(t) if t.jump == Some(id)))
             .map(|p| p.name.as_str())
             .collect();
-        return Err(CmdError(format!("used as jump host by: {}", users.join(", "))));
+        return Err(CmdError::msg(format!("used as jump host by: {}", users.join(", "))));
     }
     // Secrets first: if they cannot be removed, the profile stays (no
     // orphaned password left in the keychain).
@@ -170,7 +180,7 @@ pub fn list_shells() -> Vec<DetectedShell> {
     shells::detect()
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum OpenTarget {
     Profile {
@@ -186,47 +196,81 @@ pub enum OpenTarget {
     },
 }
 
-#[tauri::command]
-pub async fn open_session(
-    state: State<'_, AppState>,
-    sftp: State<'_, SftpState>,
-    logs: State<'_, crate::sessionlog::Logs>,
+/// How a terminal's output and notices reach the UI, and what it connects
+/// to: everything needed to start its session again.
+#[derive(Clone)]
+pub struct Wiring {
+    id: u32,
     target: OpenTarget,
-    size: TermSize,
     on_data: Channel<InvokeResponseBody>,
     on_notice: Channel<SessionNotice>,
-) -> CmdResult<u32> {
-    let id = state.next_session.fetch_add(1, Ordering::Relaxed);
+}
 
+/// An SSH session whose connection dropped, kept (with its id, so its log
+/// goes on) until it connects again or its terminal is closed.
+pub struct Lost {
+    wiring: Wiring,
+    /// A reconnection is under way.
+    busy: bool,
+}
+
+/// Lock order, wherever both are needed: `sessions`, then `lost`.
+fn sink(
+    state: &AppState,
+    sftp: &SftpState,
+    logs: &crate::sessionlog::Logs,
+    wiring: &Wiring,
+    exited: Arc<AtomicBool>,
+) -> EventSink {
     let sessions = state.sessions.clone();
-    let browsers = sftp.inner().clone();
-    let logs = logs.inner().clone();
-    let exit_notices = on_notice.clone();
-    // A shell can exit before connect/spawn returns: then the handle must
-    // not be registered afterwards as if it were alive.
-    let exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let exited_flag = exited.clone();
-    let sink: EventSink = Arc::new(move |event| match event {
+    let lost_sessions = state.lost.clone();
+    let browsers = sftp.clone();
+    let logs = logs.clone();
+    let wiring = wiring.clone();
+    Arc::new(move |event| match event {
         SessionEvent::Data(bytes) => {
-            logs.write(id, &bytes);
-            let _ = on_data.send(InvokeResponseBody::Raw(bytes));
+            logs.write(wiring.id, &bytes);
+            let _ = wiring.on_data.send(InvokeResponseBody::Raw(bytes));
         }
-        SessionEvent::Exit { code, message } => {
+        SessionEvent::Exit { code, message, lost } => {
+            let id = wiring.id;
             let mut sessions = sessions.lock().unwrap();
-            exited_flag.store(true, Ordering::SeqCst);
-            sessions.remove(&id);
+            exited.store(true, Ordering::SeqCst);
+            // Only a session still open is kept for a reconnection (not one
+            // being closed, nor one that dropped while connecting).
+            let kept = sessions.remove(&id).is_some() && lost;
+            if kept {
+                lost_sessions.lock().unwrap().insert(
+                    id,
+                    Lost {
+                        wiring: wiring.clone(),
+                        busy: false,
+                    },
+                );
+            }
             drop(sessions);
             browsers.session_ended(id);
-            logs.stop(id);
-            let _ = exit_notices.send(SessionNotice::Exit { code, message });
+            if kept {
+                logs.note(id, "connection lost");
+            } else {
+                logs.stop(id);
+            }
+            let _ = wiring.on_notice.send(SessionNotice::Exit {
+                code,
+                message,
+                lost: kept,
+            });
         }
-    });
+    })
+}
 
+/// Opens the shell or connection of `wiring`, its output going to `sink`.
+async fn start(state: &AppState, wiring: &Wiring, size: TermSize, sink: EventSink) -> CmdResult<SessionHandle> {
     let mut jumps = Vec::new();
-    let (profile_id, kind) = match target {
+    let (profile_id, kind) = match &wiring.target {
         OpenTarget::Profile { id } => {
             let store = state.store.lock().unwrap();
-            let p = store.get(id)?.clone();
+            let p = store.get(*id)?.clone();
             if let ProfileKind::Ssh(t) = &p.kind {
                 jumps = profile::resolve_jumps(store.profiles(), t)?;
             }
@@ -234,23 +278,23 @@ pub async fn open_session(
         }
         OpenTarget::Quick { address } => (
             None,
-            ProfileKind::Ssh(profile::parse_quick_connect(&address, &default_user())?),
+            ProfileKind::Ssh(profile::parse_quick_connect(address, &default_user())?),
         ),
         OpenTarget::Shell { id } => {
             let shell = shells::detect()
                 .into_iter()
-                .find(|s| s.id == id)
-                .ok_or_else(|| CmdError(format!("unknown shell '{id}'")))?;
+                .find(|s| &s.id == id)
+                .ok_or_else(|| CmdError::msg(format!("unknown shell '{id}'")))?;
             (None, ProfileKind::Local(shell.shell))
         }
     };
 
-    let handle = match kind {
+    Ok(match kind {
         ProfileKind::Local(shell) => local::spawn(&shell, size, sink)?,
         ProfileKind::Ssh(target) => {
             let ui = Arc::new(UiInteraction {
                 prompts: state.prompts.clone(),
-                notices: on_notice,
+                notices: wiring.on_notice.clone(),
             });
             ssh::connect(
                 SshConnect {
@@ -266,15 +310,111 @@ pub async fn open_session(
             )
             .await?
         }
+    })
+}
+
+#[tauri::command]
+pub async fn open_session(
+    state: State<'_, AppState>,
+    sftp: State<'_, SftpState>,
+    logs: State<'_, crate::sessionlog::Logs>,
+    target: OpenTarget,
+    size: TermSize,
+    on_data: Channel<InvokeResponseBody>,
+    on_notice: Channel<SessionNotice>,
+) -> CmdResult<u32> {
+    let wiring = Wiring {
+        id: state.next_session.fetch_add(1, Ordering::Relaxed),
+        target,
+        on_data,
+        on_notice,
     };
+    // A shell can exit before connect/spawn returns: then the handle must
+    // not be registered afterwards as if it were alive.
+    let exited = Arc::new(AtomicBool::new(false));
+    let sink = sink(&state, &sftp, &logs, &wiring, exited.clone());
+    let handle = start(&state, &wiring, size, sink).await?;
     {
         // Checked under the same lock the exit path takes.
         let mut sessions = state.sessions.lock().unwrap();
         if !exited.load(Ordering::SeqCst) {
-            sessions.insert(id, handle);
+            sessions.insert(wiring.id, handle);
         }
     }
-    Ok(id)
+    Ok(wiring.id)
+}
+
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum Reconnected {
+    /// The session runs again under the same id.
+    Connected,
+    /// This attempt failed; `retry`: trying again later may work.
+    Failed { error: String, retry: bool },
+    /// The session is gone (closed, or it was not waiting to reconnect).
+    Closed,
+}
+
+/// Connects again a session whose connection dropped, keeping its id (its
+/// log and terminal carry on). Host keys and authentication are checked as
+/// on any connection; one attempt per call, the UI paces them.
+#[tauri::command]
+pub async fn reconnect_session(
+    state: State<'_, AppState>,
+    sftp: State<'_, SftpState>,
+    logs: State<'_, crate::sessionlog::Logs>,
+    id: u32,
+    size: TermSize,
+) -> CmdResult<Reconnected> {
+    let wiring = {
+        let mut lost = state.lost.lock().unwrap();
+        match lost.get_mut(&id) {
+            None => return Ok(Reconnected::Closed),
+            Some(l) if l.busy => {
+                return Ok(Reconnected::Failed {
+                    error: "already reconnecting".into(),
+                    retry: true,
+                });
+            }
+            Some(l) => {
+                l.busy = true;
+                l.wiring.clone()
+            }
+        }
+    };
+    let exited = Arc::new(AtomicBool::new(false));
+    let sink = sink(&state, &sftp, &logs, &wiring, exited.clone());
+    let started = start(&state, &wiring, size, sink).await;
+    let mut sessions = state.sessions.lock().unwrap();
+    let mut lost = state.lost.lock().unwrap();
+    match started {
+        Ok(handle) => {
+            // Closed meanwhile: this connection is not wanted any more.
+            if lost.remove(&id).is_none() {
+                handle.close();
+                return Ok(Reconnected::Closed);
+            }
+            if exited.load(Ordering::SeqCst) {
+                // Ended again before it was registered: its exit notice has
+                // already told the UI, as for a new session.
+                return Ok(Reconnected::Closed);
+            }
+            sessions.insert(id, handle);
+            drop((lost, sessions));
+            logs.note(id, "reconnected");
+            Ok(Reconnected::Connected)
+        }
+        Err(error) => {
+            let Some(l) = lost.get_mut(&id) else {
+                return Ok(Reconnected::Closed);
+            };
+            l.busy = false;
+            Ok(Reconnected::Failed {
+                retry: error.retry,
+                error: error.to_string(),
+            })
+        }
+    }
 }
 
 /// `binary`: `data` carries raw bytes, one per char (xterm.js `onBinary`),
@@ -282,11 +422,11 @@ pub async fn open_session(
 #[tauri::command]
 pub fn write_session(state: State<'_, AppState>, id: u32, data: String, binary: Option<bool>) -> CmdResult<()> {
     if data.len() > MAX_INPUT_CHUNK {
-        return Err(CmdError("input too large".into()));
+        return Err(CmdError::msg("input too large"));
     }
     let bytes = if binary.unwrap_or(false) {
         data.chars()
-            .map(|c| u8::try_from(u32::from(c)).map_err(|_| CmdError("invalid binary input".into())))
+            .map(|c| u8::try_from(u32::from(c)).map_err(|_| CmdError::msg("invalid binary input")))
             .collect::<CmdResult<Vec<u8>>>()?
     } else {
         data.into_bytes()
@@ -316,7 +456,10 @@ pub async fn close_session(
     // File transfers on this connection are cancelled and cleaned up first.
     sftp.close_session(id).await;
     logs.stop(id);
-    if let Some(h) = state.sessions.lock().unwrap().remove(&id) {
+    let mut sessions = state.sessions.lock().unwrap();
+    // Also one waiting to reconnect: an attempt under way then gives up.
+    state.lost.lock().unwrap().remove(&id);
+    if let Some(h) = sessions.remove(&id) {
         h.close();
     }
     Ok(())
@@ -339,12 +482,12 @@ pub struct SshConfigPreview {
 fn read_ssh_config() -> CmdResult<(std::path::PathBuf, Option<sshconfig::Parsed>)> {
     let home = directories::BaseDirs::new()
         .map(|b| b.home_dir().to_owned())
-        .ok_or_else(|| CmdError("home directory not found".into()))?;
+        .ok_or_else(|| CmdError::msg("home directory not found"))?;
     let path = home.join(".ssh").join("config");
     match std::fs::read_to_string(&path) {
         Ok(text) => Ok((path, Some(sshconfig::parse(&text, &home, &default_user())))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((path, None)),
-        Err(e) => Err(CmdError(format!("{}: {e}", path.display()))),
+        Err(e) => Err(CmdError::msg(format!("{}: {e}", path.display()))),
     }
 }
 
@@ -380,7 +523,7 @@ pub struct ImportResult {
 #[tauri::command(async)]
 pub fn import_ssh_config(state: State<'_, AppState>, aliases: Vec<String>) -> CmdResult<ImportResult> {
     let (_, parsed) = read_ssh_config()?;
-    let parsed = parsed.ok_or_else(|| CmdError("~/.ssh/config not found".into()))?;
+    let parsed = parsed.ok_or_else(|| CmdError::msg("~/.ssh/config not found"))?;
     let mut store = state.store.lock().unwrap();
     let (profiles, warnings) = sshconfig::plan_import(&parsed, store.profiles(), &aliases);
     let mut imported = Vec::new();

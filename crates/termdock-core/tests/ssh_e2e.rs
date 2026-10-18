@@ -101,22 +101,31 @@ struct Output {
     sink: EventSink,
     text: Arc<Mutex<String>>,
     exit: tokio::sync::oneshot::Receiver<Option<u32>>,
+    /// Whether the end was reported as a dropped connection.
+    lost: Arc<Mutex<Option<bool>>>,
 }
 
 fn output() -> Output {
     let text = Arc::new(Mutex::new(String::new()));
+    let lost = Arc::new(Mutex::new(None));
     let (tx, rx) = tokio::sync::oneshot::channel();
     let tx = Mutex::new(Some(tx));
-    let t = text.clone();
+    let (t, l) = (text.clone(), lost.clone());
     let sink: EventSink = Arc::new(move |ev| match ev {
         SessionEvent::Data(d) => t.lock().unwrap().push_str(&String::from_utf8_lossy(&d)),
-        SessionEvent::Exit { code, .. } => {
+        SessionEvent::Exit { code, lost, .. } => {
+            *l.lock().unwrap() = Some(lost);
             if let Some(tx) = tx.lock().unwrap().take() {
                 let _ = tx.send(code);
             }
         }
     });
-    Output { sink, text, exit: rx }
+    Output {
+        sink,
+        text,
+        exit: rx,
+        lost,
+    }
 }
 
 async fn connect(
@@ -159,6 +168,11 @@ async fn run_and_exit(h: SessionHandle, out: Output, marker: &str) -> String {
         .expect("session did not end")
         .unwrap();
     assert_eq!(code, Some(5));
+    assert_eq!(
+        *out.lost.lock().unwrap(),
+        Some(false),
+        "a shell that exits is not a lost connection"
+    );
     let text = out.text.lock().unwrap().clone();
     assert!(text.contains(&format!("{marker}-42")), "{text}");
     assert!(text.contains("30 100"), "{text}");
@@ -400,6 +414,59 @@ async fn ssh_keyboard_interactive() {
     .unwrap();
     assert!(ui.asked.lock().unwrap().is_empty());
     run_and_exit(h, out, "kbd2").await;
+}
+
+/// A connection that drops (here: the server's process for it is killed)
+/// is reported as lost, and a closed session is not.
+#[tokio::test(flavor = "multi_thread")]
+async fn dropped_connection_is_reported_as_lost() {
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let kh = Arc::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let vault = Arc::new(MemoryVault::default());
+
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Password,
+        &kh,
+        &vault,
+        None,
+        user(true, &[(&e.password, false)]),
+        out.sink,
+    )
+    .await
+    .unwrap();
+    // The shell's parent is sshd's process for this connection.
+    h.write(b"kill -9 $PPID\n".to_vec()).unwrap();
+    let code = tokio::time::timeout(Duration::from_secs(15), out.exit)
+        .await
+        .expect("the end of the connection was not noticed")
+        .unwrap();
+    assert_eq!(code, None);
+    assert_eq!(*out.lost.lock().unwrap(), Some(true));
+
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Password,
+        &kh,
+        &vault,
+        None,
+        user(true, &[(&e.password, false)]),
+        out.sink,
+    )
+    .await
+    .unwrap();
+    h.close();
+    tokio::time::timeout(Duration::from_secs(10), out.exit)
+        .await
+        .expect("closing did not end the session")
+        .unwrap();
+    assert_eq!(*out.lost.lock().unwrap(), Some(false));
 }
 
 async fn echo_server() -> u16 {

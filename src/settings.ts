@@ -113,6 +113,8 @@ export async function openSettings(tab?: TabId): Promise<void> {
   const cursorBlink = h("input", { type: "checkbox" });
   cursorBlink.checked = p.cursorBlink;
   const scrollback = number(p.scrollback, LIMITS.scrollback.min, LIMITS.scrollback.max, 1);
+  const autoReconnect = h("input", { type: "checkbox" });
+  autoReconnect.checked = p.autoReconnect;
 
   const formPrefs = (): Prefs =>
     normalize({
@@ -125,6 +127,7 @@ export async function openSettings(tab?: TabId): Promise<void> {
       cursorStyle: cursorStyle.value,
       cursorBlink: cursorBlink.checked,
       scrollback: scrollback.value || p.scrollback,
+      autoReconnect: autoReconnect.checked,
     });
 
   // Live preview of colours and font, before saving.
@@ -249,6 +252,9 @@ export async function openSettings(tab?: TabId): Promise<void> {
       "general",
       field(t("language"), language),
       h("p", { class: "muted" }, t("languageHelp")),
+      h("h4", {}, t("connectionsGroup")),
+      h("label", { class: "check" }, autoReconnect, h("span", {}, t("autoReconnect"))),
+      h("p", { class: "muted" }, t("autoReconnectHelp")),
       h("h4", {}, t("backup")),
       h("p", { class: "muted" }, t("backupHelp")),
       h("div", { class: "settings-row backup-row" }, exportBtn, importBtn),

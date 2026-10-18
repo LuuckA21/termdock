@@ -1006,12 +1006,55 @@ async fn mark_downloaded(path: &Path) {
     let _ = tokio::fs::write(stream, "[ZoneTransfer]\r\nZoneId=3\r\n").await;
 }
 
-#[cfg(not(windows))]
+/// The quarantine flag macOS puts on downloads, so Gatekeeper checks the
+/// file before it runs; best effort, like the Mark of the Web on Windows.
+#[cfg(target_os = "macos")]
+async fn mark_downloaded(path: &Path) {
+    let path = path.to_owned();
+    let _ = tokio::task::spawn_blocking(move || quarantine(&path)).await;
+}
+
+/// Set through Foundation, which fills in the flags and the date itself.
+#[cfg(target_os = "macos")]
+fn quarantine(path: &Path) -> bool {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSDictionary, NSString, NSURL, NSURLQuarantinePropertiesKey, ns_string};
+
+    let Some(path) = path.to_str() else {
+        return false;
+    };
+    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+    let properties = NSDictionary::from_slices(
+        &[ns_string!("LSQuarantineAgentName"), ns_string!("LSQuarantineType")],
+        &[ns_string!("Termdock"), ns_string!("LSQuarantineTypeOtherDownload")],
+    );
+    let value: &AnyObject = &properties;
+    // SAFETY: this key takes a dictionary of quarantine properties, as given.
+    unsafe { url.setResourceValue_forKey_error(Some(value), NSURLQuarantinePropertiesKey) }.is_ok()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 async fn mark_downloaded(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn downloads_are_quarantined() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("run.sh");
+        std::fs::write(&file, "#!/bin/sh\n").unwrap();
+        assert!(quarantine(&file));
+        let out = std::process::Command::new("xattr")
+            .args(["-p", "com.apple.quarantine"])
+            .arg(&file)
+            .output()
+            .unwrap();
+        let value = String::from_utf8_lossy(&out.stdout);
+        assert!(value.contains("Termdock"), "{value:?}");
+    }
 
     #[test]
     fn names() {

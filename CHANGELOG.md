@@ -7,6 +7,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-18
+
+### Added
+
+- Automatic reconnection: when the network or the server drops an SSH connection, the terminal tries again by itself a few times over about five minutes (`Enter`: now, `Esc`: stop), with the usual host-key and password checks. Its session log goes on (with a note) and its file browser reopens in the same folder. It stops at once on anything that needs you (host key, authentication) and can be turned off in Settings → General.
+
+### Fixed
+
+- Session logs no longer get an extra space where a long command line wraps on screen.
+
+### Security
+
+- Downloaded files get the quarantine flag on macOS, so Gatekeeper checks them before they run (as SmartScreen already does on Windows).
+
 ## [0.15.0] - 2026-10-18
 
 ### Added
@@ -242,7 +256,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/LuuckA21/termdock/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/LuuckA21/termdock/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/LuuckA21/termdock/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/LuuckA21/termdock/compare/v0.12.1...v0.13.0

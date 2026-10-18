@@ -196,7 +196,14 @@ export type SessionNotice =
   | { type: "secret"; promptId: Uuid; prompt: SecretPrompt }
   | { type: "banner"; text: string }
   | { type: "info"; text: string }
-  | { type: "exit"; code: number | null; message: string | null };
+  /** `lost`: the connection dropped; the session waits for `reconnectSession` (or to be closed). */
+  | { type: "exit"; code: number | null; message: string | null; lost: boolean };
+
+export type Reconnected =
+  | { status: "connected" }
+  /** `retry`: trying again later may work (network, server restarting). */
+  | { status: "failed"; error: string; retry: boolean }
+  | { status: "closed" };
 
 export type PromptAnswer =
   | { kind: "hostKey"; accept: boolean }

@@ -83,4 +83,13 @@ pub enum Error {
     TooManyItems(usize),
 }
 
+impl Error {
+    /// A failure to connect that may go away by itself (network down, server
+    /// restarting, a jump host that cannot reach it yet), as opposed to one
+    /// that needs the user (authentication, host key, a missing profile).
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::Io(_) | Self::Ssh(_) | Self::Timeout | Self::Jump(_))
+    }
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;

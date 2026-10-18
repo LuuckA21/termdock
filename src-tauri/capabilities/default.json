@@ -19,6 +19,7 @@
     "allow-forget-host-key",
     "allow-list-shells",
     "allow-open-session",
+    "allow-reconnect-session",
     "allow-write-session",
     "allow-resize-session",
     "allow-close-session",

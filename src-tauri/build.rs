@@ -9,6 +9,7 @@ const COMMANDS: &[&str] = &[
     "forget_host_key",
     "list_shells",
     "open_session",
+    "reconnect_session",
     "write_session",
     "resize_session",
     "close_session",

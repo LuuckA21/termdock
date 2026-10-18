@@ -98,6 +98,7 @@ pub fn spawn(shell: &LocalShell, size: TermSize, sink: EventSink) -> Result<Sess
         sink(SessionEvent::Exit {
             code: status.as_ref().map(|s| s.exit_code()),
             message: status.and_then(|s| s.signal().map(str::to_owned)),
+            lost: false,
         });
     })?;
 

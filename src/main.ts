@@ -123,10 +123,13 @@ export class App {
       target,
       vaultAvailable: this.info.vaultAvailable,
       onStateChange: (pane) => {
-        // A terminal that ended takes its file browsers' connection with it.
-        if (pane.state === "closed") {
-          for (const tab of this.tabs) {
-            for (const p of tab.panes) if (p instanceof FilesPane && p.opts.source === pane) p.sessionEnded();
+        // A terminal that ended or lost its connection takes its file
+        // browsers' connection with it; one that reconnected brings it back.
+        for (const tab of this.tabs) {
+          for (const p of tab.panes) {
+            if (!(p instanceof FilesPane) || p.opts.source !== pane) continue;
+            if (pane.state === "open") p.sessionResumed();
+            else p.sessionEnded(pane.state === "connecting");
           }
         }
         this.renderTabs();

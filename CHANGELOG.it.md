@@ -7,6 +7,20 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-18
+
+### Aggiunto
+
+- Riconnessione automatica: quando la rete o il server fanno cadere una connessione SSH, il terminale riprova da solo alcune volte nell'arco di circa cinque minuti (`Invio`: subito, `Esc`: basta), con i soliti controlli di host key e password. La registrazione della sessione continua (con una nota) e il browser dei file si riapre nella stessa cartella. Si ferma subito per tutto ciò che richiede te (host key, autenticazione) e si può disattivare in Impostazioni → Generale.
+
+### Corretto
+
+- Nei log di sessione non compare più uno spazio in più dove una riga di comando lunga va a capo sullo schermo.
+
+### Sicurezza
+
+- I file scaricati ricevono il flag di quarantena su macOS, così Gatekeeper li controlla prima dell'esecuzione (come già fa SmartScreen su Windows).
+
 ## [0.15.0] - 2026-10-18
 
 ### Aggiunto
@@ -242,7 +256,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/LuuckA21/termdock/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/LuuckA21/termdock/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/LuuckA21/termdock/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/LuuckA21/termdock/compare/v0.12.1...v0.13.0

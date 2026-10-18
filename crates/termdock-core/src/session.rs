@@ -38,6 +38,10 @@ pub enum SessionEvent {
     Exit {
         code: Option<u32>,
         message: Option<String>,
+        /// The connection dropped (network, server gone, keepalive
+        /// unanswered) without the remote shell ending or the session being
+        /// closed: connecting again may bring it back.
+        lost: bool,
     },
 }
 

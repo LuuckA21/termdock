@@ -57,6 +57,9 @@ pub enum SessionNotice {
     Exit {
         code: Option<u32>,
         message: Option<String>,
+        /// The connection dropped and the session waits for
+        /// `reconnect_session` (or to be closed).
+        lost: bool,
     },
 }
 

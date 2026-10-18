@@ -241,21 +241,42 @@ export class FilesPane implements Pane {
     this.el.remove();
   }
 
-  /** The terminal's session ended: this connection is gone. */
-  sessionEnded(): void {
-    if (this.state === "closed") return;
+  /** Closed because the terminal's connection went away (it may come back). */
+  private resumable = false;
+
+  /**
+   * The terminal's session ended (`reconnecting`: its connection dropped and
+   * it is trying to get it back): this connection is gone.
+   */
+  sessionEnded(reconnecting = false): void {
+    if (this.state === "closed") {
+      if (!reconnecting && this.resumable) this.say(t("filesClosed"), true);
+      return;
+    }
+    this.resumable = true;
     this.id = null;
     this.setState("closed");
     this.setBusy(true);
     this.pathInput.disabled = true;
-    this.say(t("filesClosed"), true);
+    this.say(reconnecting ? t("filesReconnecting") : t("filesClosed"), true);
   }
 
   /**
-   * Opens the browser as the login user (`null`) or, through sudo, as `user`.
-   * On success it replaces the current one; on failure the current one stays.
+   * The terminal's connection came back after dropping (same session): opens
+   * again as the login user (sudo would ask again), in the same folder.
    */
-  private async open(user: string | null): Promise<void> {
+  sessionResumed(): void {
+    if (!this.resumable || this.disposed || this.opts.source.session !== this.opts.session) return;
+    this.resumable = false;
+    void this.open(null, this.listing?.path);
+  }
+
+  /**
+   * Opens the browser as the login user (`null`) or, through sudo, as `user`,
+   * in `folder` (default: the user's home). On success it replaces the
+   * current one; on failure the current one stays.
+   */
+  private async open(user: string | null, folder?: string): Promise<void> {
     if (this.switching) return;
     this.switching = true;
     this.setBusy(true);
@@ -291,7 +312,7 @@ export class FilesPane implements Pane {
         this.setBusy(false);
         this.pathInput.disabled = false;
         this.suggest();
-        await this.navigate(res.home);
+        await this.navigate(folder ?? res.home);
         return;
       }
     } catch (e) {
