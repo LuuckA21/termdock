@@ -131,6 +131,21 @@ export type EditEvent =
   | { kind: "failed"; edit: number; message: string }
   | { kind: "stopped"; edit: number };
 
+/** What a backup file holds, before importing it. */
+export interface ImportPreview {
+  token: string;
+  /** Termdock version that wrote it. */
+  app: string;
+  /** Seconds since the Unix epoch. */
+  exported: number;
+  profiles: number;
+  newProfiles: number;
+  newNames: string[];
+  favorites: number;
+  /** The interface's settings, validated before use. */
+  ui: unknown;
+}
+
 export interface PickedFile {
   token: string;
   name: string;

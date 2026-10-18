@@ -15,6 +15,8 @@ use crate::profile::{Profile, ProfileKind, resolve_jumps};
 
 const SCHEMA_VERSION: u32 = 1;
 const MAX_FILE_SIZE: u64 = 16 * 1024 * 1024;
+/// Most profiles one store (or an imported backup) holds.
+pub const MAX_PROFILES: usize = 5_000;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,6 +164,36 @@ impl ProfileStore {
         self.commit(next)
     }
 
+    /// Replaces every profile and the favorites at once (a backup imported
+    /// with "replace"), checked like [`ProfileStore::upsert`]: all or nothing.
+    pub fn replace_all(&mut self, profiles: Vec<Profile>, favorites: Vec<Uuid>) -> Result<()> {
+        let next = checked(Document {
+            version: SCHEMA_VERSION,
+            profiles,
+            favorites,
+        })?;
+        self.commit(next)
+    }
+
+    /// Adds the profiles whose id is not in the store yet, and their favorite
+    /// pins (a backup imported with "add"); existing profiles stay as they
+    /// are. Returns how many were added.
+    pub fn add_new(&mut self, profiles: Vec<Profile>, favorites: Vec<Uuid>) -> Result<usize> {
+        let mut next = self.doc.clone();
+        let mut added = Vec::new();
+        for p in profiles {
+            if !next.profiles.iter().any(|q| q.id == p.id) {
+                added.push(p.id);
+                next.profiles.push(p);
+            }
+        }
+        next.favorites
+            .extend(favorites.into_iter().filter(|id| added.contains(id)));
+        let next = checked(next)?;
+        self.commit(next)?;
+        Ok(added.len())
+    }
+
     /// Writes `next` and only then makes it the current state: if the write
     /// fails, memory keeps what is on disk (a failed host change must not
     /// leave the old host's saved password attached to the new host).
@@ -192,6 +224,43 @@ impl ProfileStore {
     }
 }
 
+/// Checks the connections and favorites of a backup as a whole, before
+/// anything is imported; returns them cleaned up like the store keeps them.
+pub fn validate_backup(profiles: Vec<Profile>, favorites: Vec<Uuid>) -> Result<(Vec<Profile>, Vec<Uuid>)> {
+    let doc = checked(Document {
+        version: SCHEMA_VERSION,
+        profiles,
+        favorites,
+    })?;
+    Ok((doc.profiles, doc.favorites))
+}
+
+/// A whole document checked as `upsert` checks one profile: valid profiles,
+/// unique ids, jump chains that exist and do not loop; favorites that point
+/// nowhere or repeat are dropped.
+fn checked(mut doc: Document) -> Result<Document> {
+    if doc.profiles.len() > MAX_PROFILES {
+        return Err(Error::InvalidProfile(format!("more than {MAX_PROFILES} connections")));
+    }
+    let mut ids = std::collections::HashSet::new();
+    for p in &mut doc.profiles {
+        p.validate()?;
+        if !ids.insert(p.id) {
+            return Err(Error::InvalidProfile(format!("{}: the same id is used twice", p.name)));
+        }
+    }
+    for p in &doc.profiles {
+        if let ProfileKind::Ssh(target) = &p.kind
+            && target.jump.is_some()
+        {
+            resolve_jumps(&doc.profiles, target).map_err(|e| Error::InvalidProfile(format!("{}: {e}", p.name)))?;
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    doc.favorites.retain(|id| ids.contains(id) && seen.insert(*id));
+    Ok(doc)
+}
+
 /// Creates `dir` (and parents) so that, on Unix, only the owner can access it.
 pub fn create_private_dir(dir: &Path) -> Result<()> {
     #[cfg(unix)]
@@ -220,6 +289,39 @@ mod tests {
                 cwd: None,
             }),
         )
+    }
+
+    #[test]
+    fn replace_and_add_are_checked_as_a_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("profiles.json");
+        let mut store = ProfileStore::open(&path).unwrap();
+        let keep = store.upsert(local("keep")).unwrap();
+
+        let a = local("a");
+        let b = local("b");
+        // Unknown and repeated favorites are dropped.
+        store
+            .replace_all(vec![a.clone(), b.clone()], vec![b.id, Uuid::new_v4(), b.id])
+            .unwrap();
+        assert_eq!(store.profiles().len(), 2);
+        assert_eq!(store.favorites(), &[b.id]);
+
+        // Adding keeps what is there; profiles with a known id are skipped.
+        let mut changed = a.clone();
+        changed.name = "renamed".into();
+        let added = store.add_new(vec![changed, keep.clone()], vec![keep.id, a.id]).unwrap();
+        assert_eq!(added, 1);
+        assert_eq!(store.get(a.id).unwrap().name, "a");
+        assert_eq!(store.favorites(), &[b.id, keep.id]);
+
+        // A broken document changes nothing, on disk or in memory.
+        let mut bad = local("bad");
+        bad.name = String::new();
+        assert!(store.replace_all(vec![bad], vec![]).is_err());
+        assert!(store.replace_all(vec![a.clone(), a.clone()], vec![]).is_err());
+        assert_eq!(store.profiles().len(), 3);
+        assert_eq!(ProfileStore::open(&path).unwrap().profiles().len(), 3);
     }
 
     #[test]

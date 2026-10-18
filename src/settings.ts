@@ -1,4 +1,5 @@
 import { api, errorText } from "./api";
+import { backupAction, exportBackup, importBackup } from "./backup";
 import { modal } from "./dialogs";
 import { h, icon, type IconName } from "./dom";
 import { getKeyMap, setKeyMap } from "./keys";
@@ -223,6 +224,19 @@ export async function openSettings(tab?: TabId): Promise<void> {
     }),
   );
 
+  // ---- backup (acts at once, outside Save/Cancel)
+  const backupStatus = h("p", { class: "muted", role: "status" });
+  const exportBtn = h("button", { type: "button", class: "btn" }, icon("download"), h("span", {}, t("backupExport")));
+  const importBtn = h("button", { type: "button", class: "btn" }, icon("upload"), h("span", {}, t("backupImport")));
+  const backupRun = async (run: () => Promise<string>) => {
+    exportBtn.disabled = importBtn.disabled = true;
+    backupStatus.textContent = "";
+    backupStatus.textContent = await backupAction(run);
+    exportBtn.disabled = importBtn.disabled = false;
+  };
+  exportBtn.addEventListener("click", () => void backupRun(exportBackup));
+  importBtn.addEventListener("click", () => void backupRun(() => importBackup(importBtn.closest("dialog"))));
+
   // ---- keyboard shortcuts and snippets (copies, saved with the rest)
   const keyMap = getKeyMap();
   const snippets = copySnippets();
@@ -231,7 +245,15 @@ export async function openSettings(tab?: TabId): Promise<void> {
   const panel = (id: TabId, ...children: Node[]) =>
     h("section", { class: "settings-panel", id: `settings-panel-${id}`, role: "tabpanel", "aria-labelledby": `settings-tab-${id}` }, ...children);
   const panels: Record<TabId, HTMLElement> = {
-    general: panel("general", field(t("language"), language), h("p", { class: "muted" }, t("languageHelp"))),
+    general: panel(
+      "general",
+      field(t("language"), language),
+      h("p", { class: "muted" }, t("languageHelp")),
+      h("h4", {}, t("backup")),
+      h("p", { class: "muted" }, t("backupHelp")),
+      h("div", { class: "settings-row backup-row" }, exportBtn, importBtn),
+      backupStatus,
+    ),
     appearance: panel(
       "appearance",
       h("div", { class: "settings-grid" }, field(t("theme"), theme), field(t("colorScheme"), scheme)),

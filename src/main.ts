@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { api, errorText } from "./api";
+import { PROFILES_CHANGED } from "./backup";
 import { alertBox } from "./dialogs";
 import { clear, h, icon } from "./dom";
 import { describe, FavoritesBar, setDotColor } from "./favorites";
@@ -56,6 +57,8 @@ export class App {
       this.favbar.render();
       this.renderTabs();
     });
+    // A backup was imported: connections and favorites changed.
+    window.addEventListener(PROFILES_CHANGED, () => void this.reload().then(() => this.renderTabs()));
     window.addEventListener("beforeunload", () => this.tabs.forEach((tab) => tab.dispose()));
     this.renderTabs();
     const startup = startupLayout();
@@ -496,6 +499,7 @@ export class App {
       setDotColor(dot, tab.active.opts.color);
       const count = tab.count;
       const waiting = tab.waiting;
+      const logging = tab.panes.some((p) => p instanceof TerminalPane && p.logPath !== null);
       const el = h(
         "div",
         {
@@ -507,6 +511,7 @@ export class App {
         dot,
         h("span", { class: "tab-title" }, tab.title),
         waiting && h("span", { class: "tab-waiting", title: t("tabWaiting"), "aria-label": t("tabWaiting") }, icon("lock")),
+        logging && h("span", { class: "tab-rec", title: t("tabLogging"), "aria-label": t("tabLogging") }),
         count > 1 && h("span", { class: "tab-panes", title: t("panesCount", { count }) }, String(count)),
         closeBtn,
       );
@@ -540,6 +545,11 @@ export class App {
                 { label: t("copy"), hint: keyHint("copy"), action: () => void active.copy() },
                 { label: t("paste"), hint: keyHint("paste"), action: () => void active.paste() },
                 { label: t("snippets"), icon: icon("snippet"), hint: keyHint("snippets"), action: () => this.snippetsMenu() },
+                ...(active.logPath
+                  ? [{ label: t("logStop"), icon: icon("close"), action: () => void active.stopLog() }]
+                  : active.session !== null
+                    ? [{ label: t("logStart"), icon: icon("download"), action: () => void active.startLog() }]
+                    : []),
               ]
             : []),
           { label: t("layoutSave"), icon: icon("plus"), hint: keyHint("saveLayout"), action: () => void this.saveLayout(tab) },

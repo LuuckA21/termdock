@@ -106,6 +106,14 @@ The SSH server is treated as untrusted: it controls names, listings, sizes, cont
 - Privacy: a check is one HTTPS request to GitHub at start and once a day (downloads come from GitHub's CDN; GitHub sees the IP address); it can be turned off in Settings.
 - Residual risk: whoever holds the private key and can publish releases on this repository can ship an update. If the key is lost, installed copies cannot update themselves any more and must be reinstalled by hand once.
 
+### Backup and session logs (`src-tauri/src/backup.rs`, `src-tauri/src/sessionlog.rs`, `src/backup.ts`)
+
+- A backup holds the connections (hosts, ports, user names, key file paths, jump hosts, forwards), favorites and the interface's settings, layouts and snippets. It never holds passwords, private keys, passphrases or known host keys: those stay in the keychain, on disk and in `known_hosts`. It still describes the user's servers, so on Unix it is written `0600` (temp file + rename) and the UI says where it went.
+- Paths come from native dialogs opened by the backend only; the UI never names a file to read or write.
+- Importing is a two-step operation: the file is read (at most 16 MiB) and checked as a whole first (format and version, each connection validated as on save, unique ids, jump chains resolvable, at most 5,000 connections), and a preview shows what it holds and which connections are new; nothing changes until the user picks *Add* or *Replace*, and the preview expires after 10 minutes. The UI warns to import only one's own or trusted backups, since a connection can carry port forwards and a jump host (they still take effect only when the user opens it, after the usual host-key and authentication steps).
+- *Replace* deletes the saved passwords of connections that go away or whose host, port, user or authentication change, as editing a connection does, so a password cannot be offered to a different server under a reused id. *Add* never changes existing connections. The interface's part is validated like the settings saved in local storage.
+- A session log is off unless started for one terminal, after a warning that it will contain everything shown on screen, secrets printed there included (input that the terminal does not echo, such as passwords at a prompt, is not in it). It is created `0600` on Unix, escape sequences are removed so the file is safe to view with `cat`, and it stops when the session ends, on request or when the app closes. If the disk cannot keep up, output is dropped (bounded memory) and the log says so.
+
 ### Storage
 
 - `profiles.json`, `known_hosts` and `editor.json` contain no secrets; on Unix they are created `0600` in a `0700` directory and written atomically (temp file + rename) so a crash cannot leave a truncated file.

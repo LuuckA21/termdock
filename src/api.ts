@@ -11,6 +11,7 @@ import type {
   SessionNotice,
   EditEvent,
   EditorInfo,
+  ImportPreview,
   PickedFile,
   PlanInfo,
   RunProgress,
@@ -97,6 +98,16 @@ export const api = {
   /** Shows a native file picker for the editor; resolves with the new choice, or null if cancelled. */
   editorPick: () => invoke<EditorInfo | null>("editor_pick"),
   editorReset: () => invoke<void>("editor_reset"),
+
+  /** Shows a save dialog and logs the session there; resolves with the path, or null if cancelled. */
+  sessionLogStart: (id: number, title: string) => invoke<string | null>("session_log_start", { id, title }),
+  sessionLogStop: (id: number) => invoke<boolean>("session_log_stop", { id }),
+  /** Shows a save dialog and writes a backup (connections + `ui`); resolves with the path, or null. */
+  configExport: (ui: unknown) => invoke<string | null>("config_export", { ui }),
+  /** Shows an open dialog and reads a backup; nothing changes until `configImportApply`. */
+  configImportPick: () => invoke<ImportPreview | null>("config_import_pick"),
+  configImportApply: (token: string, replace: boolean) => invoke<number>("config_import_apply", { token, replace }),
+  configImportCancel: () => invoke<void>("config_import_cancel"),
 
   checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   installUpdate: (onProgress: (p: UpdateProgress) => void) => {

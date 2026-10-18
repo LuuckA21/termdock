@@ -1,7 +1,9 @@
+mod backup;
 mod commands;
 mod edit;
 mod editor;
 mod prompts;
+mod sessionlog;
 mod sftp;
 mod state;
 mod transfer;
@@ -34,6 +36,8 @@ pub fn run() {
             app.manage(AppState::new(&dir)?);
             app.manage(editor::EditorChoice::load(&dir));
             app.manage(updates::PendingUpdate::default());
+            app.manage(sessionlog::Logs::default());
+            app.manage(backup::PendingImport::default());
             edit::remove_stale_copies();
             let sftp_state = sftp::SftpState::default();
             app.manage(sftp_state.edits());
@@ -57,6 +61,12 @@ pub fn run() {
             commands::answer_prompt,
             commands::preview_ssh_config,
             commands::import_ssh_config,
+            sessionlog::session_log_start,
+            sessionlog::session_log_stop,
+            backup::config_export,
+            backup::config_import_pick,
+            backup::config_import_apply,
+            backup::config_import_cancel,
             updates::check_update,
             updates::install_update,
             sftp::sftp_open,
@@ -100,6 +110,10 @@ pub fn run() {
 pub(crate) fn close_sessions_and_edits(handle: &tauri::AppHandle) {
     if let Some(state) = handle.try_state::<AppState>() {
         state.close_all();
+    }
+    // Log files are closed once their queued output is written.
+    if let Some(logs) = handle.try_state::<sessionlog::Logs>() {
+        logs.stop_all();
     }
     if let Some(edits) = handle.try_state::<std::sync::Arc<edit::EditState>>() {
         edits.clear();

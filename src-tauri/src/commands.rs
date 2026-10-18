@@ -190,6 +190,7 @@ pub enum OpenTarget {
 pub async fn open_session(
     state: State<'_, AppState>,
     sftp: State<'_, SftpState>,
+    logs: State<'_, crate::sessionlog::Logs>,
     target: OpenTarget,
     size: TermSize,
     on_data: Channel<InvokeResponseBody>,
@@ -199,6 +200,7 @@ pub async fn open_session(
 
     let sessions = state.sessions.clone();
     let browsers = sftp.inner().clone();
+    let logs = logs.inner().clone();
     let exit_notices = on_notice.clone();
     // A shell can exit before connect/spawn returns: then the handle must
     // not be registered afterwards as if it were alive.
@@ -206,6 +208,7 @@ pub async fn open_session(
     let exited_flag = exited.clone();
     let sink: EventSink = Arc::new(move |event| match event {
         SessionEvent::Data(bytes) => {
+            logs.write(id, &bytes);
             let _ = on_data.send(InvokeResponseBody::Raw(bytes));
         }
         SessionEvent::Exit { code, message } => {
@@ -214,6 +217,7 @@ pub async fn open_session(
             sessions.remove(&id);
             drop(sessions);
             browsers.session_ended(id);
+            logs.stop(id);
             let _ = exit_notices.send(SessionNotice::Exit { code, message });
         }
     });
@@ -303,9 +307,15 @@ pub fn resize_session(state: State<'_, AppState>, id: u32, size: TermSize) -> Cm
 }
 
 #[tauri::command]
-pub async fn close_session(state: State<'_, AppState>, sftp: State<'_, SftpState>, id: u32) -> CmdResult<()> {
+pub async fn close_session(
+    state: State<'_, AppState>,
+    sftp: State<'_, SftpState>,
+    logs: State<'_, crate::sessionlog::Logs>,
+    id: u32,
+) -> CmdResult<()> {
     // File transfers on this connection are cancelled and cleaned up first.
     sftp.close_session(id).await;
+    logs.stop(id);
     if let Some(h) = state.sessions.lock().unwrap().remove(&id) {
         h.close();
     }
