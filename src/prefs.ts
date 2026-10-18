@@ -1,5 +1,5 @@
-// Appearance preferences: app theme, terminal colours, font, cursor and
-// scrollback. Stored in localStorage and validated on every read, so a
+// Terminal preferences: app theme, terminal colours, font, cursor,
+// scrollback and reconnection. Stored in localStorage and validated on every read, so a
 // hand-edited or older value falls back to the default instead of breaking
 // the terminals.
 import { isSchemeId, SCHEMES, type Scheme, type SchemeId } from "./schemes";
@@ -18,6 +18,8 @@ export interface Prefs {
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
   scrollback: number;
+  /** Reconnect by itself when an SSH connection drops. */
+  autoReconnect: boolean;
 }
 
 const DEFAULT_FONT_STACK =
@@ -39,6 +41,7 @@ export const DEFAULTS: Prefs = {
   cursorStyle: "block",
   cursorBlink: true,
   scrollback: 10_000,
+  autoReconnect: true,
 };
 
 const STORAGE_KEY = "termdock.prefs";
@@ -74,6 +77,7 @@ export function normalize(raw: unknown): Prefs {
         : DEFAULTS.cursorStyle,
     cursorBlink: typeof o.cursorBlink === "boolean" ? o.cursorBlink : DEFAULTS.cursorBlink,
     scrollback: clamp(o.scrollback, LIMITS.scrollback.min, LIMITS.scrollback.max, DEFAULTS.scrollback),
+    autoReconnect: typeof o.autoReconnect === "boolean" ? o.autoReconnect : DEFAULTS.autoReconnect,
   };
 }
 

@@ -31,6 +31,8 @@ pub struct Stripper {
     cr: bool,
     /// A 0xC2 byte waiting to see whether it starts a C1 control (U+0080..U+009F).
     c2: bool,
+    /// A space waiting to see whether a carriage return follows.
+    space: bool,
     string_len: usize,
 }
 
@@ -78,6 +80,16 @@ impl Stripper {
         }
     }
 
+    /// The output stops here (a note of the log's own follows, or the end):
+    /// a held space is written, a sequence cut short is dropped.
+    pub fn break_off(&mut self, out: &mut Vec<u8>) {
+        if self.c2 {
+            out.push(0xc2);
+        }
+        self.flush_space(out);
+        *self = Self::default();
+    }
+
     fn string(&mut self) -> State {
         self.string_len = 0;
         State::String
@@ -102,17 +114,44 @@ impl Stripper {
         if self.cr && b != b'\n' {
             self.cr = false;
         }
+        // A space right before a carriage return goes too: shells write
+        // " \r" where a long command line wraps on screen, and the next
+        // character overwrites that space.
         match b {
-            0x1b => self.state = State::Escape,
-            0xc2 => self.c2 = true,
-            b'\r' => self.cr = true,
+            0x1b => {
+                self.flush_space(out);
+                self.state = State::Escape;
+            }
+            0xc2 => {
+                self.flush_space(out);
+                self.c2 = true;
+            }
+            b' ' => {
+                self.flush_space(out);
+                self.space = true;
+            }
+            b'\r' => {
+                self.space = false;
+                self.cr = true;
+            }
             b'\n' => {
+                self.flush_space(out);
                 self.cr = false;
                 out.push(b'\n');
             }
-            b'\t' => out.push(b),
-            0x00..=0x1f | 0x7f => {}
-            _ => out.push(b),
+            // Other controls are dropped.
+            0x00..=0x08 | 0x0b..=0x1f | 0x7f => {}
+            _ => {
+                self.flush_space(out);
+                out.push(b);
+            }
+        }
+    }
+
+    fn flush_space(&mut self, out: &mut Vec<u8>) {
+        if self.space {
+            self.space = false;
+            out.push(b' ');
         }
     }
 }
@@ -178,6 +217,25 @@ mod tests {
         assert_eq!(strip(&["città ✓\n".as_bytes()]), "città ✓\n");
         // A rewritten progress line keeps its text, without the bare CRs.
         assert_eq!(strip(&[b"10%\r50%\r100%\r\n"]), "10%50%100%\n");
+    }
+
+    #[test]
+    fn wrapped_command_lines_get_no_extra_space() {
+        // What bash prints when a typed line wraps: " \r" at the margin.
+        assert_eq!(strip(&[b"$ echo abc", b"de \r", b"fgh\r\n"]), "$ echo abcdefgh\n");
+        // Spaces elsewhere stay, also across chunks and around sequences.
+        assert_eq!(strip(&[b"a  b ", b" c\x1b[0m d\t e\n"]), "a  b  c d\t e\n");
+        assert_eq!(strip(&["x \u{e0}\n".as_bytes()]), "x \u{e0}\n");
+    }
+
+    #[test]
+    fn break_off_writes_what_is_held_and_forgets_cut_sequences() {
+        let mut s = Stripper::new();
+        let mut out = Vec::new();
+        s.feed(b"$ \x1b]0;tit", &mut out);
+        s.break_off(&mut out);
+        s.feed(b"le\n", &mut out);
+        assert_eq!(String::from_utf8(out).unwrap(), "$ le\n");
     }
 
     #[test]

@@ -12,6 +12,7 @@
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -503,20 +504,29 @@ pub async fn connect(params: SshConnect, sink: EventSink) -> Result<SessionHandl
     let (mut read_half, write_half) = channel.split();
     let (session, mut rx) = SessionHandle::new(Some((handle.clone(), login_user)));
 
+    // Set when the session is closed on purpose, so the end is not taken
+    // for a dropped connection.
+    let closing = Arc::new(AtomicBool::new(false));
+
     // Input side.
     let writer_handle = handle.clone();
+    let closed_here = closing.clone();
     tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            match msg {
-                Control::Input(data) => {
+        loop {
+            match rx.recv().await {
+                Some(Control::Input(data)) => {
                     if write_half.data(&data[..]).await.is_err() {
                         break;
                     }
                 }
-                Control::Resize(s) => {
+                Some(Control::Resize(s)) => {
                     let _ = write_half.window_change(s.cols.into(), s.rows.into(), 0, 0).await;
                 }
-                Control::Close => break,
+                // Closed, or every handle to the session dropped.
+                Some(Control::Close) | None => {
+                    closed_here.store(true, Ordering::SeqCst);
+                    break;
+                }
             }
         }
         let _ = write_half.close().await;
@@ -529,6 +539,7 @@ pub async fn connect(params: SshConnect, sink: EventSink) -> Result<SessionHandl
     tokio::spawn(async move {
         let mut code = None;
         let mut message = None;
+        let mut channel_closed = false;
         while let Some(msg) = read_half.wait().await {
             match msg {
                 ChannelMsg::Data { data } => sink(SessionEvent::Data(data.to_vec())),
@@ -545,15 +556,22 @@ pub async fn connect(params: SshConnect, sink: EventSink) -> Result<SessionHandl
                             .to_owned(),
                     )
                 }
-                ChannelMsg::Close => break,
+                ChannelMsg::Close => {
+                    channel_closed = true;
+                    break;
+                }
                 _ => {}
             }
         }
+        // The server closes the channel when the shell ends, with its exit
+        // status; a connection that just stops (keepalive unanswered, reset,
+        // server gone) ends without either.
+        let lost = !channel_closed && code.is_none() && message.is_none() && !closing.load(Ordering::SeqCst);
         for task in forward_tasks {
             task.abort();
         }
         disconnect_all(&handles).await;
-        sink(SessionEvent::Exit { code, message });
+        sink(SessionEvent::Exit { code, message, lost });
     });
 
     Ok(session)

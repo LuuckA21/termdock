@@ -9,6 +9,7 @@ use termdock_core::store::ProfileStore;
 use termdock_core::vault::{MemoryVault, OsVault, Vault};
 use tracing::warn;
 
+use crate::commands::Lost;
 use crate::prompts::PendingPrompts;
 
 pub struct AppState {
@@ -16,6 +17,9 @@ pub struct AppState {
     pub vault: Arc<dyn Vault>,
     pub known_hosts: Arc<KnownHosts>,
     pub sessions: Arc<Mutex<HashMap<u32, SessionHandle>>>,
+    /// SSH sessions whose connection dropped, by id, until they reconnect
+    /// or their terminal is closed.
+    pub lost: Arc<Mutex<HashMap<u32, Lost>>>,
     pub prompts: Arc<PendingPrompts>,
     pub next_session: AtomicU32,
 }
@@ -33,13 +37,16 @@ impl AppState {
             vault,
             known_hosts: Arc::new(KnownHosts::new(config_dir.join("known_hosts")).with_openssh_user_file()),
             sessions: Arc::default(),
+            lost: Arc::default(),
             prompts: Arc::default(),
             next_session: AtomicU32::new(1),
         })
     }
 
     pub fn close_all(&self) {
-        for (_, h) in self.sessions.lock().unwrap().drain() {
+        let mut sessions = self.sessions.lock().unwrap();
+        self.lost.lock().unwrap().clear();
+        for (_, h) in sessions.drain() {
             h.close();
         }
     }

@@ -8,6 +8,7 @@ import type {
   Profile,
   ProfileList,
   PromptAnswer,
+  Reconnected,
   SessionNotice,
   EditEvent,
   EditorInfo,
@@ -53,6 +54,8 @@ export const api = {
   writeSession: (id: number, data: string, binary = false) => invoke<void>("write_session", { id, data, binary }),
   resizeSession: (id: number, size: TermSize) => invoke<void>("resize_session", { id, size }),
   closeSession: (id: number) => invoke<void>("close_session", { id }),
+  /** One attempt to connect again a session whose connection dropped (same id). */
+  reconnectSession: (id: number, size: TermSize) => invoke<Reconnected>("reconnect_session", { id, size }),
   answerPrompt: (promptId: Uuid, answer: PromptAnswer) =>
     invoke<boolean>("answer_prompt", { promptId, answer }),
 

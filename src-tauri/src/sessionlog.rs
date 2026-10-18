@@ -28,8 +28,15 @@ use crate::state::AppState;
 /// the excess is dropped (and the log says so).
 const QUEUE: usize = 4096;
 
+enum Entry {
+    /// Terminal output, written as plain text.
+    Output(Vec<u8>),
+    /// A line of the log's own, with the time.
+    Note(&'static str),
+}
+
 struct Log {
-    tx: SyncSender<Vec<u8>>,
+    tx: SyncSender<Entry>,
     lost: Arc<AtomicBool>,
 }
 
@@ -41,11 +48,20 @@ impl Logs {
     /// Called with every chunk a session prints.
     pub fn write(&self, session: u32, bytes: &[u8]) {
         if let Some(log) = self.0.lock().unwrap().get(&session) {
-            match log.tx.try_send(bytes.to_vec()) {
+            match log.tx.try_send(Entry::Output(bytes.to_vec())) {
                 Ok(()) => {}
                 Err(TrySendError::Full(_)) => log.lost.store(true, Ordering::Relaxed),
                 Err(TrySendError::Disconnected(_)) => {}
             }
+        }
+    }
+
+    /// Adds a line such as "connection lost" (with the time) to the log of
+    /// `session`, if it has one.
+    pub fn note(&self, session: u32, text: &'static str) {
+        if let Some(log) = self.0.lock().unwrap().get(&session) {
+            // Not worth blocking for; a full queue already says output is missing.
+            let _ = log.tx.try_send(Entry::Note(text));
         }
     }
 
@@ -86,21 +102,30 @@ fn create_private(path: &PathBuf) -> std::io::Result<File> {
     Ok(file)
 }
 
-fn writer(mut file: File, rx: std::sync::mpsc::Receiver<Vec<u8>>, lost: Arc<AtomicBool>) {
+fn writer(mut file: File, rx: std::sync::mpsc::Receiver<Entry>, lost: Arc<AtomicBool>) {
     let mut stripper = Stripper::new();
     let mut text = Vec::new();
     let mut warned = false;
-    while let Ok(chunk) = rx.recv() {
+    while let Ok(entry) = rx.recv() {
         text.clear();
         if !warned && lost.load(Ordering::Relaxed) {
             warned = true;
             text.extend_from_slice(b"\n# [some output is missing here: the disk was too slow]\n");
         }
-        stripper.feed(&chunk, &mut text);
+        match entry {
+            Entry::Output(chunk) => stripper.feed(&chunk, &mut text),
+            Entry::Note(note) => {
+                stripper.break_off(&mut text);
+                text.extend_from_slice(format!("\n# {note} {}\n", utc_stamp(now())).as_bytes());
+            }
+        }
         if file.write_all(&text).is_err() {
             return;
         }
     }
+    text.clear();
+    stripper.break_off(&mut text);
+    let _ = file.write_all(&text);
     let _ = writeln!(file, "\n# log ended {}", utc_stamp(now()));
 }
 

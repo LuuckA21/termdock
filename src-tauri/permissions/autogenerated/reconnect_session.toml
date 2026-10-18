@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reconnect-session"
+description = "Enables the reconnect_session command without any pre-configured scope."
+commands.allow = ["reconnect_session"]
+
+[[permission]]
+identifier = "deny-reconnect-session"
+description = "Denies the reconnect_session command without any pre-configured scope."
+commands.deny = ["reconnect_session"]

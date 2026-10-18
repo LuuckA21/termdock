@@ -12,7 +12,7 @@ import { actionFor, keyHint } from "./keys";
 import { fontStack, getPrefs, onPrefsChange, terminalScheme } from "./prefs";
 import type { Pane, PaneOptions, PaneState } from "./pane";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./search";
-import type { PromptAnswer, SessionNotice } from "./types";
+import type { PromptAnswer, Reconnected, SessionNotice } from "./types";
 
 
 const DIM = "\x1b[2m";
@@ -47,8 +47,14 @@ function osc7Path(data: string): string | null {
 }
 
 const RED = "\x1b[31m";
+const YELLOW = "\x1b[33m";
 const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
+
+/** Seconds before each automatic reconnection attempt; the last repeats. */
+const RETRY_DELAYS = [2, 5, 10, 20, 30];
+/** Automatic attempts before giving up (about five minutes in all). */
+const MAX_ATTEMPTS = 12;
 
 interface TerminalOptions extends PaneOptions {
   vaultAvailable: boolean;
@@ -68,6 +74,10 @@ export class TerminalPane implements Pane {
   private prompts = new AbortController();
   /** Bumped on every (re)connect so late events of an old session are ignored. */
   private generation = 0;
+  /** Bumped when a dropped connection starts (or stops) being reconnected. */
+  private reconnectRun = 0;
+  /** While waiting before a reconnection attempt: Enter tries now, Esc stops. */
+  private retryWait: ((go: boolean) => void) | null = null;
   private readonly resizeObserver: ResizeObserver;
   private readonly unsubscribePrefs: () => void;
   private disposed = false;
@@ -196,8 +206,9 @@ export class TerminalPane implements Pane {
           else void this.rejectStalePrompt(notice);
         },
       );
-      if (gen !== this.generation || this.disposed) {
-        void api.closeSession(id);
+      if (gen !== this.generation || this.disposed || this.state === "closed") {
+        // Not wanted any more, or it already ended (its notice came first).
+        void api.closeSession(id).catch(() => {});
         return;
       }
       this.sessionId = id;
@@ -284,6 +295,7 @@ export class TerminalPane implements Pane {
     this.disposed = true;
     this.titleListeners.clear();
     this.generation++;
+    this.retryWait?.(false);
     this.prompts.abort();
     this.resizeObserver.disconnect();
     this.unsubscribePrefs();
@@ -331,6 +343,11 @@ export class TerminalPane implements Pane {
 
   /** `binary`: xterm.js delivers raw bytes (some mouse reports) as one char per byte. */
   private input(data: string, binary: boolean): void {
+    if (this.retryWait) {
+      if (data === "\r") this.retryWait(true);
+      else if (data === "\x1b" || data === "\x03") this.retryWait(false);
+      return;
+    }
     if (this.state === "closed") {
       if (data === "\r") void this.connect();
       return;
@@ -379,6 +396,10 @@ export class TerminalPane implements Pane {
         break;
       }
       case "exit": {
+        if (n.lost && this.sessionId !== null) {
+          void this.reconnect(this.sessionId);
+          break;
+        }
         const detail = [n.code !== null ? t("exitCode", { code: n.code }) : null, n.message && plain(n.message)]
           .filter(Boolean)
           .join(", ");
@@ -387,6 +408,73 @@ export class TerminalPane implements Pane {
         break;
       }
     }
+  }
+
+  /**
+   * The connection of session `id` dropped: connects it again under the same
+   * id, by itself after a pause (Enter: now, Esc: stop) if the preference is
+   * on, otherwise when Enter is pressed. Gives up on errors that need the
+   * user (authentication, host key) or after MAX_ATTEMPTS.
+   */
+  private async reconnect(id: number): Promise<void> {
+    const run = ++this.reconnectRun;
+    const gen = this.generation;
+    const stale = () => run !== this.reconnectRun || gen !== this.generation || this.disposed;
+    const auto = getPrefs().autoReconnect;
+    this.setState("connecting");
+    this.term.write(`\r\n${YELLOW}[${t("connectionLost")}]${RESET}\r\n`);
+    for (let attempt = 1; ; attempt++) {
+      const delay = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)]!;
+      this.term.write(
+        `${DIM}${auto ? t("reconnectIn", { seconds: delay, attempt, max: MAX_ATTEMPTS }) : t("reconnectPrompt")}${RESET}\r\n`,
+      );
+      const go = await this.waitRetry(auto ? delay : null);
+      if (stale()) return;
+      if (!go) return this.giveUp(id, t("reconnectStopped"));
+      this.term.write(`${DIM}${t("connecting", { target: this.opts.subtitle })}${RESET}\r\n`);
+      let res: Reconnected;
+      try {
+        res = await api.reconnectSession(id, { cols: this.term.cols, rows: this.term.rows });
+      } catch (e) {
+        res = { status: "failed", error: errorText(e), retry: false };
+      }
+      if (stale()) return;
+      switch (res.status) {
+        case "connected":
+          this.term.write(`${CYAN}» ${t("reconnected")}${RESET}\r\n`);
+          this.setState("open");
+          this.refit();
+          void api.resizeSession(id, { cols: this.term.cols, rows: this.term.rows }).catch(() => {});
+          return;
+        case "closed":
+          // Its end was already reported (or the pane closed it).
+          if (this.state !== "closed" && this.sessionId === id) this.ended();
+          return;
+        case "failed":
+          this.term.write(`${RED}${plain(t("connectionFailed", { error: res.error }))}${RESET}\r\n`);
+          if (!res.retry || (auto && attempt >= MAX_ATTEMPTS)) return this.giveUp(id, t("reconnectGaveUp"));
+      }
+    }
+  }
+
+  /** Resolves true after `seconds` (never if null) or on Enter, false on Esc or when the pane closes. */
+  private waitRetry(seconds: number | null): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timer = seconds === null ? undefined : setTimeout(() => done(true), seconds * 1000);
+      const done = (go: boolean) => {
+        clearTimeout(timer);
+        this.retryWait = null;
+        resolve(go);
+      };
+      this.retryWait = done;
+    });
+  }
+
+  /** Stops reconnecting: the session (and its log) ends; Enter opens a new one. */
+  private giveUp(id: number, reason: string): void {
+    void api.closeSession(id).catch(() => {});
+    this.term.write(`${DIM}[${reason}] ${t("pressEnterReconnectOnly")}${RESET}\r\n`);
+    this.ended();
   }
 
   /**
@@ -421,6 +509,8 @@ export class TerminalPane implements Pane {
   }
 
   private ended(): void {
+    this.reconnectRun++;
+    this.retryWait?.(false);
     this.sessionId = null;
     // The backend closed the log with the session.
     this.logPath = null;

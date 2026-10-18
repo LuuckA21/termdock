@@ -55,6 +55,7 @@ pub fn run() {
             commands::forget_host_key,
             commands::list_shells,
             commands::open_session,
+            commands::reconnect_session,
             commands::write_session,
             commands::resize_session,
             commands::close_session,
