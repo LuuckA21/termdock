@@ -732,7 +732,7 @@ impl Sftp {
         drop(out);
         let _ = src.shutdown().await;
         tmp.persist(local).map_err(|e| Error::Io(e.error))?;
-        mark_downloaded(local);
+        mark_downloaded(local).await;
         Ok(done)
     }
 
@@ -925,14 +925,14 @@ impl Sftp {
 /// so Windows asks before running it (Mark of the Web). Best effort: file
 /// systems without alternate data streams just ignore it.
 #[cfg(windows)]
-fn mark_downloaded(path: &Path) {
+async fn mark_downloaded(path: &Path) {
     let mut stream = path.as_os_str().to_owned();
     stream.push(":Zone.Identifier");
-    let _ = std::fs::write(stream, "[ZoneTransfer]\r\nZoneId=3\r\n");
+    let _ = tokio::fs::write(stream, "[ZoneTransfer]\r\nZoneId=3\r\n").await;
 }
 
 #[cfg(not(windows))]
-fn mark_downloaded(_path: &Path) {}
+async fn mark_downloaded(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {

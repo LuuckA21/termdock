@@ -45,7 +45,7 @@ Termdock holds credentials for remote machines and runs local shells, so the des
 - A remembered password is deleted when the profile's host, port, user or authentication method changes.
 - Quick-connect sessions (no saved profile) never store anything.
 - A remembered password or passphrase that is rejected is deleted at once instead of being replayed on every login (which could trip MaxAuthTries or fail2ban).
-- Prompts expire after 3 minutes; an unanswered prompt is treated as "no". A question from a session in a background tab waits until that tab is shown, and a password field does not take the focus while the user is typing in another pane, so keys meant for one server cannot end up answering another.
+- Prompts expire after 3 minutes; an unanswered prompt is treated as "no". A question from a session in a background tab waits until that tab is shown (the tab shows a lock mark meanwhile), and a password field does not take the focus while the user is typing in another pane, so keys meant for one server cannot end up answering another.
 
 ### Desktop shell (Tauri 2)
 

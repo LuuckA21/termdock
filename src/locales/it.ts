@@ -192,6 +192,7 @@ const it: Dict = {
   localShell: "Terminale locale",
   newTab: "Nuova scheda",
   closeTab: "Chiudi scheda",
+  tabWaiting: "Una connessione in questa scheda aspetta una tua risposta",
   connecting: "Connessione a {target}…",
   sessionEnded: "Sessione terminata",
   exitCode: "codice {code}",

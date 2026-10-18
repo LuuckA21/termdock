@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-18
+
+### Fixed
+
+- A slow keychain (or one waiting for its unlock dialog), a slow disk or a passphrase-protected key no longer holds up the other sessions while a connection logs in; opening a file for editing, choosing the editor and installing an update no longer block the app either.
+- After switching language, open terminals and file browsers show their buttons, tooltips and item count in the new language.
+- A tab whose connection waits for a host-key or password answer shows a lock mark until you open it.
+
 ## [0.12.0] - 2026-10-18
 
 ### Security
@@ -197,7 +205,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/LuuckA21/termdock/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/LuuckA21/termdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/LuuckA21/termdock/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/LuuckA21/termdock/compare/v0.10.0...v0.10.1

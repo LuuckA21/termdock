@@ -6,8 +6,8 @@
 // dialogs opened by the backend; this module never handles local paths.
 import { api, errorText } from "./api";
 import { confirmBox, modal } from "./dialogs";
-import { clear, displayName, h, icon } from "./dom";
-import { t } from "./i18n";
+import { clear, displayName, h, icon, setLabel } from "./dom";
+import { t, type MsgKey } from "./i18n";
 import { showMenu } from "./menu";
 import type { Pane, PaneOptions, PaneState } from "./pane";
 import type { TerminalPane } from "./terminal";
@@ -66,6 +66,7 @@ function titleUser(title: string): string | null {
 export class FilesPane implements Pane {
   readonly el: HTMLElement;
   state: PaneState = "connecting";
+  readonly waiting = false;
   private id: number | null = null;
   private home = "/";
   private listing: RemoteListing | null = null;
@@ -98,13 +99,16 @@ export class FilesPane implements Pane {
   private readonly progress: HTMLProgressElement;
   private readonly cancelBtn: HTMLButtonElement;
   private readonly actions: HTMLButtonElement[] = [];
+  /** Buttons labelled by their tooltip, redone when the language changes. */
+  private readonly labelled: [HTMLElement, MsgKey][] = [];
+  /** A status that stays (the item count): redone when the language changes. */
+  private lastStatus: (() => string) | null = null;
 
   constructor(readonly opts: FilesOptions) {
     this.pathInput = h("input", {
       class: "input files-path",
       spellcheck: "false",
       autocomplete: "off",
-      "aria-label": t("filesPath"),
     });
     this.pathInput.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
@@ -113,7 +117,7 @@ export class FilesPane implements Pane {
       const typed = this.pathInput.value;
       void this.navigate(listing && typed === displayName(listing.path) ? listing.path : typed);
     });
-    this.list = h("div", { class: "files-list", role: "listbox", tabindex: "0", "aria-label": t("files") });
+    this.list = h("div", { class: "files-list", role: "listbox", tabindex: "0" });
     this.list.addEventListener("keydown", (e) => this.onKey(e));
     this.list.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -122,21 +126,22 @@ export class FilesPane implements Pane {
     });
     this.status = h("span", { class: "files-status-text", role: "status" });
     this.progress = h("progress", { max: "1", hidden: true });
-    this.cancelBtn = h("button", { type: "button", class: "btn btn-ghost", hidden: true }, t("cancel"));
+    this.cancelBtn = h("button", { type: "button", class: "btn btn-ghost", hidden: true });
     this.cancelBtn.addEventListener("click", () => {
       if (this.transfer !== null) void api.sftpCancel(this.transfer);
     });
 
-    const tool = (name: Parameters<typeof icon>[0], label: string, action: () => void) => {
-      const b = h("button", { type: "button", class: "icon-btn", title: label, "aria-label": label }, icon(name));
+    const tool = (name: Parameters<typeof icon>[0], label: MsgKey, action: () => void) => {
+      const b = h("button", { type: "button", class: "icon-btn" }, icon(name));
       b.addEventListener("click", action);
       this.actions.push(b);
+      this.labelled.push([b, label]);
       return b;
     };
     this.userName = h("span", { class: "files-user-name" });
     this.userBtn = h(
       "button",
-      { type: "button", class: "btn btn-ghost files-user", title: t("filesUserMenu"), "aria-label": t("filesUserMenu") },
+      { type: "button", class: "btn btn-ghost files-user" },
       icon("user"),
       this.userName,
     );
@@ -145,21 +150,19 @@ export class FilesPane implements Pane {
       this.userMenu(r.left, r.bottom + 4);
     });
     this.actions.push(this.userBtn);
+    this.labelled.push([this.userBtn, "filesUserMenu"]);
     this.suggestion = h("div", { class: "files-suggest", hidden: true });
-    this.cwdBtn = h(
-      "button",
-      { type: "button", class: "icon-btn", title: t("filesTerminalFolder"), "aria-label": t("filesTerminalFolder") },
-      icon("terminal"),
-    );
+    this.cwdBtn = h("button", { type: "button", class: "icon-btn" }, icon("terminal"));
     this.cwdBtn.addEventListener("click", () => {
       const folder = this.terminalFolder();
       if (folder) void this.navigate(folder);
     });
     this.followBtn = h(
       "button",
-      { type: "button", class: "icon-btn toggle", title: t("filesFollow"), "aria-label": t("filesFollow"), "aria-pressed": "false" },
+      { type: "button", class: "icon-btn toggle", "aria-pressed": "false" },
       icon("link"),
     );
+    this.labelled.push([this.followBtn, "filesFollow"]);
     this.followBtn.addEventListener("click", () => {
       this.follow = !this.follow;
       this.followBtn.setAttribute("aria-pressed", String(this.follow));
@@ -169,14 +172,14 @@ export class FilesPane implements Pane {
       "div",
       { class: "files-bar" },
       this.userBtn,
-      tool("arrowUp", t("filesUp"), () => void this.up()),
-      tool("home", t("filesHome"), () => void this.navigate(this.home)),
-      tool("refresh", t("filesRefresh"), () => void this.refresh()),
+      tool("arrowUp", "filesUp", () => void this.up()),
+      tool("home", "filesHome", () => void this.navigate(this.home)),
+      tool("refresh", "filesRefresh", () => void this.refresh()),
       this.cwdBtn,
       this.followBtn,
       this.pathInput,
-      tool("folderPlus", t("filesNewFolder"), () => void this.mkdir()),
-      tool("upload", t("filesUpload"), () => void this.upload()),
+      tool("folderPlus", "filesNewFolder", () => void this.mkdir()),
+      tool("upload", "filesUpload", () => void this.upload()),
     );
     this.el = h(
       "div",
@@ -187,6 +190,7 @@ export class FilesPane implements Pane {
       h("div", { class: "files-status" }, this.status, this.progress, this.cancelBtn),
     );
     this.el.addEventListener("focusin", () => this.opts.onFocus(this));
+    this.relabel();
     this.setBusy(true);
     this.unsubscribeTitle = opts.source.onRemoteTitle(() => {
       this.suggest();
@@ -197,6 +201,26 @@ export class FilesPane implements Pane {
 
   get title(): string {
     return t("filesTitle", { name: this.opts.title });
+  }
+
+  relabel(): void {
+    this.pathInput.setAttribute("aria-label", t("filesPath"));
+    this.list.setAttribute("aria-label", t("files"));
+    this.cancelBtn.textContent = t("cancel");
+    for (const [el, key] of this.labelled) setLabel(el, t(key));
+    this.cwdLabel();
+    const empty = this.list.querySelector(".files-empty");
+    if (empty) empty.textContent = t("filesEmpty");
+    if (this.lastStatus) this.status.textContent = this.lastStatus();
+    this.suggest();
+  }
+
+  /** The terminal-folder button says whether the folder is known. */
+  private cwdLabel(): string | null {
+    const folder = this.terminalFolder();
+    this.cwdBtn.disabled = this.state !== "open" || folder === null;
+    setLabel(this.cwdBtn, folder ? t("filesTerminalFolder") : t("filesTerminalFolderUnknown"));
+    return folder;
   }
 
   focus(): void {
@@ -338,9 +362,7 @@ export class FilesPane implements Pane {
 
   /** With "follow" on, goes to the terminal's folder when it changes. */
   private followTerminal(): void {
-    const folder = this.terminalFolder();
-    this.cwdBtn.disabled = this.state !== "open" || folder === null;
-    this.cwdBtn.title = folder ? t("filesTerminalFolder") : t("filesTerminalFolderUnknown");
+    const folder = this.cwdLabel();
     if (!this.follow || !folder || this.busy || this.switching || this.state !== "open") return;
     if (folder === this.followFailed || (this.listing && folder === this.listing.path)) return;
     void this.navigate(folder).then(() => {
@@ -441,6 +463,7 @@ export class FilesPane implements Pane {
   }
 
   private say(text: string, error = false): void {
+    this.lastStatus = null;
     this.status.textContent = text;
     this.status.classList.toggle("error", error);
   }
@@ -457,11 +480,12 @@ export class FilesPane implements Pane {
       this.selected = null;
       this.pathInput.value = displayName(listing.path);
       this.render();
-      this.say(
+      const status = () =>
         listing.truncated
           ? t("filesTruncated", { count: listing.entries.length })
-          : t("filesCount", { count: listing.entries.length }),
-      );
+          : t("filesCount", { count: listing.entries.length });
+      this.say(status());
+      this.lastStatus = status;
     } catch (e) {
       this.fail(e);
     }

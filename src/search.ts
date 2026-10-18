@@ -3,8 +3,8 @@
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 import type { Terminal } from "@xterm/xterm";
 
-import { h, icon } from "./dom";
-import { t } from "./i18n";
+import { h, icon, setLabel } from "./dom";
+import { t, type MsgKey } from "./i18n";
 
 /** Matches highlighted (and counted) at most; beyond it the count shows "+". */
 export const HIGHLIGHT_LIMIT = 1000;
@@ -23,6 +23,8 @@ export class SearchBar {
   private readonly count: HTMLElement;
   private readonly caseBtn: HTMLButtonElement;
   private readonly regexBtn: HTMLButtonElement;
+  /** Buttons labelled by a message, with the key shown after it. */
+  private readonly labelled: [HTMLElement, MsgKey, string][] = [];
   private caseSensitive = false;
   private regex = false;
 
@@ -34,38 +36,39 @@ export class SearchBar {
       class: "input search-input",
       spellcheck: "false",
       autocomplete: "off",
-      placeholder: t("searchPlaceholder"),
-      "aria-label": t("searchPlaceholder"),
     });
     this.count = h("span", { class: "search-count muted", "aria-live": "polite" });
-    const toggle = (label: string, title: string, onClick: () => void) => {
-      const b = h("button", { type: "button", class: "search-toggle", title, "aria-label": title, "aria-pressed": "false" }, label);
+    const toggle = (label: string, title: MsgKey, onClick: () => void) => {
+      const b = h("button", { type: "button", class: "search-toggle", "aria-pressed": "false" }, label);
+      this.labelled.push([b, title, ""]);
       b.addEventListener("click", () => {
         onClick();
         this.input.focus();
       });
       return b;
     };
-    this.caseBtn = toggle("Aa", t("searchCase"), () => {
+    this.caseBtn = toggle("Aa", "searchCase", () => {
       this.caseSensitive = !this.caseSensitive;
       this.caseBtn.setAttribute("aria-pressed", String(this.caseSensitive));
       this.restart();
     });
-    this.regexBtn = toggle(".*", t("searchRegex"), () => {
+    this.regexBtn = toggle(".*", "searchRegex", () => {
       this.regex = !this.regex;
       this.regexBtn.setAttribute("aria-pressed", String(this.regex));
       this.restart();
     });
-    const button = (name: "arrowUp" | "chevron" | "close", title: string, onClick: () => void) => {
-      const b = h("button", { type: "button", class: "icon-btn", title, "aria-label": title }, icon(name));
+    const button = (name: "arrowUp" | "chevron" | "close", title: MsgKey, key: string, onClick: () => void) => {
+      const b = h("button", { type: "button", class: "icon-btn" }, icon(name));
       b.addEventListener("click", onClick);
+      this.labelled.push([b, title, ` (${key})`]);
       return b;
     };
-    const prev = button("arrowUp", `${t("searchPrevious")} (Shift+Enter)`, () => this.find(false, false));
-    const next = button("chevron", `${t("searchNext")} (Enter)`, () => this.find(true, false));
-    const close = button("close", `${t("close")} (Esc)`, () => this.close());
+    const prev = button("arrowUp", "searchPrevious", "Shift+Enter", () => this.find(false, false));
+    const next = button("chevron", "searchNext", "Enter", () => this.find(true, false));
+    const close = button("close", "close", "Esc", () => this.close());
 
     this.el = h("div", { class: "search-bar", role: "search", hidden: true }, this.input, this.count, this.caseBtn, this.regexBtn, prev, next, close);
+    this.relabel();
     this.input.addEventListener("input", () => this.find(true, true));
     this.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.isComposing) {
@@ -81,6 +84,14 @@ export class SearchBar {
       }
     });
     addon.onDidChangeResults(({ resultIndex, resultCount }) => this.showCount(resultIndex, resultCount));
+  }
+
+  relabel(): void {
+    this.input.placeholder = t("searchPlaceholder");
+    this.input.setAttribute("aria-label", t("searchPlaceholder"));
+    for (const [el, key, suffix] of this.labelled) setLabel(el, t(key) + suffix);
+    // The match count is in words only when there is none or too many.
+    if (!this.el.hidden && this.input.value) this.find(true, true);
   }
 
   /** Opens (or refocuses) the bar, starting from the terminal's selection if any. */

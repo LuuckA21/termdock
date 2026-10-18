@@ -21,8 +21,12 @@ export interface Pane {
   readonly opts: PaneOptions;
   readonly state: PaneState;
   readonly title: string;
+  /** A question (host key, password) waits until this pane is shown. */
+  readonly waiting: boolean;
   focus(): void;
   /** Called before the pane is moved in the DOM (moving does not fire "blur"). */
   blur(): void;
   dispose(): void;
+  /** Puts the pane's own labels in the current language. */
+  relabel(): void;
 }

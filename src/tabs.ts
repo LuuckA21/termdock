@@ -59,6 +59,11 @@ export class Tab {
     return this.current.state;
   }
 
+  /** Some pane of this tab has a question waiting for the tab to be shown. */
+  get waiting(): boolean {
+    return this.panes.some((p) => p.waiting);
+  }
+
   get count(): number {
     return this.nodes.size;
   }
