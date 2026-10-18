@@ -85,6 +85,7 @@ const ICONS = {
   home: ["M3 11l9-7 9 7", "M5 10v10h14V10"],
   refresh: ["M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7"],
   splitDown: ["M4 5h16v14H4z", "M4 12h16"],
+  lock: ["M6 11h12v9H6z", "M8 11V8a4 4 0 0 1 8 0v3"],
   palette: [
     "M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z",
     "M7.5 11.5h.01",
@@ -99,4 +100,10 @@ const ICONS = {
 
 export function clear(el: Element): void {
   while (el.firstChild) el.firstChild.remove();
+}
+
+/** A tooltip that is also the accessible name (icon buttons). */
+export function setLabel(el: HTMLElement, text: string): void {
+  el.title = text;
+  el.setAttribute("aria-label", text);
 }

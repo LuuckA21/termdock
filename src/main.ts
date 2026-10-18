@@ -43,10 +43,12 @@ export class App {
     await this.reload();
     document.addEventListener("keydown", (e) => this.onKey(e));
     this.listenForDrops();
-    // Language switched in Settings: redraw the chrome; open terminals keep running.
+    // Language switched in Settings: redraw the chrome and relabel the open
+    // panes; their sessions keep running.
     onLanguageChange(() => {
       this.favbar.render();
       this.renderTabs();
+      for (const tab of this.tabs) for (const pane of tab.panes) pane.relabel();
     });
     // Shortcuts changed in Settings: redraw the hints.
     onKeysChange(() => {
@@ -445,16 +447,18 @@ export class App {
       const dot = h("span", { class: "dot" });
       setDotColor(dot, tab.active.opts.color);
       const count = tab.count;
+      const waiting = tab.waiting;
       const el = h(
         "div",
         {
-          class: `tab ${tab.state}${tab === this.active ? " active" : ""}`,
+          class: `tab ${tab.state}${tab === this.active ? " active" : ""}${waiting ? " waiting" : ""}`,
           role: "tab",
           "aria-selected": String(tab === this.active),
           title: tab.active.opts.subtitle,
         },
         dot,
         h("span", { class: "tab-title" }, tab.title),
+        waiting && h("span", { class: "tab-waiting", title: t("tabWaiting"), "aria-label": t("tabWaiting") }, icon("lock")),
         count > 1 && h("span", { class: "tab-panes", title: t("panesCount", { count }) }, String(count)),
         closeBtn,
       );

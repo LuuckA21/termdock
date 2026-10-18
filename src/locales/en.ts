@@ -192,6 +192,7 @@ const en = {
   localShell: "Local terminal",
   newTab: "New tab",
   closeTab: "Close tab",
+  tabWaiting: "A connection in this tab is waiting for your answer",
   connecting: "Connecting to {target}…",
   sessionEnded: "Session ended",
   exitCode: "code {code}",

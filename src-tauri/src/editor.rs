@@ -11,10 +11,10 @@ use std::process::Command;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::oneshot;
 
-use crate::commands::{CmdError, CmdResult};
+use crate::commands::{CmdError, CmdResult, blocking};
 
 const MAX_FILE_SIZE: u64 = 64 * 1024;
 
@@ -127,7 +127,7 @@ pub fn editor_get(editor: State<'_, EditorChoice>) -> Option<EditorInfo> {
 /// Lets the user pick the editor in a native dialog (programs only).
 /// Resolves with the new choice, or null if the dialog was cancelled.
 #[tauri::command]
-pub async fn editor_pick(app: AppHandle, editor: State<'_, EditorChoice>) -> CmdResult<Option<EditorInfo>> {
+pub async fn editor_pick(app: AppHandle) -> CmdResult<Option<EditorInfo>> {
     let (tx, rx) = oneshot::channel();
     let mut dialog = crate::sftp::dialog(&app);
     if let Some(dir) = programs_folder() {
@@ -150,9 +150,14 @@ pub async fn editor_pick(app: AppHandle, editor: State<'_, EditorChoice>) -> Cmd
     let program = picked
         .into_path()
         .map_err(|_| CmdError::msg("this is not a local program"))?;
-    check_program(&program).map_err(CmdError::msg)?;
-    editor.set(Some(program))?;
-    Ok(editor.info())
+    // Checking the program and saving the choice touch the disk.
+    blocking(move || {
+        check_program(&program).map_err(CmdError::msg)?;
+        let editor = app.state::<EditorChoice>();
+        editor.set(Some(program))?;
+        Ok(editor.info())
+    })
+    .await?
 }
 
 /// Goes back to the system's text editor (off the main thread: it writes a file).

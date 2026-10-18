@@ -59,6 +59,7 @@ export class TerminalPane implements Pane {
   readonly el: HTMLElement;
   readonly term: Terminal;
   state: PaneState = "connecting";
+  waiting = false;
   private readonly fit = new FitAddon();
   private readonly searchAddon = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT });
   private readonly searchBar: SearchBar;
@@ -244,6 +245,10 @@ export class TerminalPane implements Pane {
     return () => this.titleListeners.delete(listener);
   }
 
+  relabel(): void {
+    this.searchBar.relabel();
+  }
+
   dispose(): void {
     this.disposed = true;
     this.titleListeners.clear();
@@ -348,9 +353,22 @@ export class TerminalPane implements Pane {
    */
   private async untilShown(): Promise<void> {
     const signal = this.prompts.signal;
-    while (!this.disposed && !signal.aborted && this.el.offsetParent === null) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+    if (this.el.offsetParent !== null) return;
+    // Its tab shows a mark meanwhile, so the question is not missed.
+    this.setWaiting(true);
+    try {
+      while (!this.disposed && !signal.aborted && this.el.offsetParent === null) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    } finally {
+      this.setWaiting(false);
     }
+  }
+
+  private setWaiting(waiting: boolean): void {
+    if (this.waiting === waiting) return;
+    this.waiting = waiting;
+    if (!this.disposed) this.opts.onStateChange(this);
   }
 
   private async rejectStalePrompt(n: SessionNotice): Promise<void> {

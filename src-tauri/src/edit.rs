@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
-use tauri::State;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, State};
 use termdock_core::sftp::{CancellationToken, Sftp, validate_name};
 
-use crate::commands::{CmdError, CmdResult};
+use crate::commands::{CmdError, CmdResult, blocking};
 use crate::editor::EditorChoice;
 use crate::sftp::SftpState;
 
@@ -163,7 +163,7 @@ fn owned_by_us(_meta: &std::fs::Metadata) -> bool {
 pub async fn sftp_edit(
     sftp: State<'_, SftpState>,
     edits: State<'_, Arc<EditState>>,
-    editor: State<'_, EditorChoice>,
+    app: AppHandle,
     id: u32,
     dir: String,
     name: String,
@@ -178,7 +178,7 @@ pub async fn sftp_edit(
     // A link is edited at its target (saving would otherwise replace the link).
     let (dir, name) = fs.resolve(&dir, &name).await?;
     validate_name(&name)?;
-    let folder = private_folder()?;
+    let folder = blocking(private_folder).await??;
     let path = folder.path().join(editor_file_name(&name));
     let downloaded = fs
         .download_at_most(&dir, &name, &path, MAX_EDIT_SIZE, &CancellationToken::new(), |_, _| {})
@@ -193,7 +193,8 @@ pub async fn sftp_edit(
         ));
     }
     downloaded?;
-    let content = std::fs::read(&path).map_err(termdock_core::Error::from)?;
+    let content = tokio::fs::read(&path).await.map_err(termdock_core::Error::from)?;
+    let seen = stamp(&path).await;
     if content.iter().take(64 * 1024).any(|&b| b == 0) {
         return Err(CmdError::msg("this is not a text file: download it instead"));
     }
@@ -216,7 +217,7 @@ pub async fn sftp_edit(
                 sftp: fs,
                 dir,
                 name,
-                seen: stamp(&path),
+                seen,
                 path: path.clone(),
                 folder,
                 synced: Arc::new(content),
@@ -226,7 +227,13 @@ pub async fn sftp_edit(
             },
         );
     }
-    if let Err(e) = editor.open(&path) {
+    // Off the async runtime: finding the system editor may run a helper
+    // (xdg-mime) and wait for it.
+    let opened = {
+        let path = path.clone();
+        blocking(move || app.state::<EditorChoice>().open(&path)).await?
+    };
+    if let Err(e) = opened {
         edits.discard(edit_id);
         return Err(CmdError::msg(e));
     }
@@ -275,10 +282,13 @@ fn private_folder() -> CmdResult<tempfile::TempDir> {
 async fn watch(edits: Arc<EditState>, sftp: SftpState, edit: u32) {
     loop {
         tokio::time::sleep(POLL).await;
+        let Some(path) = edits.edits.lock().unwrap().get(&edit).map(|e| e.path.clone()) else {
+            return;
+        };
+        let now = stamp(&path).await;
         let ready = {
             let mut map = edits.edits.lock().unwrap();
             let Some(e) = map.get_mut(&edit) else { return };
-            let now = stamp(&e.path);
             if e.paused || now.is_none() || now == e.seen {
                 e.settling = None;
                 false
@@ -315,14 +325,16 @@ async fn push(edits: &EditState, sftp_state: &SftpState, edit: u32, force: bool)
         return;
     };
     // The size first: a huge file is not read at all.
-    if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_EDIT_SIZE) {
+    if tokio::fs::metadata(&path).await.is_ok_and(|m| m.len() > MAX_EDIT_SIZE) {
         let _ = events.send(EditEvent::Failed {
             edit,
             message: "the file is larger than 5 MB".into(),
         });
         return;
     }
-    let Ok(content) = std::fs::read(&path) else { return };
+    let Ok(content) = tokio::fs::read(&path).await else {
+        return;
+    };
     if content == *synced && !force {
         return;
     }
@@ -378,8 +390,8 @@ async fn push(edits: &EditState, sftp_state: &SftpState, edit: u32, force: bool)
     }
 }
 
-fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
-    let meta = std::fs::metadata(path).ok()?;
+async fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
+    let meta = tokio::fs::metadata(path).await.ok()?;
     Some((meta.modified().ok()?, meta.len()))
 }
 

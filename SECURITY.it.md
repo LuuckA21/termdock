@@ -45,7 +45,7 @@ Viene annunciato `kex-strict-c-v00@openssh.com`, che mitiga l'attacco Terrapin (
 - Una password ricordata viene eliminata quando cambiano host, porta, utente o metodo di autenticazione del profilo.
 - Le connessioni rapide (senza profilo salvato) non salvano mai nulla.
 - Una password o passphrase ricordata che viene rifiutata è eliminata subito, invece di essere riprovata a ogni accesso (cosa che potrebbe far scattare MaxAuthTries o fail2ban).
-- Le richieste all'utente scadono dopo 3 minuti; una richiesta senza risposta vale come "no". Una domanda da una sessione in una scheda in secondo piano aspetta che quella scheda venga mostrata, e un campo password non prende il focus mentre l'utente sta scrivendo in un altro pannello, così i tasti destinati a un server non possono finire a rispondere a un altro.
+- Le richieste all'utente scadono dopo 3 minuti; una richiesta senza risposta vale come "no". Una domanda da una sessione in una scheda in secondo piano aspetta che quella scheda venga mostrata (intanto la scheda mostra un lucchetto), e un campo password non prende il focus mentre l'utente sta scrivendo in un altro pannello, così i tasti destinati a un server non possono finire a rispondere a un altro.
 
 ### Applicazione desktop (Tauri 2)
 

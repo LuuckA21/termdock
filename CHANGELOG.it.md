@@ -7,6 +7,14 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-18
+
+### Corretto
+
+- Un portachiavi lento (o in attesa della sua finestra di sblocco), un disco lento o una chiave protetta da passphrase non rallentano più le altre sessioni mentre una connessione esegue il login; anche aprire un file per modificarlo, scegliere l'editor e installare un aggiornamento non bloccano più l'app.
+- Dopo il cambio lingua, i terminali e i browser di file già aperti mostrano pulsanti, suggerimenti e numero di elementi nella nuova lingua.
+- Una scheda la cui connessione aspetta una risposta (host key o password) mostra un lucchetto finché non la apri.
+
 ## [0.12.0] - 2026-10-18
 
 ### Sicurezza
@@ -197,7 +205,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/LuuckA21/termdock/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/LuuckA21/termdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/LuuckA21/termdock/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/LuuckA21/termdock/compare/v0.10.0...v0.10.1

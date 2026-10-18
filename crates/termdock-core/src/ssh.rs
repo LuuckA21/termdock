@@ -163,12 +163,21 @@ impl client::Handler for ClientHandler {
                 self.host
             )));
         };
-        match self.known_hosts.check(&self.host, self.port, key) {
+        let (known, host, port, checked) = (self.known_hosts.clone(), self.host.clone(), self.port, key.clone());
+        let status = blocking(move || known.check(&host, port, &checked))
+            .await
+            .and_then(|r| r);
+        match status {
             Ok(HostKeyStatus::Trusted) => Ok(true),
             Ok(HostKeyStatus::Unknown) => {
                 let info = HostKeyInfo::new(&self.host, self.port, key);
                 if self.ui.confirm_host_key(info).await {
-                    if let Err(e) = self.known_hosts.learn(&self.host, self.port, key) {
+                    let (known, host, port, learned) =
+                        (self.known_hosts.clone(), self.host.clone(), self.port, key.clone());
+                    if let Err(e) = blocking(move || known.learn(&host, port, &learned))
+                        .await
+                        .and_then(|r| r)
+                    {
                         warn!("could not record host key: {e}");
                     }
                     Ok(true)
@@ -287,6 +296,28 @@ impl client::Handler for ClientHandler {
     }
 }
 
+/// Runs blocking work (the OS keychain, known_hosts files, key decryption)
+/// on the blocking pool, so a slow disk or a keychain waiting for its unlock
+/// dialog does not stall the other sessions on the async runtime.
+async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(work).await.map_err(|e| {
+        if e.is_panic() {
+            std::panic::resume_unwind(e.into_panic());
+        }
+        Error::Cancelled
+    })
+}
+
+/// Decodes a private key; with a passphrase this runs a deliberately slow
+/// key derivation (bcrypt-pbkdf), hence off the async runtime.
+async fn decode_key(
+    text: &Zeroizing<String>,
+    passphrase: Option<Secret>,
+) -> Result<std::result::Result<PrivateKey, russh::keys::Error>> {
+    let text = text.clone();
+    blocking(move || russh::keys::decode_secret_key(&text, passphrase.as_deref().map(String::as_str))).await
+}
+
 async fn prohibited(reply: client::ChannelOpenHandle) {
     reply
         .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
@@ -320,7 +351,10 @@ where
         refusal: refusal.clone(),
         remote_forwards,
     };
-    let known = ctx.known_hosts.known_algorithms(&target.host, target.port);
+    let known = {
+        let (known_hosts, host, port) = (ctx.known_hosts.clone(), target.host.clone(), target.port);
+        blocking(move || known_hosts.known_algorithms(&host, port)).await?
+    };
     let config = Arc::new(client_config(target, &known));
     // The handshake has no timeout of its own: a port that accepts and stays
     // silent would hang here forever. The bound leaves time for the host-key
@@ -336,7 +370,7 @@ where
         handle: &mut handle,
         target,
         profile_id: hop.profile_id,
-        vault: ctx.vault.as_ref(),
+        vault: ctx.vault.clone(),
         ui: ctx.ui.as_ref(),
         remaining: None,
         partial: false,
@@ -529,7 +563,7 @@ struct Authenticator<'a> {
     handle: &'a mut Handle<ClientHandler>,
     target: &'a SshTarget,
     profile_id: Option<Uuid>,
-    vault: &'a dyn Vault,
+    vault: Arc<dyn Vault>,
     ui: &'a dyn Interaction,
     /// Methods the server still accepts; `None` until the first answer.
     remaining: Option<MethodSet>,
@@ -589,20 +623,25 @@ impl Authenticator<'_> {
         self.profile_id.is_some()
     }
 
-    fn vault_get(&self, kind: SecretKind) -> Option<Secret> {
+    async fn vault_get(&self, kind: SecretKind) -> Option<Secret> {
         let id = self.profile_id?;
-        self.vault.get(id, kind).unwrap_or_else(|e| {
-            warn!("vault read failed: {e}");
-            None
-        })
+        let vault = self.vault.clone();
+        blocking(move || vault.get(id, kind))
+            .await
+            .and_then(|r| r)
+            .unwrap_or_else(|e| {
+                warn!("vault read failed: {e}");
+                None
+            })
     }
 
     /// A remembered secret the server (or the key file) rejected: forget it so
     /// it is not replayed on every login, which could lock the account
     /// (MaxAuthTries, fail2ban).
-    fn vault_forget(&self, kind: SecretKind) {
+    async fn vault_forget(&self, kind: SecretKind) {
         if let Some(id) = self.profile_id {
-            match self.vault.delete(id, kind) {
+            let vault = self.vault.clone();
+            match blocking(move || vault.delete(id, kind)).await.and_then(|r| r) {
                 Ok(()) => self.ui.info(format!(
                     "the saved {} was rejected and has been removed",
                     match kind {
@@ -615,10 +654,12 @@ impl Authenticator<'_> {
         }
     }
 
-    fn vault_store(&self, kind: SecretKind, answer: &SecretAnswer) {
-        if let Some(id) = self.profile_id.filter(|_| answer.remember)
-            && let Err(e) = self.vault.set(id, kind, &answer.secret)
-        {
+    async fn vault_store(&self, kind: SecretKind, answer: &SecretAnswer) {
+        let Some(id) = self.profile_id.filter(|_| answer.remember) else {
+            return;
+        };
+        let (vault, secret) = (self.vault.clone(), answer.secret.clone());
+        if let Err(e) = blocking(move || vault.set(id, kind, &secret)).await.and_then(|r| r) {
             warn!("vault write failed: {e}");
         }
     }
@@ -684,7 +725,8 @@ impl Authenticator<'_> {
         };
         for name in ["id_ed25519", "id_ecdsa", "id_rsa"] {
             let path = home.join(name);
-            if path.is_file() && self.try_key_file(&path, false).await? {
+            let is_file = tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_file());
+            if is_file && self.try_key_file(&path, false).await? {
                 return Ok(true);
             }
         }
@@ -706,7 +748,7 @@ impl Authenticator<'_> {
             }
             Err(e) => return Err(e.into()),
         };
-        let key = match russh::keys::decode_secret_key(&text, None) {
+        let key = match decode_key(&text, None).await? {
             Ok(k) => k,
             Err(russh::keys::Error::KeyIsEncrypted) => match self.unlock_key(&text, &path).await? {
                 Some(k) => k,
@@ -730,11 +772,11 @@ impl Authenticator<'_> {
         Ok(self.record(r))
     }
 
-    async fn unlock_key(&mut self, text: &str, path: &Path) -> Result<Option<PrivateKey>> {
-        if let Some(saved) = self.vault_get(SecretKind::KeyPassphrase) {
-            match russh::keys::decode_secret_key(text, Some(&saved)) {
+    async fn unlock_key(&mut self, text: &Zeroizing<String>, path: &Path) -> Result<Option<PrivateKey>> {
+        if let Some(saved) = self.vault_get(SecretKind::KeyPassphrase).await {
+            match decode_key(text, Some(saved)).await? {
                 Ok(k) => return Ok(Some(k)),
-                Err(_) => self.vault_forget(SecretKind::KeyPassphrase),
+                Err(_) => self.vault_forget(SecretKind::KeyPassphrase).await,
             }
         }
         for _ in 0..MAX_PROMPTS {
@@ -745,8 +787,8 @@ impl Authenticator<'_> {
             let Some(answer) = self.ui.ask_secret(prompt).await else {
                 return Ok(None);
             };
-            if let Ok(k) = russh::keys::decode_secret_key(text, Some(&answer.secret)) {
-                self.vault_store(SecretKind::KeyPassphrase, &answer);
+            if let Ok(k) = decode_key(text, Some(answer.secret.clone())).await? {
+                self.vault_store(SecretKind::KeyPassphrase, &answer).await;
                 return Ok(Some(k));
             }
         }
@@ -756,18 +798,18 @@ impl Authenticator<'_> {
     async fn try_password(&mut self) -> Result<bool> {
         if !self.allows(MethodKind::Password) {
             if self.allows(MethodKind::KeyboardInteractive) {
-                let saved = self.vault_get(SecretKind::Password);
+                let saved = self.vault_get(SecretKind::Password).await;
                 return self.try_keyboard_interactive(saved).await;
             }
             return Ok(false);
         }
         let user = self.target.username.clone();
-        if let Some(saved) = self.vault_get(SecretKind::Password) {
+        if let Some(saved) = self.vault_get(SecretKind::Password).await {
             let r = self.handle.authenticate_password(&user, saved.as_str()).await?;
             if self.record(r) {
                 return Ok(true);
             }
-            self.vault_forget(SecretKind::Password);
+            self.vault_forget(SecretKind::Password).await;
         }
         for _ in 0..MAX_PROMPTS {
             if !self.allows(MethodKind::Password) {
@@ -782,7 +824,7 @@ impl Authenticator<'_> {
             };
             let r = self.handle.authenticate_password(&user, answer.secret.as_str()).await?;
             if self.record(r) {
-                self.vault_store(SecretKind::Password, &answer);
+                self.vault_store(SecretKind::Password, &answer).await;
                 return Ok(true);
             }
         }
@@ -807,7 +849,7 @@ impl Authenticator<'_> {
                 match reply {
                     KeyboardInteractiveAuthResponse::Success => {
                         if let Some(a) = &remember {
-                            self.vault_store(SecretKind::Password, a);
+                            self.vault_store(SecretKind::Password, a).await;
                         }
                         return Ok(true);
                     }
@@ -818,7 +860,7 @@ impl Authenticator<'_> {
                         self.remaining = Some(remaining_methods);
                         self.partial = partial_success;
                         if used_saved {
-                            self.vault_forget(SecretKind::Password);
+                            self.vault_forget(SecretKind::Password).await;
                         }
                         break;
                     }

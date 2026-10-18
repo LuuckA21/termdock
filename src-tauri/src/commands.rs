@@ -54,6 +54,14 @@ impl Serialize for CmdError {
 
 pub type CmdResult<T> = Result<T, CmdError>;
 
+/// Runs blocking work (files, the keychain, helper processes) on the
+/// blocking pool, so an async command does not hold up an async worker.
+pub(crate) async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> CmdResult<T> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| CmdError::msg(format!("background task failed: {e}")))
+}
+
 const MAX_INPUT_CHUNK: usize = 1024 * 1024;
 
 #[derive(Serialize)]
@@ -136,12 +144,12 @@ pub fn delete_profile(state: State<'_, AppState>, id: Uuid) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_favorite(state: State<'_, AppState>, id: Uuid, favorite: bool) -> CmdResult<()> {
     Ok(state.store.lock().unwrap().set_favorite(id, favorite)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn reorder_favorites(state: State<'_, AppState>, order: Vec<Uuid>) -> CmdResult<()> {
     Ok(state.store.lock().unwrap().reorder_favorites(order)?)
 }
@@ -152,7 +160,7 @@ pub fn forget_secrets(state: State<'_, AppState>, id: Uuid) -> CmdResult<()> {
     Ok(state.vault.delete_all(id)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn forget_host_key(state: State<'_, AppState>, host: String, port: u16) -> CmdResult<usize> {
     Ok(state.known_hosts.forget(&host, port)?)
 }

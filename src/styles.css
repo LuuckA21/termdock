@@ -370,6 +370,19 @@ textarea.input {
   text-overflow: ellipsis;
 }
 
+/* A question (host key, password) waits for this tab to be shown. */
+.tab-waiting {
+  display: grid;
+  place-items: center;
+  color: var(--star);
+  animation: pulse 1s infinite alternate;
+}
+
+.tab-waiting .icon {
+  width: 13px;
+  height: 13px;
+}
+
 .tab-panes {
   padding: 0 5px;
   border-radius: 8px;

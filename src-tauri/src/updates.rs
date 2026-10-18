@@ -20,7 +20,7 @@ use tauri::utils::platform::bundle_type;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-use crate::commands::{CmdError, CmdResult};
+use crate::commands::{CmdError, CmdResult, blocking};
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -127,12 +127,22 @@ pub async fn install_update(
         .await;
     // `download` verified the signature and the signed version; `install`
     // verifies again, then replaces the app (Windows: starts the installer and exits).
-    let installed = downloaded.and_then(|bytes| {
-        let _ = on_progress.send(UpdateProgress::Installing);
-        update.install(&bytes)
-    });
+    let bytes = match downloaded {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            // Keep it for another attempt.
+            *pending.0.lock().unwrap() = Some(update);
+            return Err(e.into());
+        }
+    };
+    let _ = on_progress.send(UpdateProgress::Installing);
+    // Writing and unpacking the package is blocking work.
+    let (update, installed) = blocking(move || {
+        let installed = update.install(&bytes);
+        (update, installed)
+    })
+    .await?;
     if let Err(e) = installed {
-        // Keep it for another attempt.
         *pending.0.lock().unwrap() = Some(update);
         return Err(e.into());
     }
