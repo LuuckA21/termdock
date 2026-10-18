@@ -102,11 +102,12 @@ impl ProfileStore {
                 "this connection is used as jump host and must stay SSH".into(),
             ));
         }
-        match self.doc.profiles.iter_mut().find(|p| p.id == profile.id) {
+        let mut next = self.doc.clone();
+        match next.profiles.iter_mut().find(|p| p.id == profile.id) {
             Some(existing) => *existing = profile.clone(),
-            None => self.doc.profiles.push(profile.clone()),
+            None => next.profiles.push(profile.clone()),
         }
-        self.save()?;
+        self.commit(next)?;
         Ok(profile)
     }
 
@@ -125,23 +126,25 @@ impl ProfileStore {
             .iter()
             .position(|p| p.id == id)
             .ok_or(Error::ProfileNotFound(id))?;
-        let removed = self.doc.profiles.remove(idx);
-        self.doc.favorites.retain(|f| *f != id);
-        self.save()?;
+        let mut next = self.doc.clone();
+        let removed = next.profiles.remove(idx);
+        next.favorites.retain(|f| *f != id);
+        self.commit(next)?;
         Ok(removed)
     }
 
     pub fn set_favorite(&mut self, id: Uuid, favorite: bool) -> Result<()> {
         self.get(id)?;
         let present = self.doc.favorites.contains(&id);
+        let mut next = self.doc.clone();
         if favorite && !present {
-            self.doc.favorites.push(id);
+            next.favorites.push(id);
         } else if !favorite && present {
-            self.doc.favorites.retain(|f| *f != id);
+            next.favorites.retain(|f| *f != id);
         } else {
             return Ok(());
         }
-        self.save()
+        self.commit(next)
     }
 
     /// Replaces the favorites order. `order` must be a permutation of the
@@ -154,11 +157,21 @@ impl ProfileStore {
         if a != b {
             return Err(Error::InvalidProfile("favorites order does not match".into()));
         }
-        self.doc.favorites = order;
-        self.save()
+        let mut next = self.doc.clone();
+        next.favorites = order;
+        self.commit(next)
     }
 
-    fn save(&self) -> Result<()> {
+    /// Writes `next` and only then makes it the current state: if the write
+    /// fails, memory keeps what is on disk (a failed host change must not
+    /// leave the old host's saved password attached to the new host).
+    fn commit(&mut self, next: Document) -> Result<()> {
+        self.write(&next)?;
+        self.doc = next;
+        Ok(())
+    }
+
+    fn write(&self, doc: &Document) -> Result<()> {
         let dir = self
             .path
             .parent()
@@ -171,7 +184,7 @@ impl ProfileStore {
             .suffix(".tmp")
             .tempfile_in(dir)?;
         // tempfile creates the file with mode 0600 on Unix.
-        serde_json::to_writer_pretty(tmp.as_file_mut(), &self.doc)?;
+        serde_json::to_writer_pretty(tmp.as_file_mut(), doc)?;
         tmp.as_file_mut().write_all(b"\n")?;
         tmp.as_file_mut().sync_all()?;
         tmp.persist(&self.path).map_err(|e| Error::Io(e.error))?;

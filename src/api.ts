@@ -79,7 +79,6 @@ export const api = {
     return invoke<number>("sftp_edit", { id, dir, name, onEvent: channel });
   },
   sftpEditResolve: (edit: number, overwrite: boolean) => invoke<void>("sftp_edit_resolve", { edit, overwrite }),
-  sftpEditStop: (edit: number) => invoke<void>("sftp_edit_stop", { edit }),
   editorGet: () => invoke<EditorInfo | null>("editor_get"),
   /** Shows a native file picker for the editor; resolves with the new choice, or null if cancelled. */
   editorPick: () => invoke<EditorInfo | null>("editor_pick"),

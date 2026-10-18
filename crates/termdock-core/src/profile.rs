@@ -162,7 +162,7 @@ impl Forward {
     }
 
     /// The local socket this forward listens on, if any.
-    pub fn local_bind(&self) -> Option<(&str, u16)> {
+    fn local_bind(&self) -> Option<(&str, u16)> {
         match self {
             Forward::Local {
                 bind_host, bind_port, ..
@@ -279,11 +279,23 @@ impl SshTarget {
             return Err(Error::InvalidProfile(format!("at most {MAX_FORWARDS} port forwards")));
         }
         let mut binds = std::collections::HashSet::new();
+        let mut remote_binds = std::collections::HashSet::new();
         for f in &mut self.forwards {
             f.validate()?;
-            if let Some((host, port)) = f.local_bind()
-                && !binds.insert((host.to_lowercase(), port))
-            {
+            let (host, port, fresh) = match f {
+                Forward::Remote {
+                    bind_host, bind_port, ..
+                } => (
+                    bind_host.as_str(),
+                    *bind_port,
+                    remote_binds.insert((bind_host.to_lowercase(), *bind_port)),
+                ),
+                _ => match f.local_bind() {
+                    Some((host, port)) => (host, port, binds.insert((host.to_lowercase(), port))),
+                    None => continue,
+                },
+            };
+            if !fresh {
                 return Err(Error::InvalidProfile(format!("{host}:{port} is used by two forwards")));
             }
         }

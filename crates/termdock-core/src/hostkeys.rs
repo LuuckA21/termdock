@@ -6,7 +6,10 @@
 //! * key recorded and equal            -> trusted, connect silently
 //! * no key recorded for this host     -> ask the user, showing the SHA-256
 //!   fingerprint (trust on first use); only an explicit "yes" records it
-//! * a different key of the same type  -> refuse, no override from the dialog
+//! * a different key (of any type)     -> refuse, no override from the dialog;
+//!   connections offer the recorded key types first, so a server that has
+//!   one of them is always asked for it, and a man-in-the-middle cannot
+//!   turn a known host into an "unknown" one by offering another type
 //! * key marked `@revoked`             -> refuse
 //!
 //! Files use the OpenSSH format, so entries can be inspected or edited with
@@ -100,6 +103,28 @@ impl KnownHosts {
         })
     }
 
+    /// Key types recorded for `host:port` (in any file, revoked ones aside),
+    /// to be offered first when connecting.
+    pub fn known_algorithms(&self, host: &str, port: u16) -> Vec<russh::keys::Algorithm> {
+        let target = host_pattern(host, port).to_lowercase();
+        let mut found = Vec::new();
+        for file in std::iter::once(&self.app_file).chain(&self.extra) {
+            let Ok(content) = read_lossy(file) else { continue };
+            for entry in content.lines().filter_map(parse_line) {
+                if entry.marker.is_some() || !hosts_match(entry.hosts, &target) {
+                    continue;
+                }
+                if let Ok(key) = russh::keys::parse_public_key_base64(entry.key_b64) {
+                    let algorithm = key.algorithm();
+                    if !found.contains(&algorithm) {
+                        found.push(algorithm);
+                    }
+                }
+            }
+        }
+        found
+    }
+
     /// Records a key the user explicitly accepted.
     pub fn learn(&self, host: &str, port: u16, key: &PublicKey) -> Result<()> {
         if let Some(dir) = self.app_file.parent() {
@@ -190,12 +215,19 @@ fn parse_line(line: &str) -> Option<Entry<'_>> {
     })
 }
 
+/// A known_hosts file as text; a missing file is empty. Bytes that are not
+/// UTF-8 (a comment saved as Latin-1) are replaced instead of failing every
+/// connection; such a line can then only fail to parse or to match.
+fn read_lossy(file: &Path) -> Result<String> {
+    match fs::read(file) {
+        Ok(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn check_file(file: &Path, host: &str, port: u16, key: &PublicKey) -> Result<HostKeyStatus> {
-    let content = match fs::read_to_string(file) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(HostKeyStatus::Unknown),
-        Err(e) => return Err(e.into()),
-    };
+    let content = read_lossy(file)?;
     let target = host_pattern(host, port).to_lowercase();
 
     let mut status = HostKeyStatus::Unknown;
@@ -223,7 +255,7 @@ fn check_file(file: &Path, host: &str, port: u16, key: &PublicKey) -> Result<Hos
         }
         if same_key {
             status = HostKeyStatus::Trusted;
-        } else if recorded.algorithm() == key.algorithm() && status == HostKeyStatus::Unknown {
+        } else if status == HostKeyStatus::Unknown {
             status = HostKeyStatus::Changed {
                 file: file.to_owned(),
                 line: idx + 1,
@@ -331,6 +363,34 @@ mod tests {
         assert_eq!(kh.forget("example.com", 22).unwrap(), 1);
         assert_eq!(kh.check("example.com", 22, &b).unwrap(), HostKeyStatus::Unknown);
         assert_eq!(kh.check("example.com", 2222, &b).unwrap(), HostKeyStatus::Trusted);
+    }
+
+    const ECDSA: &str = "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJVL/uD4vVTOphUTx2BAEd0UcaR0Yw+Tbd9Tzmq/5WpVf8hrPHbalCA6bUWtBr66/6Aavwh4+BR02Qarw0D5gpw=";
+
+    #[test]
+    fn another_key_type_is_a_changed_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let kh = KnownHosts::new(dir.path().join("known_hosts"));
+        kh.learn("srv", 22, &key(ED_A)).unwrap();
+        // A man-in-the-middle offering only ECDSA must not get "unknown host".
+        assert!(matches!(
+            kh.check("srv", 22, &key(ECDSA)).unwrap(),
+            HostKeyStatus::Changed { line: 1, .. }
+        ));
+        // And the recorded type is offered first on the next connection.
+        assert_eq!(kh.known_algorithms("srv", 22), vec![key(ED_A).algorithm()]);
+        assert!(kh.known_algorithms("other", 22).is_empty());
+    }
+
+    #[test]
+    fn non_utf8_bytes_do_not_break_checks() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("known_hosts");
+        let mut bytes = b"# caf\xe9\n".to_vec();
+        bytes.extend_from_slice(format!("srv ssh-ed25519 {ED_A}\n").as_bytes());
+        fs::write(&file, bytes).unwrap();
+        let kh = KnownHosts::new(file);
+        assert_eq!(kh.check("srv", 22, &key(ED_A)).unwrap(), HostKeyStatus::Trusted);
     }
 
     #[test]

@@ -37,7 +37,7 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 | `Alt+←↑→↓` | passa al pannello vicino (con più pannelli) |
 | `Ctrl+Shift+W` | chiudi il pannello (la scheda con l'ultimo pannello) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | scheda successiva / precedente |
-| `Alt+1…9` | vai alla scheda N |
+| `Alt+1…9` (macOS: `Cmd+1…9`) | vai alla scheda N |
 | `Ctrl+Shift+1…9` | apri il preferito N |
 | `Ctrl+Shift+K` | connessione rapida |
 | `Ctrl+Shift+M` | gestore connessioni |
@@ -53,7 +53,7 @@ Questi sono i tasti predefiniti (su macOS `Cmd` funziona al posto di `Ctrl`). Og
 Le scelte principali (dettagli in [SECURITY.it.md](SECURITY.it.md)):
 
 - **Backend in Rust** (memory-safe), SSH implementato in Rust puro con [russh](https://github.com/Eugeny/russh): nessun processo `ssh` esterno, nessuna shell intermedia.
-- **Solo algoritmi moderni**: scambio chiavi ibrido post-quantistico `mlkem768x25519-sha256` come prima scelta, poi `curve25519-sha256`; cifrari AEAD (`chacha20-poly1305`, `aes-gcm`); MAC SHA-2 encrypt-then-MAC; *strict KEX* (mitigazione Terrapin). Esclusi SHA-1, CBC, DSA, `ssh-rsa` e compressione.
+- **Algoritmi moderni**: scambio chiavi ibrido post-quantistico `mlkem768x25519-sha256` come prima scelta, poi `curve25519-sha256` (ECDH NIST e gruppi DH grandi solo come ripiego); cifrari AEAD preferiti (`chacha20-poly1305`, `aes-gcm`), poi AES-CTR; MAC SHA-2, prima encrypt-then-MAC; *strict KEX* (mitigazione Terrapin). Esclusi SHA-1, CBC, DSA, `ssh-rsa` e compressione.
 - **Verifica host key** prima di qualsiasi autenticazione: al primo collegamento viene mostrata l'impronta SHA-256 da confermare (predefinito: *Annulla*); se la chiave cambia la connessione viene **rifiutata** senza possibilità di forzarla dal dialogo. Supporta il formato OpenSSH, incluse voci hashate, wildcard e `@revoked`, e legge anche `~/.ssh/known_hosts`.
 - **Nessun segreto su disco**: password e passphrase sono salvate solo se lo chiedi, e solo nel portachiavi del sistema operativo (Windows Credential Manager, macOS Keychain, Secret Service su Linux). Vengono azzerate in memoria dopo l'uso (`zeroize`), non tornano mai all'interfaccia e vengono eliminate se il server le rifiuta.
 - Se cambi host, porta, utente o metodo di autenticazione di una connessione, la password salvata viene eliminata, così non viene mai inviata a un server diverso.
@@ -75,12 +75,20 @@ crates/termdock-core   logica senza interfaccia, testata in isolamento
   ├─ vault.rs           portachiavi di sistema (keyring)
   ├─ hostkeys.rs        known_hosts: TOFU, chiavi cambiate/revocate
   ├─ ssh.rs             client SSH (russh): algoritmi, autenticazione, jump host
+  ├─ session.rs         eventi e output delle sessioni, comuni a SSH e shell locali
   ├─ forward.rs         port forwarding -L / -R / -D (SOCKS5)
   ├─ sftp.rs            SFTP sulla connessione del terminale (file browser)
   ├─ sshconfig.rs       import da ~/.ssh/config
   ├─ local.rs           shell locali via PTY (portable-pty / ConPTY)
-  └─ shells.rs          rilevamento delle shell disponibili
-src-tauri/             app desktop Tauri 2: comandi IPC, prompt, stato
+  ├─ shells.rs          rilevamento delle shell disponibili
+  └─ error.rs           tipo di errore comune al crate
+src-tauri/             app desktop Tauri 2
+  ├─ commands.rs        comandi IPC per profili e sessioni
+  ├─ prompts.rs         domande all'utente (host key, password, OTP)
+  ├─ sftp.rs            comandi del file browser, finestre native, file trascinati
+  ├─ edit.rs            Modifica: copia privata, sorveglianza e caricamento al salvataggio
+  ├─ editor.rs          quale editor di testo la apre (di sistema o scelto nelle Impostazioni)
+  └─ updates.rs         aggiornamenti firmati dall'app
 src/                   interfaccia TypeScript + xterm.js (nessun framework)
 ```
 
@@ -94,16 +102,16 @@ I dati sono salvati in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json` e `known_hosts`; le password stanno solo nel portachiavi. Le preferenze dell'interfaccia, come lingua e aspetto, e i layout salvati sono nel local storage della web view.)
+(`profiles.json`, `known_hosts` e `editor.json`; le password stanno solo nel portachiavi. Le preferenze dell'interfaccia, come lingua, aspetto e scorciatoie da tastiera, e i layout salvati sono nel local storage della web view.)
 
 ## Sviluppo
 
-Requisiti: [Rust](https://rustup.rs) stabile (≥ 1.90), Node.js ≥ 22 e i [prerequisiti di Tauri](https://tauri.app/start/prerequisites/) per il tuo sistema (su Linux: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libdbus-1-dev`).
+Requisiti: [Rust](https://rustup.rs) stabile (≥ 1.90), Node.js ≥ 22 e i [prerequisiti di Tauri](https://tauri.app/start/prerequisites/) per il tuo sistema (su Linux: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libdbus-1-dev`). I pacchetti Linux rilasciati sono compilati su Ubuntu 24.04 e richiedono una distribuzione almeno altrettanto recente (glibc 2.39).
 
 ```sh
 npm ci
 npm run tauri dev        # avvia l'app in modalità sviluppo
-npm run tauri build      # crea gli installer (MSI/NSIS, DMG, AppImage/deb/rpm)
+npm run tauri build -- --no-sign   # crea gli installer (MSI/NSIS, DMG, AppImage/deb/rpm) senza la chiave degli aggiornamenti
 ```
 
 Test e controlli:
@@ -136,9 +144,9 @@ Gli aggiornamenti dall'app richiedono la chiave di firma degli aggiornamenti, cr
 npm run tauri signer generate -- -w ~/.tauri/termdock.key
 ```
 
-Senza Node.js, [minisign](https://jedisct1.github.io/minisign/) genera chiavi compatibili: esegui `minisign -G -p termdock.pub -s termdock.key` (chiede la password), poi usa la **codifica Base64** di ciascun file dove i passi seguenti parlano del suo contenuto (PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("termdock.key"))`; macOS/Linux: `base64 < termdock.key | tr -d '\n'`).
+Senza Node.js, [minisign](https://jedisct1.github.io/minisign/) genera chiavi compatibili: esegui `minisign -G -p ~/.tauri/termdock.key.pub -s ~/.tauri/termdock.key` (chiede la password; tieni le chiavi fuori dal repository), poi usa la **codifica Base64** di ciascun file dove i passi seguenti parlano del suo contenuto (PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.tauri\termdock.key"))`; macOS/Linux: `base64 < ~/.tauri/termdock.key | tr -d '\n'`).
 
-La chiave pubblica (`~/.tauri/termdock.key.pub`) va in `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. La chiave privata va in un backup offline (senza, le copie installate non si possono più aggiornare) e su GitHub: *Settings → Environments → New environment* `release`, *Deployment branches and tags* limitato al branch `main` e ai tag `v*`, poi i secret dell'environment `TAURI_SIGNING_PRIVATE_KEY` (contenuto di `~/.tauri/termdock.key`) e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Non salvarli come secret del repository: quelli sono leggibili dai workflow di qualsiasi branch.
+La chiave pubblica (`~/.tauri/termdock.key.pub`) va in `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. La chiave privata va in un backup offline (senza, le copie installate non si possono più aggiornare) e su GitHub: *Settings → Environments → New environment* `release`, *Deployment branches and tags* limitato al branch `main` (nessun tag: un tag può puntare a un commit non revisionato), poi i secret dell'environment `TAURI_SIGNING_PRIVATE_KEY` (contenuto di `~/.tauri/termdock.key`) e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Non salvarli come secret del repository: quelli sono leggibili dai workflow di qualsiasi branch.
 
 Il workflow di release controlla la chiave prima di creare il tag, firma ogni pacchetto, li verifica con `scripts/updater-manifest.mjs` e allega `latest.json`, che le app installate leggono quando la release viene pubblicata. **Pubblica una bozza solo se contiene `latest.json`**: senza, le copie installate smettono di trovare aggiornamenti. Le installazioni deb/rpm ricevono solo l'avviso (le aggiorna il gestore di pacchetti).
 

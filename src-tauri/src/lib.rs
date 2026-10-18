@@ -73,7 +73,6 @@ pub fn run() {
             sftp::sftp_sudo_cancel,
             edit::sftp_edit,
             edit::sftp_edit_resolve,
-            edit::sftp_edit_stop,
             editor::editor_get,
             editor::editor_pick,
             editor::editor_reset,
@@ -83,13 +82,22 @@ pub fn run() {
 
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
-            if let Some(state) = handle.try_state::<AppState>() {
-                state.close_all();
+            // Transfers first (they need their connections to clean up).
+            if let Some(sftp) = handle.try_state::<sftp::SftpState>() {
+                let sftp = sftp.inner().clone();
+                tauri::async_runtime::block_on(sftp.close_all());
             }
-            // Local copies of files being edited are deleted.
-            if let Some(edits) = handle.try_state::<std::sync::Arc<edit::EditState>>() {
-                edits.clear();
-            }
+            close_sessions_and_edits(handle);
         }
     });
+}
+
+/// Closes every session and deletes the local copies of edited files.
+pub(crate) fn close_sessions_and_edits(handle: &tauri::AppHandle) {
+    if let Some(state) = handle.try_state::<AppState>() {
+        state.close_all();
+    }
+    if let Some(edits) = handle.try_state::<std::sync::Arc<edit::EditState>>() {
+        edits.clear();
+    }
 }

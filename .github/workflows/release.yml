@@ -8,12 +8,16 @@ name: Release
 # `vX.Y.Z` tag on that commit and builds the release, using the CHANGELOG
 # section as release notes. Pushes to main that keep the version do nothing.
 #
-# Also possible: push a `v*` tag, or run it by hand (Actions -> Release).
+# Also possible: run it by hand on main (Actions -> Release) for a version
+# without a tag. There is no tag trigger: a tag can point at any commit, and
+# a tag-triggered run uses that commit's (unreviewed) copy of this file.
+# If a run fails, use "Re-run failed jobs": a whole new run sees the tag
+# that the first one created and does nothing.
 #
 # In-app updates: every package is signed with the updater key, kept as
 # secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD of
-# the `release` environment (deployments limited to main and v* tags, so
-# workflows on other branches cannot read them); the public key is in
+# the `release` environment (deployments limited to the main branch, so
+# workflows on other branches or tags cannot read them); the public key is in
 # tauri.conf.json. The last job verifies the uploaded packages against that
 # public key and attaches latest.json, which installed apps read from the
 # latest *published* release: never publish a draft without latest.json.
@@ -21,7 +25,6 @@ on:
   push:
     branches: [main]
     paths: [src-tauri/tauri.conf.json]
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -43,6 +46,8 @@ jobs:
       release_id: ${{ steps.draft.outputs.id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
@@ -57,14 +62,12 @@ jobs:
           exists=false
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then exists=true; fi
 
-          case "$GITHUB_EVENT_NAME:$GITHUB_REF_TYPE" in
-            push:tag)
-              if [ "$GITHUB_REF_NAME" != "$tag" ]; then
-                echo "::error::tag $GITHUB_REF_NAME does not match the app version ($tag)"
-                exit 1
-              fi
-              release=true ;;
-            push:branch)
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::releases are built from main only (this run is on $GITHUB_REF)"
+            exit 1
+          fi
+          case "$GITHUB_EVENT_NAME" in
+            push)
               if [ "$exists" = true ]; then
                 echo "$tag already released, nothing to do"
                 release=false
@@ -161,6 +164,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.tag }}
+          persist-credentials: false
       - name: Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -201,6 +205,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.tag }}
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22

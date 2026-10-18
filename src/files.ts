@@ -6,20 +6,12 @@
 // dialogs opened by the backend; this module never handles local paths.
 import { api, errorText } from "./api";
 import { confirmBox, modal } from "./dialogs";
-import { clear, h, icon } from "./dom";
+import { clear, displayName, h, icon } from "./dom";
 import { t } from "./i18n";
 import { showMenu } from "./menu";
 import type { Pane, PaneOptions, PaneState } from "./pane";
 import type { TerminalPane } from "./terminal";
 import type { EditEvent, PickedFile, RemoteEntry, RemoteListing, TransferProgress } from "./types";
-
-/** Control, format (bidi, zero-width, BOM, tags…) and line/paragraph separators. */
-const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
-
-/** A server-provided name made safe to display: invisible/reordering characters become U+FFFD. */
-export function displayName(name: string): string {
-  return name.replace(UNSAFE, "\ufffd");
-}
 
 /**
  * Names the server sent in another encoding arrive with U+FFFD: they cannot
@@ -52,7 +44,7 @@ function formatDate(secs: number | null): string {
   return secs === null ? "" : new Date(secs * 1000).toLocaleString();
 }
 
-export interface FilesOptions extends PaneOptions {
+interface FilesOptions extends PaneOptions {
   /** Backend id of the terminal session whose connection is used. */
   session: number;
   /** The terminal pane that owns that session. */
@@ -66,7 +58,7 @@ const USER_NAME = /^[A-Za-z_][A-Za-z0-9_.-]{0,31}$/;
  * Debian/Ubuntu and RHEL). The title comes from the server: it is only used
  * to suggest switching, never acted on by itself.
  */
-export function titleUser(title: string): string | null {
+function titleUser(title: string): string | null {
   const m = /^([A-Za-z_][A-Za-z0-9_.-]{0,31})@[A-Za-z0-9][A-Za-z0-9.-]*(?:[:\s]|$)/.exec(title);
   return m ? m[1]! : null;
 }
@@ -311,6 +303,8 @@ export class FilesPane implements Pane {
       const overwrite = await confirmBox(t("filesEditConflict", { name }), t("filesEditOverwrite"), true);
       await api.sftpEditResolve(ev.edit, overwrite).catch((e) => this.fail(e));
       if (!overwrite) this.say(t("filesEditStopped", { name }));
+    } else if (ev.kind === "stopped") {
+      this.say(t("filesEditDetached", { name }), true);
     } else {
       this.say(displayName(t("filesEditFailed", { name, error: ev.message })), true);
     }
@@ -627,35 +621,38 @@ export class FilesPane implements Pane {
   }
 
   private async mkdir(): Promise<void> {
-    if (this.id === null || !this.listing) return;
-    const name = await this.askName(t("filesNewFolder"));
-    if (!name) return;
+    // Captured before the dialog: Follow may move the browser meanwhile.
     const { id, listing } = this;
+    if (id === null || !listing) return;
+    const name = await this.askName(t("filesNewFolder"));
+    if (!name || id !== this.id) return;
     await this.run(() => api.sftpMkdir(id, listing.path, name));
     this.select(name);
   }
 
   private async rename(entry: RemoteEntry): Promise<void> {
-    if (this.id === null || !this.listing) return;
+    // Captured before the dialog: Follow may move the browser meanwhile.
+    const { id, listing } = this;
+    if (id === null || !listing) return;
     // Pre-filled with the displayed form: invisible characters are not carried over.
     const shown = displayName(entry.name);
     const name = await this.askName(t("filesRename"), shown);
-    if (!name || name === shown) return;
-    const { id, listing } = this;
+    if (!name || name === shown || id !== this.id) return;
     await this.run(() => api.sftpRename(id, listing.path, entry.name, name));
     this.select(name);
   }
 
   private async remove(entry: RemoteEntry): Promise<void> {
-    if (this.id === null || !this.listing) return;
+    // Captured before the dialog: Follow may move the browser meanwhile.
+    const { id, listing } = this;
+    if (id === null || !listing) return;
     const name = displayName(entry.name);
     const ok = await confirmBox(
       entry.kind === "dir" ? t("filesDeleteDir", { name }) : t("filesDeleteFile", { name }),
       t("delete"),
       true,
     );
-    if (!ok) return;
-    const { id, listing } = this;
+    if (!ok || id !== this.id) return;
     await this.run(() => api.sftpRemove(id, listing.path, entry.name));
   }
 

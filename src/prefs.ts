@@ -20,7 +20,7 @@ export interface Prefs {
   scrollback: number;
 }
 
-export const DEFAULT_FONT_STACK =
+const DEFAULT_FONT_STACK =
   '"Cascadia Mono", "JetBrains Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace';
 
 export const LIMITS = {
@@ -52,7 +52,7 @@ function clamp(value: unknown, min: number, max: number, fallback: number, step 
 }
 
 /** A single family name: no quotes, separators or control characters. */
-export function cleanFontFamily(value: unknown): string {
+function cleanFontFamily(value: unknown): string {
   if (typeof value !== "string") return "";
   return value
     .replace(/[\p{Cc}"'`;,{}()<>\\]/gu, "")
@@ -112,7 +112,7 @@ export function onPrefsChange(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-export function isDarkTheme(p: Prefs = prefs): boolean {
+function isDarkTheme(p: Prefs = prefs): boolean {
   return p.theme === "system" ? systemDark.matches : p.theme === "dark";
 }
 

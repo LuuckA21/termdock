@@ -29,6 +29,9 @@ use crate::ssh::SshHandle;
 
 /// Directory listings stop after this many entries (the UI says so).
 pub const MAX_ENTRIES: usize = 20_000;
+/// Longest name a listing accepts, and all names together.
+const MAX_LISTED_NAME: usize = 4096;
+const MAX_LISTING_BYTES: usize = 8 * 1024 * 1024;
 /// Longest file name accepted for new names (most file systems allow 255 bytes).
 const MAX_NAME_LEN: usize = 255;
 const CHUNK: usize = 256 * 1024;
@@ -531,6 +534,7 @@ impl Sftp {
         let handle = self.raw.opendir(path.as_str()).await?.handle;
         let read = async {
             let mut entries = Vec::new();
+            let mut name_bytes = 0;
             loop {
                 let batch = match self.raw.readdir(handle.as_str()).await {
                     Ok(batch) => batch,
@@ -541,7 +545,13 @@ impl Sftp {
                     if f.filename == "." || f.filename == ".." {
                         continue;
                     }
-                    if entries.len() == MAX_ENTRIES {
+                    // Real file names are at most a few hundred bytes; a
+                    // server sending huge ones must not fill the memory.
+                    name_bytes += f.filename.len();
+                    if entries.len() == MAX_ENTRIES
+                        || f.filename.len() > MAX_LISTED_NAME
+                        || name_bytes > MAX_LISTING_BYTES
+                    {
                         return Ok((entries, true));
                     }
                     entries.push(Entry {
@@ -558,11 +568,8 @@ impl Sftp {
         let _ = self.raw.close(handle).await;
         let (mut entries, truncated) =
             result.map_err(|_| Error::Sftp("the server took too long to list the folder".into()))??;
-        entries.sort_by(|a, b| {
-            (a.kind != EntryKind::Dir)
-                .cmp(&(b.kind != EntryKind::Dir))
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
+        // The lowercase key is computed once per entry, not per comparison.
+        entries.sort_by_cached_key(|e| (e.kind != EntryKind::Dir, e.name.to_lowercase()));
         Ok(Listing {
             path,
             entries,
@@ -605,9 +612,27 @@ impl Sftp {
 
     /// The canonical path of `dir/name` with its directory and name apart
     /// (for a link: where it points).
+    ///
+    /// A link owned by someone other than the file it points to is not
+    /// followed (like Linux's protected_symlinks): otherwise a user could
+    /// point a link in their folder at a system file and have it replaced by
+    /// someone working there as root.
     pub async fn resolve(&self, dir: &str, name: &str) -> Result<(String, String)> {
         check_component(name)?;
+        let link = self.inner.symlink_metadata(join(dir, name)).await?;
         let real = self.inner.canonicalize(join(dir, name)).await?;
+        if link.file_type() == FileType::Symlink {
+            let target = self.inner.metadata(real.as_str()).await?;
+            if link.uid.is_some() && target.uid.is_some() && link.uid != target.uid {
+                return Err(Error::Sftp(format!(
+                    "{} is a link to a file of another user: not followed",
+                    name.chars()
+                        .filter(|c| !c.is_control() && !is_format_char(*c))
+                        .take(64)
+                        .collect::<String>()
+                )));
+            }
+        }
         let (d, n) = real.rsplit_once('/').ok_or_else(|| Error::InvalidName(real.clone()))?;
         check_component(n)?;
         Ok((if d.is_empty() { "/".to_owned() } else { d.to_owned() }, n.to_owned()))

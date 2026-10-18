@@ -428,12 +428,46 @@ pub fn plan_import(parsed: &Parsed, existing: &[Profile], selected: &[String]) -
             .position(|c| c.profile.id == p.id)
             .unwrap_or(usize::MAX)
     });
-    (new_profiles, warnings)
+    // Then each jump host before the connections that use it: the store only
+    // accepts a jump host that is already saved. A loop of ProxyJumps is cut.
+    let mut ordered: Vec<Profile> = Vec::with_capacity(new_profiles.len());
+    let mut pending = new_profiles;
+    while !pending.is_empty() {
+        let ready = pending.iter().position(|p| match &p.kind {
+            ProfileKind::Ssh(t) => t.jump.is_none_or(|j| !pending.iter().any(|q| q.id == j)),
+            _ => true,
+        });
+        let mut next = pending.remove(ready.unwrap_or(0));
+        if ready.is_none()
+            && let ProfileKind::Ssh(t) = &mut next.kind
+        {
+            t.jump = None;
+            warnings.push(format!("{}: ProxyJump loop, not linked", next.name));
+        }
+        ordered.push(next);
+    }
+    (ordered, warnings)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jump_hosts_come_first_and_loops_are_cut() {
+        let text = "Host web\n  HostName web.example.com\n  ProxyJump bastion\n\nHost bastion\n  HostName b.example.com\n\nHost a\n  HostName a.example.com\n  ProxyJump b\n\nHost b\n  HostName b2.example.com\n  ProxyJump a\n";
+        let parsed = parse(text, Path::new("/home/me"), "me");
+        let (profiles, warnings) = plan_import(&parsed, &[], &["web".into(), "a".into()]);
+        let pos = |name: &str| profiles.iter().position(|p| p.name == name).unwrap();
+        assert!(pos("bastion") < pos("web"));
+        assert!(warnings.iter().any(|w| w.contains("ProxyJump loop")));
+        // Saved in this order, every jump host exists before it is used.
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = crate::store::ProfileStore::open(dir.path().join("p.json")).unwrap();
+        for p in profiles {
+            store.upsert(p).unwrap();
+        }
+    }
 
     const CONFIG: &str = r#"
 # global defaults
