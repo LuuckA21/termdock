@@ -11,6 +11,7 @@ pub mod shells;
 pub mod ssh;
 pub mod sshconfig;
 pub mod store;
+pub mod textlog;
 pub mod vault;
 
 pub use error::{Error, Result};

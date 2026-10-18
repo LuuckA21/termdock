@@ -230,6 +230,37 @@ export class TerminalPane implements Pane {
     return this.sessionId;
   }
 
+  /** The file this terminal's output is logged to, while it is. */
+  logPath: string | null = null;
+
+  /**
+   * Logs what this terminal shows to a file chosen in the save dialog, after
+   * saying that the log may hold secrets shown on screen.
+   */
+  async startLog(): Promise<void> {
+    const id = this.sessionId;
+    if (id === null || this.logPath) return;
+    if (!(await confirmBox(t("logConfirm"), t("logChoose")))) return;
+    try {
+      const path = await api.sessionLogStart(id, this.opts.title);
+      if (!path || this.sessionId !== id) return;
+      this.logPath = path;
+      this.term.write(`\r\n${CYAN}» ${plain(t("logStarted", { path }))}${RESET}\r\n`);
+      this.opts.onStateChange(this);
+    } catch (e) {
+      this.term.write(`\r\n${RED}${plain(errorText(e))}${RESET}\r\n`);
+    }
+  }
+
+  async stopLog(): Promise<void> {
+    const path = this.logPath;
+    if (!path) return;
+    this.logPath = null;
+    if (this.sessionId !== null) await api.sessionLogStop(this.sessionId).catch(() => false);
+    this.term.write(`\r\n${CYAN}» ${plain(t("logStopped", { path }))}${RESET}\r\n`);
+    this.opts.onStateChange(this);
+  }
+
   refit(): void {
     if (this.disposed || this.el.offsetParent === null) return;
     try {
@@ -391,6 +422,8 @@ export class TerminalPane implements Pane {
 
   private ended(): void {
     this.sessionId = null;
+    // The backend closed the log with the session.
+    this.logPath = null;
     this.setState("closed");
   }
 

@@ -65,6 +65,22 @@ export function setSnippets(next: Snippet[]): void {
   listeners.forEach((fn) => fn());
 }
 
+/**
+ * Snippets from a backup, validated like saved ones: `replace` swaps the
+ * whole list; otherwise snippets not present yet (by id) are added. Returns
+ * how many came in.
+ */
+export function importSnippets(raw: unknown, replace: boolean): number {
+  const incoming = normalize(raw);
+  if (replace) {
+    setSnippets(incoming);
+    return incoming.length;
+  }
+  const added = incoming.filter((s) => !snippets.some((x) => x.id === s.id));
+  setSnippets([...snippets, ...added]);
+  return added.length;
+}
+
 /** Called after the snippets change; returns an unsubscribe function. */
 export function onSnippetsChange(fn: () => void): () => void {
   listeners.add(fn);

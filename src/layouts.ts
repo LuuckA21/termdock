@@ -119,6 +119,27 @@ export function getLayouts(): readonly Layout[] {
   return stored.layouts;
 }
 
+/** The stored form, for a backup. */
+export function storedLayouts(): unknown {
+  return stored;
+}
+
+/**
+ * Layouts from a backup, validated like saved ones: `replace` swaps the whole
+ * list (and the startup choice); otherwise layouts not present yet (by id)
+ * are added. Returns how many came in.
+ */
+export function importLayouts(raw: unknown, replace: boolean): number {
+  const incoming = normalize(raw);
+  if (replace) {
+    write(incoming);
+    return incoming.layouts.length;
+  }
+  const added = incoming.layouts.filter((l) => !stored.layouts.some((x) => x.id === l.id));
+  write({ ...stored, layouts: [...stored.layouts, ...added] });
+  return added.length;
+}
+
 export function startupLayout(): Layout | null {
   return stored.layouts.find((l) => l.id === stored.startup) ?? null;
 }

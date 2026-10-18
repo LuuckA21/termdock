@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-session-log-stop"
+description = "Enables the session_log_stop command without any pre-configured scope."
+commands.allow = ["session_log_stop"]
+
+[[permission]]
+identifier = "deny-session-log-stop"
+description = "Denies the session_log_stop command without any pre-configured scope."
+commands.deny = ["session_log_stop"]

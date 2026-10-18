@@ -383,6 +383,15 @@ textarea.input {
   height: 13px;
 }
 
+/* This tab's output is being logged to a file. */
+.tab-rec {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
 .tab-panes {
   padding: 0 5px;
   border-radius: 8px;
@@ -1647,4 +1656,9 @@ dialog.modal.snippet-edit {
 .snippet-edit textarea {
   min-height: 140px;
   resize: vertical;
+}
+
+.backup-row {
+  justify-content: flex-start;
+  gap: 8px;
 }

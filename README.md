@@ -21,6 +21,8 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Split panes**, like Windows Terminal: divide a tab side by side or top/bottom as many times as needed and choose what opens in the new pane (the same connection, a local shell, any saved connection or a `user@host` address), e.g. server A on the left and server B on the right. Already open tabs can be put side by side without reconnecting (tab menu → *Move next to*), and favourites open directly on the right or below. Drag the dividers to resize, move between panes with `Alt+arrows`.
 - **Saved layouts**: save a tab's arrangement (which connection or shell is in each pane, and the sizes) with `Ctrl+Shift+L` and reopen it from the *Layouts* menu with one click; one layout can open automatically at startup (its connections then start right away, with the usual host-key and password prompts).
 - **Snippets**: saved texts (a command, a block of lines) typed into the active terminal from the *Snippets* menu or `Ctrl+Shift+P`, optionally with Enter so they run at once; each can be offered in every terminal or only for connections of one group, and the first nine can get `1…9` shortcuts in Settings → Keys. Managed in Settings → Snippets; they go in like a paste (control characters removed, several lines confirmed). They are plain text: never put passwords in them.
+- **Backup of the configuration**: Settings → General → *Export…* saves connections, favorites, layouts, snippets and settings (appearance, language, keys) in one JSON file; *Import…* shows what a backup holds and then either adds only what is new or replaces the current configuration, e.g. to move to another computer. Passwords, keys and host keys are never included.
+- **Session log**: tab menu → *Log to file…* writes what a terminal shows from then on to a text file of your choice (colours and other escape sequences removed), until *Stop logging* or the end of the session; a red dot on the tab shows it is on. Off unless started, since a log keeps everything printed on screen.
 - **Find in terminal**: `Ctrl+Shift+F` searches the scrollback with highlighted matches, next/previous (`Enter` / `Shift+Enter`), match case and regular expressions.
 - **Themes and fonts**: dark, light or system theme; terminal colour schemes (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); font, size, line height, cursor style and scrollback, with a live preview in Settings; `Ctrl` + `+` / `-` / `0` changes the font size.
 - **Automatic updates**: a new version is announced at start (and once a day), installed only after you confirm, and verified against the signing key built into the app; it can be turned off in Settings.
@@ -105,7 +107,7 @@ Data is stored in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain. Interface preferences such as language, appearance and keyboard shortcuts, saved layouts and snippets are kept in the web view's local storage.)
+(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain. Interface preferences such as language, appearance and keyboard shortcuts, saved layouts and snippets are kept in the web view's local storage. Backups and session logs are only written where you choose.)
 
 ## Development
 

@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-18
+
+### Added
+
+- Backup of the configuration: Settings → General → *Export…* saves connections, favorites, layouts, snippets and settings in one JSON file, and *Import…* shows what a backup holds, then adds only what is new or replaces the current configuration. Passwords, keys and host keys are never included.
+- Session log: tab menu → *Log to file…* writes what the terminal shows from then on to a text file of your choice, without colours or other escape sequences, until *Stop logging* or the end of the session; a red dot on the tab shows that it is on.
+
+### Changed
+
+- Dates and times in the file browser follow the interface language instead of the system's.
+
+### Security
+
+- Backup files and session logs are created readable by their owner only (Unix); importing a backup checks it as a whole and asks before changing anything, and *Replace* deletes the saved passwords of connections that go away or point elsewhere.
+
 ## [0.14.0] - 2026-10-18
 
 ### Added
@@ -227,7 +242,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/LuuckA21/termdock/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/LuuckA21/termdock/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/LuuckA21/termdock/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/LuuckA21/termdock/compare/v0.12.0...v0.12.1

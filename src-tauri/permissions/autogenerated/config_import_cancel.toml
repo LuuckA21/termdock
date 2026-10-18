@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-config-import-cancel"
+description = "Enables the config_import_cancel command without any pre-configured scope."
+commands.allow = ["config_import_cancel"]
+
+[[permission]]
+identifier = "deny-config-import-cancel"
+description = "Denies the config_import_cancel command without any pre-configured scope."
+commands.deny = ["config_import_cancel"]

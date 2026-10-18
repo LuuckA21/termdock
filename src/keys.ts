@@ -237,12 +237,22 @@ export function isDefault(map: KeyMap, id: Action): boolean {
   return a.length === d.length && a.every((ch, i) => sameChord(ch, d[i]));
 }
 
-export function setKeyMap(next: KeyMap): void {
-  const stored = {
+/** The stored (text) form of a key map, as in localStorage and backups. */
+export function storedKeyMap(map: KeyMap = keymap): unknown {
+  return {
     version: 1,
-    actions: Object.fromEntries(ACTIONS.map((id) => [id, next.actions[id].map(chordSpec)])),
-    digits: next.digits,
+    actions: Object.fromEntries(ACTIONS.map((id) => [id, map.actions[id].map(chordSpec)])),
+    digits: map.digits,
   };
+}
+
+/** Applies a key map in stored form (from a backup), validated like a saved one. */
+export function importKeyMap(raw: unknown): void {
+  setKeyMap(normalize(raw));
+}
+
+export function setKeyMap(next: KeyMap): void {
+  const stored = storedKeyMap(next);
   keymap = normalize(stored);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));

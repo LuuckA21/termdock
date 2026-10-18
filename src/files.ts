@@ -7,7 +7,7 @@
 import { api, errorText } from "./api";
 import { confirmBox, modal } from "./dialogs";
 import { clear, displayName, h, icon, setLabel } from "./dom";
-import { t, type MsgKey } from "./i18n";
+import { currentLanguage, t, type MsgKey } from "./i18n";
 import { showMenu } from "./menu";
 import type { Pane, PaneOptions, PaneState } from "./pane";
 import { TransferQueue } from "./queue";
@@ -42,7 +42,7 @@ function formatMode(mode: number | null, kind: RemoteEntry["kind"]): string {
 }
 
 function formatDate(secs: number | null): string {
-  return secs === null ? "" : new Date(secs * 1000).toLocaleString();
+  return secs === null ? "" : new Date(secs * 1000).toLocaleString(currentLanguage());
 }
 
 interface FilesOptions extends PaneOptions {
@@ -323,7 +323,7 @@ export class FilesPane implements Pane {
     if (this.disposed) return;
     if (ev.kind === "saved") {
       if (this.listing?.path === dir && !this.busy) await this.navigate(dir);
-      this.say(t("filesEditSaved", { name, time: new Date().toLocaleTimeString() }));
+      this.say(t("filesEditSaved", { name, time: new Date().toLocaleTimeString(currentLanguage()) }));
     } else if (ev.kind === "conflict") {
       const overwrite = await confirmBox(t("filesEditConflict", { name }), t("filesEditOverwrite"), true);
       await api.sftpEditResolve(ev.edit, overwrite).catch((e) => this.fail(e));
