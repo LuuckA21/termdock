@@ -155,8 +155,8 @@ pub async fn editor_pick(app: AppHandle, editor: State<'_, EditorChoice>) -> Cmd
     Ok(editor.info())
 }
 
-/// Goes back to the system's text editor.
-#[tauri::command]
+/// Goes back to the system's text editor (off the main thread: it writes a file).
+#[tauri::command(async)]
 pub fn editor_reset(editor: State<'_, EditorChoice>) -> CmdResult<()> {
     editor.set(None)
 }
@@ -182,7 +182,7 @@ fn check_program(program: &Path) -> Result<(), String> {
             program.display()
         ))
     };
-    if !program.is_absolute() {
+    if !program.is_absolute() || runs_files(program) {
         return refuse();
     }
     #[cfg(windows)]
@@ -208,6 +208,75 @@ fn check_program(program: &Path) -> Result<(), String> {
             refuse()
         }
     }
+}
+
+/// Shells, interpreters and launchers: given the file, they would run the
+/// server's content instead of opening it. Checked on the name chosen and,
+/// for a link, on the program it points to.
+fn runs_files(program: &Path) -> bool {
+    const PREFIXES: &[&str] = &[
+        "python",
+        "perl",
+        "ruby",
+        "php",
+        "lua",
+        "node",
+        "pwsh",
+        "powershell",
+        "wish",
+        "tclsh",
+    ];
+    const NAMES: &[&str] = &[
+        "sh",
+        "bash",
+        "dash",
+        "zsh",
+        "fish",
+        "ksh",
+        "mksh",
+        "csh",
+        "tcsh",
+        "busybox",
+        "env",
+        "xargs",
+        "sudo",
+        "doas",
+        "pkexec",
+        "su",
+        "nohup",
+        "timeout",
+        "nice",
+        "xterm",
+        "osascript",
+        "open",
+        "xdg-open",
+        "gio",
+        "gtk-launch",
+        "cmd",
+        "wscript",
+        "cscript",
+        "mshta",
+        "rundll32",
+        "regsvr32",
+        "msiexec",
+        "wsl",
+        "conhost",
+        "explorer",
+        "start",
+        "terminal",
+        "iterm",
+        "iterm2",
+        "script editor",
+        "automator",
+    ];
+    let real = std::fs::canonicalize(program).ok();
+    [Some(program), real.as_deref()].into_iter().flatten().any(|path| {
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        NAMES.contains(&stem.as_str()) || PREFIXES.iter().any(|p| stem.starts_with(p))
+    })
 }
 
 fn program_command(program: &Path, file: &Path) -> Command {
@@ -348,6 +417,14 @@ mod tests {
         assert!(check_program(&script).is_err(), "not executable");
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(check_program(&script).is_ok());
+        // Interpreters would run the file instead of opening it.
+        let shell = dir.path().join("bash");
+        std::fs::write(&shell, b"").unwrap();
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(check_program(&shell).is_err());
+        let disguised = dir.path().join("myeditor");
+        std::os::unix::fs::symlink(&shell, &disguised).unwrap();
+        assert!(check_program(&disguised).is_err(), "a link to an interpreter");
         assert!(check_program(dir.path()).is_err(), "a folder");
         assert!(check_program(Path::new("relative/editor")).is_err());
         assert!(check_program(&dir.path().join("missing")).is_err());

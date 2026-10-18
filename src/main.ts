@@ -139,13 +139,20 @@ export class App {
     void pane.connect();
   }
 
+  /** Quick connect is always SSH; a saved connection may be a local shell. */
+  private isSsh(pane: TerminalPane): boolean {
+    const target = pane.opts.target;
+    if (target.kind === "quick") return true;
+    return target.kind === "profile" && this.profiles.find((p) => p.id === target.id)?.type === "ssh";
+  }
+
   /** Opens a file browser on the SSH connection of the active terminal. */
   private openFiles(): void {
     const tab = this.active;
     const source = tab?.active;
     if (!tab || !(source instanceof TerminalPane)) return;
     const session = source.session;
-    if (source.opts.target.kind === "shell" || session === null) {
+    if (!this.isSsh(source) || session === null) {
       void alertBox(t("files"), t("filesNeedsSsh"));
       return;
     }
@@ -350,9 +357,11 @@ export class App {
   /** A pane that gets the focus (click, keyboard) becomes the active one. */
   private paneFocused(pane: Pane): void {
     const tab = this.tabs.find((x) => x.has(pane));
-    if (!tab) return;
+    // Every click in a pane lands here: redraw only when the active pane changes.
+    if (!tab || tab.active === pane) return;
     tab.setActive(pane, false);
     this.renderTabs();
+    this.updateWindowTitle();
   }
 
   private moveFocus(dir: Direction): void {
@@ -364,6 +373,7 @@ export class App {
   private closePane(): void {
     const tab = this.active;
     if (!tab) return;
+    this.endFileBrowsersOf(tab.active);
     if (tab.remove(tab.active)) this.closeTab(tab);
     else {
       tab.active.focus();
@@ -377,11 +387,11 @@ export class App {
     setPrefs({ fontSize: delta === 0 ? DEFAULTS.fontSize : getPrefs().fontSize + delta });
   }
 
-  private activate(tab: Tab): void {
+  private activate(tab: Tab, focus = true): void {
     this.active = tab;
     for (const x of this.tabs) x.el.classList.toggle("active", x === tab);
     this.renderTabs();
-    requestAnimationFrame(() => tab.active.focus());
+    if (focus) requestAnimationFrame(() => tab.active.focus());
     this.updateWindowTitle();
   }
 
@@ -391,9 +401,18 @@ export class App {
       .catch(() => {});
   }
 
+  /** A terminal is closing: the file browsers on its connection end with it. */
+  private endFileBrowsersOf(pane: Pane): void {
+    if (!(pane instanceof TerminalPane)) return;
+    for (const tab of this.tabs) {
+      for (const p of tab.panes) if (p instanceof FilesPane && p.opts.source === pane) p.sessionEnded();
+    }
+  }
+
   private closeTab(tab: Tab): void {
     const i = this.tabs.indexOf(tab);
     if (i < 0) return;
+    for (const pane of tab.panes) this.endFileBrowsersOf(pane);
     this.tabs.splice(i, 1);
     tab.dispose();
     if (this.active === tab) {
@@ -445,7 +464,8 @@ export class App {
       });
       el.addEventListener("contextmenu", (e) => {
         e.preventDefault();
-        this.activate(tab);
+        // The menu keeps the keyboard focus: the terminal gets it back when it closes.
+        this.activate(tab, false);
         const active = tab.active;
         showMenu(e.clientX, e.clientY, [
           { label: t("splitRight"), icon: icon("splitRight"), hint: keyHint("splitRight"), action: () => void this.split("right") },
@@ -461,7 +481,7 @@ export class App {
             })),
           ...(active instanceof TerminalPane
             ? [
-                ...(active.opts.target.kind !== "shell" && active.session !== null
+                ...(this.isSsh(active) && active.session !== null
                   ? [{ label: t("openFiles"), icon: icon("folder"), hint: keyHint("files"), action: () => this.openFiles() }]
                   : []),
                 { label: t("find"), hint: keyHint("find"), action: () => active.find() },

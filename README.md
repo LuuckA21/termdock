@@ -37,7 +37,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | `Alt+←↑→↓` | move to the next pane (with several panes) |
 | `Ctrl+Shift+W` | close the pane (the tab with its last pane) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | next / previous tab |
-| `Alt+1…9` | go to tab N |
+| `Alt+1…9` (macOS: `Cmd+1…9`) | go to tab N |
 | `Ctrl+Shift+1…9` | open favorite N |
 | `Ctrl+Shift+K` | quick connect |
 | `Ctrl+Shift+M` | connection manager |
@@ -53,7 +53,7 @@ These are the defaults (`Cmd` works in place of `Ctrl` on macOS). Every shortcut
 The main choices (details in [SECURITY.md](SECURITY.md)):
 
 - **Rust backend** (memory safe), SSH implemented in pure Rust with [russh](https://github.com/Eugeny/russh): no external `ssh` process, no intermediate shell.
-- **Modern algorithms only**: hybrid post-quantum key exchange `mlkem768x25519-sha256` first, then `curve25519-sha256`; AEAD ciphers (`chacha20-poly1305`, `aes-gcm`); encrypt-then-MAC SHA-2 MACs; *strict KEX* (Terrapin mitigation). SHA-1, CBC, DSA, `ssh-rsa` and compression are excluded.
+- **Modern algorithms**: hybrid post-quantum key exchange `mlkem768x25519-sha256` first, then `curve25519-sha256` (NIST ECDH and large DH groups only as fallback); AEAD ciphers preferred (`chacha20-poly1305`, `aes-gcm`), then AES-CTR; SHA-2 MACs, encrypt-then-MAC first; *strict KEX* (Terrapin mitigation). SHA-1, CBC, DSA, `ssh-rsa` and compression are excluded.
 - **Host key verification** before any authentication: on first connection the SHA-256 fingerprint is shown for confirmation (default: *Cancel*); if the key changes the connection is **refused** and the dialog offers no way to force it. Supports the OpenSSH format, including hashed entries, wildcards and `@revoked`, and also reads `~/.ssh/known_hosts`.
 - **No secrets on disk**: passwords and passphrases are stored only if you ask, and only in the operating system keychain (Windows Credential Manager, macOS Keychain, Secret Service on Linux). They are wiped from memory after use (`zeroize`), never sent back to the UI, and deleted if the server rejects them.
 - Changing a connection's host, port, user or authentication method deletes its saved password, so it is never sent to a different server.
@@ -75,12 +75,20 @@ crates/termdock-core   UI-independent logic, tested in isolation
   ├─ vault.rs           OS keychain (keyring)
   ├─ hostkeys.rs        known_hosts: TOFU, changed/revoked keys
   ├─ ssh.rs             SSH client (russh): algorithms, authentication, jump hosts
+  ├─ session.rs         session events and output shared by SSH and local shells
   ├─ forward.rs         port forwarding -L / -R / -D (SOCKS5)
   ├─ sftp.rs            SFTP on the terminal's connection (file browser)
   ├─ sshconfig.rs       ~/.ssh/config import
   ├─ local.rs           local shells through a PTY (portable-pty / ConPTY)
-  └─ shells.rs          detection of the available shells
-src-tauri/             Tauri 2 desktop app: IPC commands, prompts, state
+  ├─ shells.rs          detection of the available shells
+  └─ error.rs           error type shared by the crate
+src-tauri/             Tauri 2 desktop app
+  ├─ commands.rs        IPC commands for profiles and sessions
+  ├─ prompts.rs         questions for the user (host key, password, OTP)
+  ├─ sftp.rs            file browser commands, native dialogs, dropped files
+  ├─ edit.rs            Edit: private copy, watching and upload on save
+  ├─ editor.rs          which text editor opens it (system or chosen in Settings)
+  └─ updates.rs         signed in-app updates
 src/                   TypeScript + xterm.js UI (no framework)
 ```
 
@@ -94,16 +102,16 @@ Data is stored in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json` and `known_hosts`; passwords live only in the keychain. Interface preferences such as language and appearance, and saved layouts, are kept in the web view's local storage.)
+(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain. Interface preferences such as language, appearance and keyboard shortcuts, and saved layouts, are kept in the web view's local storage.)
 
 ## Development
 
-Requirements: stable [Rust](https://rustup.rs) (≥ 1.90), Node.js ≥ 22 and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system (on Linux: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libdbus-1-dev`).
+Requirements: stable [Rust](https://rustup.rs) (≥ 1.90), Node.js ≥ 22 and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system (on Linux: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libdbus-1-dev`). The released Linux packages are built on Ubuntu 24.04 and need a distribution at least as recent (glibc 2.39).
 
 ```sh
 npm ci
 npm run tauri dev        # run the app in development mode
-npm run tauri build      # build the installers (MSI/NSIS, DMG, AppImage/deb/rpm)
+npm run tauri build -- --no-sign   # build the installers (MSI/NSIS, DMG, AppImage/deb/rpm) without the updater key
 ```
 
 Tests and checks:
@@ -136,9 +144,9 @@ In-app updates need the updater signing key, created once by the owner:
 npm run tauri signer generate -- -w ~/.tauri/termdock.key
 ```
 
-Without Node.js, [minisign](https://jedisct1.github.io/minisign/) produces compatible keys: run `minisign -G -p termdock.pub -s termdock.key` (it asks for the password), then use the **Base64 encoding** of each file where the steps below mention its content (PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("termdock.key"))`; macOS/Linux: `base64 < termdock.key | tr -d '\n'`).
+Without Node.js, [minisign](https://jedisct1.github.io/minisign/) produces compatible keys: run `minisign -G -p ~/.tauri/termdock.key.pub -s ~/.tauri/termdock.key` (it asks for the password; keep the keys outside the repository), then use the **Base64 encoding** of each file where the steps below mention its content (PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.tauri\termdock.key"))`; macOS/Linux: `base64 < ~/.tauri/termdock.key | tr -d '\n'`).
 
-The public key (`~/.tauri/termdock.key.pub`) goes into `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. The private key goes into an offline backup (without it, installed copies can no longer be updated) and into GitHub: *Settings → Environments → New environment* `release`, *Deployment branches and tags* limited to the branch `main` and the tag pattern `v*`, then the environment secrets `TAURI_SIGNING_PRIVATE_KEY` (content of `~/.tauri/termdock.key`) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Do not store them as repository secrets: those can be read by workflows on any branch.
+The public key (`~/.tauri/termdock.key.pub`) goes into `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. The private key goes into an offline backup (without it, installed copies can no longer be updated) and into GitHub: *Settings → Environments → New environment* `release`, *Deployment branches and tags* limited to the branch `main` (no tags: a tag can point at an unreviewed commit), then the environment secrets `TAURI_SIGNING_PRIVATE_KEY` (content of `~/.tauri/termdock.key`) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Do not store them as repository secrets: those can be read by workflows on any branch.
 
 The release workflow checks the key before tagging, signs every package, verifies them with `scripts/updater-manifest.mjs` and attaches `latest.json`, which installed apps read once the release is published. **Publish a draft only if it has `latest.json`**: without it, installed copies stop finding updates. deb/rpm installs are only notified (the package manager updates them).
 

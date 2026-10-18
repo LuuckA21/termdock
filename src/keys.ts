@@ -122,7 +122,13 @@ const DEFAULTS: Record<Action, Chord[]> = {
   settings: [c("mod+Comma")],
 };
 
-const DIGIT_DEFAULTS: Record<DigitAction, DigitMods> = { goToTab: "alt", openFavorite: "mod+shift" };
+const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+
+// On macOS Option+digit types characters (e.g. [ ] { } on German layouts): Cmd+1…9 there.
+const DIGIT_DEFAULTS: Record<DigitAction, DigitMods> = {
+  goToTab: isMac ? "mod" : "alt",
+  openFavorite: "mod+shift",
+};
 
 export interface KeyMap {
   actions: Record<Action, Chord[]>;
@@ -131,7 +137,6 @@ export interface KeyMap {
 
 const STORAGE_KEY = "termdock.keys";
 const MAX_CHORDS = 4;
-const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 // ---- chord text form ("mod+shift+KeyT", "mod+key:+")
 
@@ -142,7 +147,7 @@ export function chordSpec(ch: Chord): string {
 }
 
 /** A chord from its text form, or null if it is not valid. */
-export function parseChord(spec: unknown): Chord | null {
+function parseChord(spec: unknown): Chord | null {
   if (typeof spec !== "string" || spec.length > 40) return null;
   const keyAt = spec.indexOf("key:");
   const head = keyAt >= 0 ? spec.slice(0, keyAt) : spec.slice(0, spec.lastIndexOf("+") + 1);

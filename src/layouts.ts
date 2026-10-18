@@ -13,7 +13,7 @@ export interface LayoutLeaf {
   title: string;
 }
 
-export interface LayoutSplit {
+interface LayoutSplit {
   kind: "split";
   dir: SplitDir;
   /** Share of the space taken by `a`. */
@@ -37,7 +37,7 @@ interface Stored {
 }
 
 const STORAGE_KEY = "termdock.layouts";
-export const MAX_LAYOUTS = 50;
+const MAX_LAYOUTS = 50;
 export const MAX_PANES = 16;
 export const MAX_NAME = 60;
 /** A tree of n panes is at most n - 1 deep. */

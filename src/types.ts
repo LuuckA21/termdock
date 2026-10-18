@@ -99,7 +99,8 @@ export type SftpOpened =
 export type EditEvent =
   | { kind: "saved"; edit: number }
   | { kind: "conflict"; edit: number }
-  | { kind: "failed"; edit: number; message: string };
+  | { kind: "failed"; edit: number; message: string }
+  | { kind: "stopped"; edit: number };
 
 export interface PickedFile {
   token: string;

@@ -29,6 +29,7 @@ export class FavoritesBar {
 
   render(): void {
     clear(this.root);
+    this.root.setAttribute("aria-label", t("favorites"));
     const chips = h("div", { class: "fav-chips" });
     chips.addEventListener(
       "wheel",

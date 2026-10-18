@@ -7,6 +7,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-18
+
+### Security
+
+- A host recorded with a key of one type no longer gets the "unknown host" question when it shows a key of another type: that counts as a changed key and the connection is refused, and the recorded key types are offered first.
+- Links sent by the server in the terminal (OSC 8) are no longer opened.
+- Pasted text loses Escape and other control characters, so it cannot end bracketed paste early; pasting several lines into a program without bracketed paste asks first.
+- A password or host-key question from a background tab waits until that tab is shown, and does not take the keyboard while you type in another pane.
+- Server-opened X11, agent, session, direct-tcpip and Unix-socket channels are refused.
+- RSA keys never sign with SHA-1; a server that only accepts SHA-1 signatures is not offered them.
+- Changing a connection's host, port, user or authentication now removes its saved password before the change is saved; if that fails, nothing is changed. A failed save no longer leaves the change in memory.
+- Uploading over a link only writes the file it points to when both belong to the same user; shells and interpreters can no longer be chosen as editor.
+- File listings are limited in name size as well; the 5-minute sudo password wait is enforced.
+- Releases are built only from `main` (no tag trigger), checkouts in CI keep no credentials, and the signing-key files are ignored by git.
+
+### Fixed
+
+- Connecting to a port that accepts and stays silent now times out instead of hanging.
+- Importing `~/.ssh/config` no longer fails when a host is listed before its ProxyJump bastion; ProxyJump loops are reported.
+- Two remote forwards on the same address no longer break each other.
+- A password refused over keyboard-interactive is not asked again in a second round (fewer failed attempts on the server).
+- `known_hosts` files with non-UTF-8 bytes (e.g. a Latin-1 comment) no longer block every connection.
+- Right click pastes again when nothing is selected (it used to select and copy the word under the pointer).
+- On macOS, Option types characters (@ # [ ]…) in the terminal again, and *Go to tab 1…9* defaults to Cmd+1…9.
+- Enter on a connection in the manager no longer also reaches the terminal behind it.
+- Closing a terminal ends its file browser too; Delete, Rename and New folder act on the folder shown when they were started, even with Follow on.
+- *Files (SFTP)* is no longer offered for saved local shells; the window title follows the pane in focus; menus give the keyboard focus back.
+- An edit whose file browser closed now says that saves are no longer uploaded; a failed save is no longer reported as a conflict.
+- Quitting during a transfer removes its temporary files; a shell that exits at once no longer leaves a dead session behind.
+- Login prompts show the server's text with invisible characters made visible; "Passphrase" is translated.
+- Documentation: local builds use `npm run tauri build -- --no-sign`; storage, algorithms and architecture are described accurately.
+
 ## [0.11.0] - 2026-10-17
 
 ### Added
@@ -165,7 +197,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/LuuckA21/termdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/LuuckA21/termdock/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/LuuckA21/termdock/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.10.0

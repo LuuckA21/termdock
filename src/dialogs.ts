@@ -1,4 +1,4 @@
-import { h } from "./dom";
+import { displayName, h } from "./dom";
 import { t } from "./i18n";
 import type { HostKeyInfo, SecretPrompt } from "./types";
 
@@ -125,10 +125,15 @@ export function confirmHostKey(info: HostKeyInfo, signal?: AbortSignal): Promise
   });
 }
 
+/**
+ * `quiet`: the user is typing elsewhere (another pane), so the field does not
+ * take the focus at once: keys meant for that pane must not end up here.
+ */
 export function askSecret(
   prompt: SecretPrompt,
   vaultAvailable: boolean,
   signal?: AbortSignal,
+  quiet = false,
 ): Promise<{ secret: string; remember: boolean } | null> {
   const input = h("input", {
     type: prompt.kind === "challenge" && prompt.echo ? "text" : "password",
@@ -150,11 +155,17 @@ export function askSecret(
       break;
     case "challenge":
       title = t("challengeTitle", { target: prompt.target });
-      if (prompt.name) body.push(h("p", { class: "muted" }, prompt.name));
-      if (prompt.instructions) body.push(h("p", { class: "pre" }, prompt.instructions));
+      // Server text: shown with invisible and reordering characters made visible.
+      if (prompt.name) body.push(h("p", { class: "muted" }, displayName(prompt.name)));
+      if (prompt.instructions) body.push(h("p", { class: "pre" }, displayName(prompt.instructions, true)));
       break;
   }
-  const label = prompt.kind === "challenge" ? prompt.prompt : prompt.kind === "password" ? t("authPassword") : "Passphrase";
+  const label =
+    prompt.kind === "challenge"
+      ? displayName(prompt.prompt)
+      : prompt.kind === "password"
+        ? t("authPassword")
+        : t("authPassphrase");
   body.push(h("label", { class: "field" }, h("span", {}, label), input));
   if (prompt.canRemember) {
     body.push(
@@ -172,7 +183,8 @@ export function askSecret(
       { label: t("ok"), value: null, kind: "primary" },
     ],
     cancelValue: null,
-    initialFocus: input,
+    initialFocus: quiet ? undefined : input,
+    focusButton: 0,
     signal,
     onSubmit: () => {
       const result = { secret: input.value, remember: vaultAvailable && remember.checked };

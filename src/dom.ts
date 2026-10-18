@@ -1,6 +1,18 @@
 // Tiny DOM helpers. Text always goes through textContent, never innerHTML,
 // so profile names or server banners cannot inject markup.
 
+/** Control, format (bidi, zero-width, BOM, tags…) and line/paragraph separators. */
+const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+
+/**
+ * Server-provided text made safe to display: invisible and reordering
+ * characters become U+FFFD (no `evil\u202Egpj.exe` spoofing). `keepNewlines`
+ * keeps "\n" for multi-line text such as login instructions.
+ */
+export function displayName(text: string, keepNewlines = false): string {
+  return text.replace(UNSAFE, (c) => (keepNewlines && c === "\n" ? c : "\ufffd"));
+}
+
 type Attrs = Record<string, string | number | boolean | null | undefined | EventListener>;
 type Child = Node | string | null | undefined | false;
 

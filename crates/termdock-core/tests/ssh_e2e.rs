@@ -165,6 +165,42 @@ async fn run_and_exit(h: SessionHandle, out: Output, marker: &str) -> String {
     text
 }
 
+/// A host recorded with a key of another type (here a random ECDSA key) is
+/// refused like a changed key: never turned into the "unknown host" question.
+#[tokio::test(flavor = "multi_thread")]
+async fn other_key_type_is_refused() {
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("known_hosts");
+    let pattern = if e.port == 22 {
+        e.host.clone()
+    } else {
+        format!("[{}]:{}", e.host, e.port)
+    };
+    std::fs::write(
+        &file,
+        format!(
+            "{pattern} ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJVL/uD4vVTOphUTx2BAEd0UcaR0Yw+Tbd9Tzmq/5WpVf8hrPHbalCA6bUWtBr66/6Aavwh4+BR02Qarw0D5gpw=\n"
+        ),
+    )
+    .unwrap();
+    let kh = Arc::new(KnownHosts::new(file));
+    let vault = Arc::new(MemoryVault::default());
+    let ui = user(true, &[(&e.password, false)]);
+    let err = connect(&e, SshAuth::Password, &kh, &vault, None, ui.clone(), output().sink)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::HostKeyChanged { .. }), "{err}");
+    assert!(
+        ui.host_prompts.lock().unwrap().is_empty(),
+        "no trust-on-first-use question"
+    );
+    assert!(ui.asked.lock().unwrap().is_empty(), "no password asked");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn ssh_end_to_end() {
     let Some(e) = env() else {

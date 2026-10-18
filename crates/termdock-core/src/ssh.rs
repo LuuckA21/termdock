@@ -36,6 +36,11 @@ use crate::session::{
 use crate::vault::{Secret, SecretKind, Vault};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// keyboard-interactive questions per attempt (OpenSSH servers send 1–2).
+const MAX_INFO_REQUESTS: usize = 10;
+/// Version exchange, key exchange and the host-key question (which the UI
+/// expires after 3 minutes).
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4 * 60);
 const MAX_PROMPTS: usize = 3;
 const TERM: &str = "xterm-256color";
 
@@ -99,12 +104,16 @@ pub fn hardened_preferred() -> Preferred {
     }
 }
 
-fn client_config(target: &SshTarget) -> client::Config {
+/// `known`: key types recorded for this host, offered first so the server
+/// shows the recorded key (and any other key counts as changed).
+fn client_config(target: &SshTarget, known: &[Algorithm]) -> client::Config {
+    let mut preferred = hardened_preferred();
+    let (first, rest): (Vec<Algorithm>, Vec<Algorithm>) = HOST_KEYS.iter().cloned().partition(|a| known.contains(a));
+    preferred.key = Cow::Owned(first.into_iter().chain(rest).collect());
     client::Config {
-        preferred: hardened_preferred(),
+        preferred,
         keepalive_interval: (target.keepalive_secs > 0).then(|| Duration::from_secs(target.keepalive_secs.into())),
         keepalive_max: 3,
-        nodelay: true,
         ..Default::default()
     }
 }
@@ -200,14 +209,88 @@ impl client::Handler for ClientHandler {
                 forward::serve_remote(channel, reply, host, port);
             }
             // Never requested by us: refuse instead of connecting anywhere.
-            None => {
-                reply
-                    .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
-                    .await
-            }
+            None => prohibited(reply).await,
         }
         Ok(())
     }
+
+    // Every other channel a server may open is refused: Termdock never asks
+    // for X11, agent or socket forwarding, and a server has no business
+    // opening sessions or tunnels into the client.
+
+    async fn server_channel_open_x11(
+        &mut self,
+        _channel: russh::Channel<client::Msg>,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        prohibited(reply).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_agent_forward(
+        &mut self,
+        _channel: russh::Channel<client::Msg>,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        prohibited(reply).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_session(
+        &mut self,
+        _channel: russh::Channel<client::Msg>,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        prohibited(reply).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_direct_tcpip(
+        &mut self,
+        _channel: russh::Channel<client::Msg>,
+        _host_to_connect: &str,
+        _port_to_connect: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        prohibited(reply).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_forwarded_streamlocal(
+        &mut self,
+        _channel: russh::Channel<client::Msg>,
+        _socket_path: &str,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        prohibited(reply).await;
+        Ok(())
+    }
+
+    async fn server_channel_open_direct_streamlocal(
+        &mut self,
+        _channel: russh::Channel<client::Msg>,
+        _socket_path: &str,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        prohibited(reply).await;
+        Ok(())
+    }
+}
+
+async fn prohibited(reply: client::ChannelOpenHandle) {
+    reply
+        .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+        .await
 }
 
 struct Context {
@@ -237,9 +320,16 @@ where
         refusal: refusal.clone(),
         remote_forwards,
     };
-    let mut handle = match client::connect_stream(Arc::new(client_config(target)), stream, handler).await {
-        Ok(h) => h,
-        Err(e) => return Err(refusal.lock().unwrap().take().unwrap_or(Error::Ssh(e))),
+    let known = ctx.known_hosts.known_algorithms(&target.host, target.port);
+    let config = Arc::new(client_config(target, &known));
+    // The handshake has no timeout of its own: a port that accepts and stays
+    // silent would hang here forever. The bound leaves time for the host-key
+    // question.
+    let handshake = tokio::time::timeout(HANDSHAKE_TIMEOUT, client::connect_stream(config, stream, handler)).await;
+    let mut handle = match handshake {
+        Err(_) => return Err(Error::Timeout),
+        Ok(Ok(h)) => h,
+        Ok(Err(e)) => return Err(refusal.lock().unwrap().take().unwrap_or(Error::Ssh(e))),
     };
 
     let authenticated = Authenticator {
@@ -249,6 +339,8 @@ where
         vault: ctx.vault.as_ref(),
         ui: ctx.ui.as_ref(),
         remaining: None,
+        partial: false,
+        kbd_tried: false,
     }
     .run()
     .await;
@@ -441,6 +533,10 @@ struct Authenticator<'a> {
     ui: &'a dyn Interaction,
     /// Methods the server still accepts; `None` until the first answer.
     remaining: Option<MethodSet>,
+    /// The last failure was a partial success (one factor accepted).
+    partial: bool,
+    /// keyboard-interactive was already used (for a password).
+    kbd_tried: bool,
 }
 
 impl Authenticator<'_> {
@@ -461,7 +557,11 @@ impl Authenticator<'_> {
             return Ok(true);
         }
         // Second factor after a partial success (e.g. key + one-time code).
-        if self.allows(MethodKind::KeyboardInteractive) && self.remaining.is_some() {
+        // Not a second round of a password already refused over
+        // keyboard-interactive: that would only add failed attempts
+        // (MaxAuthTries, fail2ban).
+        if self.allows(MethodKind::KeyboardInteractive) && self.remaining.is_some() && (self.partial || !self.kbd_tried)
+        {
             return self.try_keyboard_interactive(None).await;
         }
         Ok(false)
@@ -474,8 +574,12 @@ impl Authenticator<'_> {
     fn record(&mut self, result: AuthResult) -> bool {
         match result {
             AuthResult::Success => true,
-            AuthResult::Failure { remaining_methods, .. } => {
+            AuthResult::Failure {
+                remaining_methods,
+                partial_success,
+            } => {
                 self.remaining = Some(remaining_methods);
+                self.partial = partial_success;
                 false
             }
         }
@@ -519,12 +623,23 @@ impl Authenticator<'_> {
         }
     }
 
-    async fn rsa_hash(&mut self, alg: &Algorithm) -> Result<Option<HashAlg>> {
-        if alg.clone().is_rsa() {
-            Ok(self.handle.best_supported_rsa_hash().await?.flatten())
-        } else {
-            Ok(None)
+    /// The hash an RSA key signs with: always SHA-2, never SHA-1 (`ssh-rsa`).
+    /// `Some(None)` for other keys; `None` when the server only takes SHA-1
+    /// RSA signatures, so the key is not used.
+    async fn rsa_hash(&mut self, alg: &Algorithm) -> Result<Option<Option<HashAlg>>> {
+        if !alg.clone().is_rsa() {
+            return Ok(Some(None));
         }
+        Ok(match self.handle.best_supported_rsa_hash().await? {
+            // The server did not say (no server-sig-algs): SHA-512 is the
+            // best guess, as the russh documentation suggests.
+            None => Some(Some(HashAlg::Sha512)),
+            Some(Some(hash)) => Some(Some(hash)),
+            Some(None) => {
+                debug!("skipping RSA key: the server only accepts SHA-1 signatures");
+                None
+            }
+        })
     }
 
     async fn try_agent(&mut self) -> Result<bool> {
@@ -540,7 +655,9 @@ impl Authenticator<'_> {
             let AgentIdentity::PublicKey { key, .. } = identity else {
                 continue;
             };
-            let hash = self.rsa_hash(&key.algorithm()).await?;
+            let Some(hash) = self.rsa_hash(&key.algorithm()).await? else {
+                continue;
+            };
             let user = self.target.username.clone();
             match self
                 .handle
@@ -602,7 +719,9 @@ impl Authenticator<'_> {
                 return Ok(false);
             }
         };
-        let hash = self.rsa_hash(&key.algorithm()).await?;
+        let Some(hash) = self.rsa_hash(&key.algorithm()).await? else {
+            return Ok(false);
+        };
         let user = self.target.username.clone();
         let r = self
             .handle
@@ -673,6 +792,7 @@ impl Authenticator<'_> {
     /// keyboard-interactive: used for passwords on servers that only offer
     /// it, and for one-time codes / second factors.
     async fn try_keyboard_interactive(&mut self, mut saved_password: Option<Secret>) -> Result<bool> {
+        self.kbd_tried = true;
         let user = self.target.username.clone();
         for _ in 0..MAX_PROMPTS {
             if !self.allows(MethodKind::KeyboardInteractive) {
@@ -681,6 +801,8 @@ impl Authenticator<'_> {
             let mut remember: Option<SecretAnswer> = None;
             let mut used_saved = false;
             let mut reply = self.handle.authenticate_keyboard_interactive_start(&user, None).await?;
+            // A server could keep sending questions (even empty ones) forever.
+            let mut requests = 0;
             loop {
                 match reply {
                     KeyboardInteractiveAuthResponse::Success => {
@@ -689,8 +811,12 @@ impl Authenticator<'_> {
                         }
                         return Ok(true);
                     }
-                    KeyboardInteractiveAuthResponse::Failure { remaining_methods, .. } => {
+                    KeyboardInteractiveAuthResponse::Failure {
+                        remaining_methods,
+                        partial_success,
+                    } => {
                         self.remaining = Some(remaining_methods);
+                        self.partial = partial_success;
                         if used_saved {
                             self.vault_forget(SecretKind::Password);
                         }
@@ -701,6 +827,10 @@ impl Authenticator<'_> {
                         instructions,
                         prompts,
                     } => {
+                        requests += 1;
+                        if requests > MAX_INFO_REQUESTS {
+                            return Ok(false);
+                        }
                         let mut responses = Vec::with_capacity(prompts.len());
                         for p in &prompts {
                             let looks_like_password = !p.echo && p.prompt.to_lowercase().contains("password");

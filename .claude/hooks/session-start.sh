@@ -33,8 +33,8 @@ if command -v rustup >/dev/null 2>&1; then
   rustup component add clippy rustfmt >/dev/null 2>&1 || true
 fi
 
-# Node dependencies (package-lock.json is the source of truth).
-npm install --no-audit --no-fund
+# Node dependencies, exactly as package-lock.json says (never rewritten here).
+npm ci --no-audit --no-fund
 
 # Crate sources, so builds and tests work offline from here on.
 cargo fetch --locked

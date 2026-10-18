@@ -39,8 +39,15 @@ type LocalDest = (String, u16);
 pub(crate) struct RemoteForwards(Arc<Mutex<HashMap<RemoteBind, LocalDest>>>);
 
 impl RemoteForwards {
-    fn insert(&self, bind: RemoteBind, dest: LocalDest) {
-        self.0.lock().unwrap().insert(bind, dest);
+    /// Adds a forward unless `bind` is already taken (true when added).
+    fn try_insert(&self, bind: RemoteBind, dest: LocalDest) -> bool {
+        match self.0.lock().unwrap().entry(bind) {
+            std::collections::hash_map::Entry::Occupied(_) => false,
+            std::collections::hash_map::Entry::Vacant(v) => {
+                v.insert(dest);
+                true
+            }
+        }
     }
 
     fn remove(&self, bind: &RemoteBind) {
@@ -102,15 +109,24 @@ pub(crate) async fn start(
                 dest_port,
             } => {
                 let key = (bind_host.clone(), u32::from(bind_port));
-                remote.insert(key.clone(), (dest_host, dest_port));
-                match handle.tcpip_forward(bind_host, bind_port.into()).await {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        remote.remove(&key);
-                        Err(match e {
-                            russh::Error::RequestDenied => "refused by the server (AllowTcpForwarding?)".into(),
-                            e => e.to_string(),
-                        })
+                if !remote.try_insert(key.clone(), (dest_host, dest_port)) {
+                    // Never replace or remove a forward that is already active.
+                    Err("the same remote address is already forwarded".into())
+                } else {
+                    match tokio::time::timeout(CONNECT_TIMEOUT, handle.tcpip_forward(bind_host, bind_port.into())).await
+                    {
+                        Ok(Ok(_)) => Ok(()),
+                        failed => {
+                            remote.remove(&key);
+                            Err(match failed {
+                                Err(_) => "no answer from the server".into(),
+                                Ok(Err(russh::Error::RequestDenied)) => {
+                                    "refused by the server (AllowTcpForwarding?)".into()
+                                }
+                                Ok(Err(e)) => e.to_string(),
+                                Ok(Ok(_)) => unreachable!(),
+                            })
+                        }
                     }
                 }
             }
@@ -349,12 +365,12 @@ mod tests {
     #[test]
     fn remote_lookup() {
         let r = RemoteForwards::default();
-        r.insert(("localhost".into(), 9000), ("127.0.0.1".into(), 3000));
-        r.insert(("0.0.0.0".into(), 9001), ("127.0.0.1".into(), 3001));
+        assert!(r.try_insert(("localhost".into(), 9000), ("127.0.0.1".into(), 3000)));
+        assert!(r.try_insert(("0.0.0.0".into(), 9001), ("127.0.0.1".into(), 3001)));
         assert_eq!(r.lookup("localhost", 9000), Some(("127.0.0.1".into(), 3000)));
         assert_eq!(r.lookup("127.0.0.1", 9000), Some(("127.0.0.1".into(), 3000)));
         assert_eq!(r.lookup("localhost", 1234), None);
-        r.insert(("127.0.0.1".into(), 9000), ("127.0.0.1".into(), 4000));
+        assert!(r.try_insert(("127.0.0.1".into(), 9000), ("127.0.0.1".into(), 4000)));
         // Ambiguous by port: only the exact match is accepted.
         assert_eq!(r.lookup("::1", 9000), None);
     }

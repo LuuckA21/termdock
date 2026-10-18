@@ -98,7 +98,11 @@ export function openManager(app: App, opts: ManagerOptions): void {
       app.openProfile(p);
     });
     r.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
+      // Only on the row itself (its star and connect buttons handle their own
+      // Enter), and consumed here, so it does not also reach the terminal that
+      // gets the focus back.
+      if (e.key === "Enter" && e.target === r) {
+        e.preventDefault();
         close();
         app.openProfile(p);
       }

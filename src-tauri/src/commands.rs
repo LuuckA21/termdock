@@ -64,7 +64,7 @@ pub struct AppInfo {
     platform: &'static str,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_info(app: AppHandle) -> AppInfo {
     AppInfo {
         // The version the updater compares against (tauri.conf.json).
@@ -90,27 +90,34 @@ pub fn list_profiles(state: State<'_, AppState>) -> ProfileList {
     }
 }
 
-#[tauri::command]
+// Commands that touch the keychain or files run off the main thread
+// (`async`): a keychain unlock prompt must not freeze the window.
+
+#[tauri::command(async)]
 pub fn save_profile(state: State<'_, AppState>, profile: Profile, favorite: Option<bool>) -> CmdResult<Profile> {
     let mut store = state.store.lock().unwrap();
-    let previous = store.get(profile.id).ok().cloned();
+    // A saved password belongs to user@host:port; if those change, forget it
+    // instead of sending it to a different server. First, so that a failure
+    // to forget it leaves the profile unchanged.
+    if let Some(ProfileKind::Ssh(old)) = store.get(profile.id).ok().map(|p| &p.kind) {
+        let moved = match &profile.kind {
+            ProfileKind::Ssh(new) => {
+                old.host != new.host || old.port != new.port || old.username != new.username || old.auth != new.auth
+            }
+            _ => true,
+        };
+        if moved {
+            state.vault.delete_all(profile.id)?;
+        }
+    }
     let saved = store.upsert(profile)?;
     if let Some(fav) = favorite {
         store.set_favorite(saved.id, fav)?;
     }
-    drop(store);
-
-    // A saved password belongs to user@host:port; if those change, forget it
-    // instead of sending it to a different server.
-    if let (Some(ProfileKind::Ssh(old)), ProfileKind::Ssh(new)) = (previous.map(|p| p.kind), &saved.kind)
-        && (old.host != new.host || old.port != new.port || old.username != new.username || old.auth != new.auth)
-    {
-        state.vault.delete_all(saved.id)?;
-    }
     Ok(saved)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_profile(state: State<'_, AppState>, id: Uuid) -> CmdResult<()> {
     let mut store = state.store.lock().unwrap();
     if store.is_jump_host(id) {
@@ -122,9 +129,10 @@ pub fn delete_profile(state: State<'_, AppState>, id: Uuid) -> CmdResult<()> {
             .collect();
         return Err(CmdError(format!("used as jump host by: {}", users.join(", "))));
     }
-    store.remove(id)?;
-    drop(store);
+    // Secrets first: if they cannot be removed, the profile stays (no
+    // orphaned password left in the keychain).
     state.vault.delete_all(id)?;
+    store.remove(id)?;
     Ok(())
 }
 
@@ -139,7 +147,7 @@ pub fn reorder_favorites(state: State<'_, AppState>, order: Vec<Uuid>) -> CmdRes
 }
 
 /// Removes passwords/passphrases remembered for a profile.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn forget_secrets(state: State<'_, AppState>, id: Uuid) -> CmdResult<()> {
     Ok(state.vault.delete_all(id)?)
 }
@@ -149,7 +157,7 @@ pub fn forget_host_key(state: State<'_, AppState>, host: String, port: u16) -> C
     Ok(state.known_hosts.forget(&host, port)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_shells() -> Vec<DetectedShell> {
     shells::detect()
 }
@@ -184,12 +192,19 @@ pub async fn open_session(
     let sessions = state.sessions.clone();
     let browsers = sftp.inner().clone();
     let exit_notices = on_notice.clone();
+    // A shell can exit before connect/spawn returns: then the handle must
+    // not be registered afterwards as if it were alive.
+    let exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let exited_flag = exited.clone();
     let sink: EventSink = Arc::new(move |event| match event {
         SessionEvent::Data(bytes) => {
             let _ = on_data.send(InvokeResponseBody::Raw(bytes));
         }
         SessionEvent::Exit { code, message } => {
-            sessions.lock().unwrap().remove(&id);
+            let mut sessions = sessions.lock().unwrap();
+            exited_flag.store(true, Ordering::SeqCst);
+            sessions.remove(&id);
+            drop(sessions);
             browsers.session_ended(id);
             let _ = exit_notices.send(SessionNotice::Exit { code, message });
         }
@@ -240,7 +255,13 @@ pub async fn open_session(
             .await?
         }
     };
-    state.sessions.lock().unwrap().insert(id, handle);
+    {
+        // Checked under the same lock the exit path takes.
+        let mut sessions = state.sessions.lock().unwrap();
+        if !exited.load(Ordering::SeqCst) {
+            sessions.insert(id, handle);
+        }
+    }
     Ok(id)
 }
 
@@ -311,7 +332,7 @@ fn read_ssh_config() -> CmdResult<(std::path::PathBuf, Option<sshconfig::Parsed>
 
 /// Reads `~/.ssh/config` (fixed path: the UI cannot choose which file the
 /// backend reads) and lists what could be imported.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn preview_ssh_config(state: State<'_, AppState>) -> CmdResult<SshConfigPreview> {
     let (path, parsed) = read_ssh_config()?;
     let store = state.store.lock().unwrap();
@@ -338,7 +359,7 @@ pub struct ImportResult {
     warnings: Vec<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_ssh_config(state: State<'_, AppState>, aliases: Vec<String>) -> CmdResult<ImportResult> {
     let (_, parsed) = read_ssh_config()?;
     let parsed = parsed.ok_or_else(|| CmdError("~/.ssh/config not found".into()))?;

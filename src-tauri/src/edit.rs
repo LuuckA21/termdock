@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 use tauri::State;
 use tauri::ipc::Channel;
-use termdock_core::sftp::{CancellationToken, FileType, Sftp, validate_name};
+use termdock_core::sftp::{CancellationToken, Sftp, validate_name};
 
 use crate::commands::{CmdError, CmdResult};
 use crate::editor::EditorChoice;
@@ -23,6 +23,8 @@ use crate::sftp::SftpState;
 /// Larger files are better downloaded and handled by hand.
 const MAX_EDIT_SIZE: u64 = 5 * 1024 * 1024;
 const MAX_EDITS: usize = 20;
+/// Copies of finished edits kept until exit.
+const MAX_FINISHED: usize = 50;
 /// How often the local copy is checked for a save.
 const POLL: Duration = Duration::from_millis(700);
 /// Copies left by a run that did not exit cleanly are removed after this.
@@ -37,6 +39,9 @@ pub enum EditEvent {
     Conflict { edit: u32 },
     /// Saving failed; the local copy is kept, the next save tries again.
     Failed { edit: u32, message: String },
+    /// No longer watched (its file browser closed or switched user): saves
+    /// are not uploaded any more.
+    Stopped { edit: u32 },
 }
 
 struct Edit {
@@ -48,7 +53,7 @@ struct Edit {
     path: PathBuf,
     folder: tempfile::TempDir,
     /// The content last read from or written to the server.
-    synced: Vec<u8>,
+    synced: Arc<Vec<u8>>,
     /// Local copy's (time, length) at the last upload or download.
     seen: Option<(SystemTime, u64)>,
     /// A change seen at the previous poll: uploaded once it stops changing.
@@ -74,7 +79,7 @@ impl EditState {
         self.finished.lock().unwrap().clear();
     }
 
-    /// Stops watching the edits of a closed browser.
+    /// Stops watching the edits of a closed browser, telling the UI.
     pub fn forget_browser(&self, browser: u32) {
         let ended: Vec<u32> = {
             let edits = self.edits.lock().unwrap();
@@ -85,15 +90,28 @@ impl EditState {
                 .collect()
         };
         for id in ended {
-            self.stop(id);
+            if let Some(events) = self.stop(id) {
+                let _ = events.send(EditEvent::Stopped { edit: id });
+            }
         }
     }
 
-    fn stop(&self, edit: u32) {
-        let removed = self.edits.lock().unwrap().remove(&edit);
-        if let Some(e) = removed {
-            self.finished.lock().unwrap().push(e.folder);
+    /// Ends an edit; its folder is kept until exit (the editor may still
+    /// have the file open), at most [`MAX_FINISHED`] of them.
+    fn stop(&self, edit: u32) -> Option<Channel<EditEvent>> {
+        let removed = self.edits.lock().unwrap().remove(&edit)?;
+        let mut finished = self.finished.lock().unwrap();
+        finished.push(removed.folder);
+        if finished.len() > MAX_FINISHED {
+            // Deletes the oldest copy.
+            finished.remove(0);
         }
+        Some(removed.events)
+    }
+
+    /// Ends an edit whose editor never opened: its copy goes at once.
+    fn discard(&self, edit: u32) {
+        self.edits.lock().unwrap().remove(&edit);
     }
 }
 
@@ -160,15 +178,15 @@ pub async fn sftp_edit(
     // A link is edited at its target (saving would otherwise replace the link).
     let (dir, name) = fs.resolve(&dir, &name).await?;
     validate_name(&name)?;
-    let (_, _, kind) = fs.file_info(&dir, &name).await?;
-    if kind != FileType::File {
-        return Err(CmdError::msg("only regular files can be edited"));
-    }
     let folder = private_folder()?;
     let path = folder.path().join(editor_file_name(&name));
     let downloaded = fs
         .download_at_most(&dir, &name, &path, MAX_EDIT_SIZE, &CancellationToken::new(), |_, _| {})
         .await;
+    // The type is checked on the opened file (no separate stat).
+    if let Err(termdock_core::Error::NotRegular(_)) = downloaded {
+        return Err(CmdError::msg("only regular files can be edited"));
+    }
     if let Err(termdock_core::Error::TooLarge) = downloaded {
         return Err(CmdError::msg(
             "the file is too large to edit here (more than 5 MB): download it instead",
@@ -201,7 +219,7 @@ pub async fn sftp_edit(
                 seen: stamp(&path),
                 path: path.clone(),
                 folder,
-                synced: content,
+                synced: Arc::new(content),
                 settling: None,
                 paused: false,
                 events: on_event,
@@ -209,7 +227,7 @@ pub async fn sftp_edit(
         );
     }
     if let Err(e) = editor.open(&path) {
-        edits.stop(edit_id);
+        edits.discard(edit_id);
         return Err(CmdError::msg(e));
     }
     tauri::async_runtime::spawn(watch(edits.inner().clone(), sftp.inner().clone(), edit_id));
@@ -226,7 +244,7 @@ pub async fn sftp_edit_resolve(
     overwrite: bool,
 ) -> CmdResult<()> {
     if !overwrite {
-        edits.stop(edit);
+        let _ = edits.stop(edit);
         return Ok(());
     }
     push(&edits, &sftp, edit, true).await;
@@ -234,12 +252,6 @@ pub async fn sftp_edit_resolve(
         e.paused = false;
     }
     Ok(())
-}
-
-/// Stops watching a file.
-#[tauri::command]
-pub fn sftp_edit_stop(edits: State<'_, Arc<EditState>>, edit: u32) {
-    edits.stop(edit);
 }
 
 fn too_many() -> CmdError {
@@ -302,24 +314,30 @@ async fn push(edits: &EditState, sftp_state: &SftpState, edit: u32, force: bool)
     }) else {
         return;
     };
-    let Ok(content) = std::fs::read(&path) else { return };
-    if content == synced && !force {
-        return;
-    }
-    if content.len() as u64 > MAX_EDIT_SIZE {
+    // The size first: a huge file is not read at all.
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_EDIT_SIZE) {
         let _ = events.send(EditEvent::Failed {
             edit,
             message: "the file is larger than 5 MB".into(),
         });
         return;
     }
+    let Ok(content) = std::fs::read(&path) else { return };
+    if content == *synced && !force {
+        return;
+    }
     // A tracked transfer: closing the browser cancels it and waits for it.
-    let (transfer, cancel) = sftp_state.track(browser);
+    let Ok((transfer, cancel)) = sftp_state.track(browser) else {
+        return;
+    };
     let result = async {
         if !force {
-            let remote = sftp.read_at_most(&dir, &name, MAX_EDIT_SIZE).await;
-            if !matches!(remote, Ok(ref r) if *r == synced) {
-                return Ok::<_, termdock_core::Error>(false);
+            // Changed on the server (or grown past the limit): ask. Any other
+            // error is a failed save, not a conflict.
+            match sftp.read_at_most(&dir, &name, MAX_EDIT_SIZE).await {
+                Ok(remote) if remote == *synced => {}
+                Ok(_) | Err(termdock_core::Error::TooLarge) => return Ok::<_, termdock_core::Error>(false),
+                Err(e) => return Err(e),
             }
         }
         // Exactly the bytes read above (the editor may write again meanwhile).
@@ -337,11 +355,11 @@ async fn push(edits: &EditState, sftp_state: &SftpState, edit: u32, force: bool)
         Ok(true)
     }
     .await;
-    sftp_state.untrack(transfer);
+    sftp_state.end_transfer(transfer);
     match result {
         Ok(true) => {
             if let Some(e) = edits.edits.lock().unwrap().get_mut(&edit) {
-                e.synced = content;
+                e.synced = Arc::new(content);
             }
             let _ = events.send(EditEvent::Saved { edit });
         }

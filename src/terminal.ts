@@ -5,7 +5,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 
 import { api, errorText } from "./api";
-import { askSecret, confirmHostKey } from "./dialogs";
+import { askSecret, confirmBox, confirmHostKey } from "./dialogs";
 import { h } from "./dom";
 import { t } from "./i18n";
 import { actionFor, keyHint } from "./keys";
@@ -29,7 +29,12 @@ function plain(text: string): string {
     .replace(/\n/g, "\r\n");
 }
 /** The absolute path of an OSC 7 `file://host/path` report, or null. */
-export function osc7Path(data: string): string | null {
+/** Pasted text without ESC and other control characters (tab and line breaks kept). */
+function cleanPaste(text: string): string {
+  return text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
+}
+
+function osc7Path(data: string): string | null {
   if (data.length > 4096) return null;
   try {
     const url = new URL(data);
@@ -45,7 +50,7 @@ const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
 
-export interface TerminalOptions extends PaneOptions {
+interface TerminalOptions extends PaneOptions {
   vaultAvailable: boolean;
 }
 
@@ -77,8 +82,14 @@ export class TerminalPane implements Pane {
     this.el = h("div", { class: "pane terminal-host" });
     this.term = new Terminal({
       allowProposedApi: true,
-      macOptionIsMeta: true,
-      rightClickSelectsWord: true,
+      // Option must keep typing @ # [ ] { } on Italian, German… Mac layouts.
+      macOptionIsMeta: false,
+      // Right click copies an existing selection, otherwise pastes: selecting
+      // the word under the pointer first would turn every paste into a copy.
+      rightClickSelectsWord: false,
+      // Links sent by the server (OSC 8) are never opened: no browser window
+      // or new web view for a URL the server chose.
+      linkHandler: { activate: () => {} },
       ...TerminalPane.prefsOptions(),
     });
     this.term.loadAddon(this.fit);
@@ -121,6 +132,18 @@ export class TerminalPane implements Pane {
       if (this.term.hasSelection()) void this.copy();
       else void this.paste();
     });
+
+    // Every paste (keys, menu, the system's own Ctrl/Cmd+V) goes through paste().
+    this.el.addEventListener(
+      "paste",
+      (e) => {
+        if (e.target instanceof Node && this.searchBar.el.contains(e.target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        void this.paste(e.clipboardData?.getData("text/plain") ?? "");
+      },
+      true,
+    );
 
     this.term.textarea?.addEventListener("focus", () => this.opts.onFocus(this));
     // Focus in the find bar also makes this the active pane.
@@ -239,9 +262,23 @@ export class TerminalPane implements Pane {
     if (sel) await writeText(sel);
   }
 
-  async paste(): Promise<void> {
-    const text = await readText().catch(() => "");
-    if (text) this.term.paste(text);
+  /**
+   * Pastes `text` (default: the clipboard) as typed input. Escape and other
+   * control characters are dropped, so pasted text cannot end bracketed paste
+   * early or send key sequences; several lines are confirmed first when the
+   * program does not use bracketed paste (each line would run at once).
+   */
+  async paste(text?: string): Promise<void> {
+    const raw = text ?? (await readText().catch(() => ""));
+    const clean = cleanPaste(raw);
+    if (!clean || this.disposed) return;
+    const lines = clean.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/).length;
+    if (lines > 1 && !this.term.modes.bracketedPasteMode) {
+      const ok = await confirmBox(t("pasteLines", { count: lines }), t("paste"));
+      if (!ok || this.disposed) return;
+    }
+    this.term.paste(clean);
+    this.term.focus();
   }
 
   /** `binary`: xterm.js delivers raw bytes (some mouse reports) as one char per byte. */
@@ -278,12 +315,17 @@ export class TerminalPane implements Pane {
         this.term.write(`${CYAN}» ${plain(n.text)}${RESET}\r\n`);
         break;
       case "hostKey": {
+        await this.untilShown();
         const accept = await confirmHostKey(n.info, this.prompts.signal);
         await api.answerPrompt(n.promptId, { kind: "hostKey", accept });
         break;
       }
       case "secret": {
-        const res = await askSecret(n.prompt, this.opts.vaultAvailable, this.prompts.signal);
+        await this.untilShown();
+        // Someone typing in another pane keeps typing there, not into this field.
+        const active = document.activeElement;
+        const elsewhere = active instanceof HTMLElement && active !== document.body && !this.el.contains(active);
+        const res = await askSecret(n.prompt, this.opts.vaultAvailable, this.prompts.signal, elsewhere);
         const answer: PromptAnswer = res ? { kind: "secret", ...res } : { kind: "cancel" };
         await api.answerPrompt(n.promptId, answer);
         break;
@@ -296,6 +338,18 @@ export class TerminalPane implements Pane {
         this.ended();
         break;
       }
+    }
+  }
+
+  /**
+   * Waits until this pane is on screen (its tab is the active one), so a
+   * question from a session in a background tab never pops up over another
+   * tab, where keys typed for that tab would answer it.
+   */
+  private async untilShown(): Promise<void> {
+    const signal = this.prompts.signal;
+    while (!this.disposed && !signal.aborted && this.el.offsetParent === null) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }
 

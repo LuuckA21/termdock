@@ -21,7 +21,6 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::commands::{CmdError, CmdResult};
-use crate::state::AppState;
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -62,12 +61,6 @@ fn installable() -> bool {
         )
 }
 
-fn close_sessions(app: &AppHandle) {
-    if let Some(state) = app.try_state::<AppState>() {
-        state.close_all();
-    }
-}
-
 #[tauri::command]
 pub async fn check_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> CmdResult<Option<UpdateInfo>> {
     let handle = app.clone();
@@ -77,7 +70,7 @@ pub async fn check_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> 
         // Windows: the installer is started and the app exits right away.
         // This replaces the plugin's default hook, so do its cleanup too.
         .on_before_exit(move || {
-            close_sessions(&handle);
+            crate::close_sessions_and_edits(&handle);
             handle.cleanup_before_exit();
         })
         .build()?
@@ -143,7 +136,11 @@ pub async fn install_update(
         *pending.0.lock().unwrap() = Some(update);
         return Err(e.into());
     }
-    close_sessions(&app);
+    // Transfers clean up first, while their connections are still open.
+    if let Some(sftp) = app.try_state::<crate::sftp::SftpState>() {
+        sftp.inner().clone().close_all().await;
+    }
+    crate::close_sessions_and_edits(&app);
     app.request_restart();
     Ok(())
 }

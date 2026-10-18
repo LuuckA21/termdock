@@ -32,7 +32,6 @@ const COMMANDS: &[&str] = &[
     "sftp_sudo_cancel",
     "sftp_edit",
     "sftp_edit_resolve",
-    "sftp_edit_stop",
     "editor_get",
     "editor_pick",
     "editor_reset",

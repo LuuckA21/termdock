@@ -7,6 +7,38 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-18
+
+### Sicurezza
+
+- Un host registrato con una chiave di un tipo non riceve più la domanda da "host sconosciuto" quando mostra una chiave di un altro tipo: vale come chiave cambiata e la connessione viene rifiutata, e i tipi di chiave registrati vengono offerti per primi.
+- I link mandati dal server nel terminale (OSC 8) non vengono più aperti.
+- Al testo incollato vengono tolti Escape e gli altri caratteri di controllo, così non può chiudere in anticipo il bracketed paste; incollare più righe in un programma senza bracketed paste chiede prima conferma.
+- Una domanda di password o di host key da una scheda in secondo piano aspetta che quella scheda venga mostrata, e non prende la tastiera mentre scrivi in un altro pannello.
+- I canali X11, agent, session, direct-tcpip e socket Unix aperti dal server vengono rifiutati.
+- Le chiavi RSA non firmano mai con SHA-1; a un server che accetta solo firme SHA-1 non vengono offerte.
+- Cambiare host, porta, utente o autenticazione di una connessione ora rimuove la password salvata prima di salvare la modifica; se non riesce, non cambia nulla. Un salvataggio non riuscito non lascia più la modifica in memoria.
+- Caricare su un link scrive nel file a cui punta solo se entrambi appartengono allo stesso utente; shell e interpreti non si possono più scegliere come editor.
+- Gli elenchi di file sono limitati anche nella dimensione dei nomi; l'attesa di 5 minuti per la password di sudo viene rispettata.
+- Le release si compilano solo da `main` (nessun trigger sui tag), i checkout della CI non conservano credenziali e i file della chiave di firma sono ignorati da git.
+
+### Corretto
+
+- Connettersi a una porta che accetta e resta in silenzio ora va in timeout invece di bloccarsi.
+- L'import da `~/.ssh/config` non fallisce più quando un host è elencato prima del suo bastion ProxyJump; i cicli di ProxyJump vengono segnalati.
+- Due forwarding remoti sullo stesso indirizzo non si rompono più a vicenda.
+- Una password rifiutata via keyboard-interactive non viene richiesta di nuovo in un secondo giro (meno tentativi falliti sul server).
+- I file `known_hosts` con byte non UTF-8 (es. un commento Latin-1) non bloccano più tutte le connessioni.
+- Il tasto destro incolla di nuovo quando non c'è selezione (prima selezionava e copiava la parola sotto il puntatore).
+- Su macOS, Option scrive di nuovo i caratteri (@ # [ ]…) nel terminale, e *Vai alla scheda 1…9* usa di default Cmd+1…9.
+- Invio su una connessione nel gestore non arriva più anche al terminale dietro.
+- Chiudere un terminale chiude anche il suo file browser; Elimina, Rinomina e Nuova cartella agiscono sulla cartella mostrata quando sono stati avviati, anche con Segui attivo.
+- *File (SFTP)* non viene più offerto per le shell locali salvate; il titolo della finestra segue il pannello attivo; i menu restituiscono il focus della tastiera.
+- Una modifica il cui file browser si è chiuso ora dice che i salvataggi non vengono più caricati; un salvataggio non riuscito non viene più segnalato come conflitto.
+- Uscire durante un trasferimento rimuove i suoi file temporanei; una shell che esce subito non lascia più una sessione morta.
+- Le richieste di login mostrano il testo del server con i caratteri invisibili resi visibili; "Passphrase" è tradotto.
+- Documentazione: le build locali usano `npm run tauri build -- --no-sign`; archiviazione, algoritmi e architettura sono descritti correttamente.
+
 ## [0.11.0] - 2026-10-17
 
 ### Aggiunto
@@ -165,7 +197,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/LuuckA21/termdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/LuuckA21/termdock/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/LuuckA21/termdock/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/LuuckA21/termdock/compare/v0.9.1...v0.10.0

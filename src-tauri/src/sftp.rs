@@ -70,7 +70,10 @@ struct PendingSudo {
     user: String,
     login_user: String,
     pending: SudoPending,
-    at: Instant,
+}
+
+fn closed() -> CmdError {
+    CmdError::msg("the connection of this file browser is closed")
 }
 
 /// A sudo prompt left unanswered this long is closed.
@@ -87,17 +90,13 @@ impl SftpState {
     }
 
     pub(crate) fn browser(&self, id: u32) -> CmdResult<Arc<Sftp>> {
-        self.get(id)
-    }
-
-    fn get(&self, id: u32) -> CmdResult<Arc<Sftp>> {
         self.0
             .browsers
             .lock()
             .unwrap()
             .get(&id)
             .map(|b| b.sftp.clone())
-            .ok_or_else(|| CmdError::msg("the connection of this file browser is closed"))
+            .ok_or_else(closed)
     }
 
     fn next_id(&self) -> u32 {
@@ -106,11 +105,13 @@ impl SftpState {
 
     /// Removes browsers (all of `session`'s, or just `browser`) and cancels
     /// their transfers. Returns what to close and the transfers to wait for.
+    /// `None` for both: every browser.
     fn detach(&self, session: Option<u32>, browser: Option<u32>) -> (Vec<Arc<Sftp>>, Vec<u32>) {
+        let all = session.is_none() && browser.is_none();
         let mut browsers = self.0.browsers.lock().unwrap();
         let ids: Vec<u32> = browsers
             .iter()
-            .filter(|(id, b)| Some(b.session) == session || Some(**id) == browser)
+            .filter(|(id, b)| all || Some(b.session) == session || Some(**id) == browser)
             .map(|(id, _)| *id)
             .collect();
         let closed = ids
@@ -146,6 +147,21 @@ impl SftpState {
         }
     }
 
+    /// Termdock is quitting: every transfer is cancelled and given a few
+    /// seconds to remove its temporary files (local `.part` files, scratch
+    /// files on the servers), then the channels close.
+    pub async fn close_all(&self) {
+        let pending: Vec<PendingSudo> = self.0.sudo.lock().unwrap().drain().map(|(_, p)| p).collect();
+        for p in pending {
+            p.pending.cancel().await;
+        }
+        let (closed, running) = self.detach(None, None);
+        self.drain(&running).await;
+        for sftp in closed {
+            sftp.close().await;
+        }
+    }
+
     /// The terminal session ended by itself: drop its browsers now.
     pub fn session_ended(&self, session: u32) {
         let (closed, _) = self.detach(Some(session), None);
@@ -176,9 +192,14 @@ impl SftpState {
         }
     }
 
-    /// Registers a background transfer of `browser` (no progress), so
-    /// closing the browser cancels it and waits for its cleanup.
-    pub(crate) fn track(&self, browser: u32) -> (u32, CancellationToken) {
+    /// Registers a transfer of `browser`, so closing the browser cancels it
+    /// and waits for its cleanup. Refused once the browser is closed: added
+    /// while the browser list is locked, so a closing browser cannot miss it.
+    pub(crate) fn track(&self, browser: u32) -> CmdResult<(u32, CancellationToken)> {
+        let browsers = self.0.browsers.lock().unwrap();
+        if !browsers.contains_key(&browser) {
+            return Err(closed());
+        }
         let id = self.next_id();
         let cancel = CancellationToken::new();
         self.0.transfers.lock().unwrap().insert(
@@ -188,33 +209,21 @@ impl SftpState {
                 cancel: cancel.clone(),
             },
         );
-        (id, cancel)
+        Ok((id, cancel))
     }
 
-    pub(crate) fn untrack(&self, id: u32) {
-        self.end_transfer(id);
-    }
-
-    fn start_transfer(&self, browser: u32, progress: &Channel<Progress>) -> (u32, CancellationToken) {
-        let id = self.next_id();
-        let cancel = CancellationToken::new();
-        self.0.transfers.lock().unwrap().insert(
-            id,
-            Transfer {
-                browser,
-                cancel: cancel.clone(),
-            },
-        );
+    fn start_transfer(&self, browser: u32, progress: &Channel<Progress>) -> CmdResult<(u32, CancellationToken)> {
+        let (id, cancel) = self.track(browser)?;
         // The UI learns the id at once, so Cancel works from the start.
         let _ = progress.send(Progress {
             transfer: id,
             done: 0,
             total: None,
         });
-        (id, cancel)
+        Ok((id, cancel))
     }
 
-    fn end_transfer(&self, id: u32) {
+    pub(crate) fn end_transfer(&self, id: u32) {
         self.0.transfers.lock().unwrap().remove(&id);
     }
 }
@@ -350,29 +359,24 @@ async fn settle(
         OpenAs::PasswordRequired { pending, retry } => {
             let asks_for = pending.asks_for().map(str::to_owned);
             let id = sftp.next_id();
-            let expired: Vec<PendingSudo> = {
-                let mut sudo = sftp.0.sudo.lock().unwrap();
-                let old: Vec<u32> = sudo
-                    .iter()
-                    .filter(|(_, p)| p.at.elapsed() >= SUDO_TTL)
-                    .map(|(id, _)| *id)
-                    .collect();
-                let expired = old.iter().filter_map(|id| sudo.remove(id)).collect();
-                sudo.insert(
-                    id,
-                    PendingSudo {
-                        session,
-                        user,
-                        login_user,
-                        pending,
-                        at: Instant::now(),
-                    },
-                );
-                expired
-            };
-            for p in expired {
-                p.pending.cancel().await;
-            }
+            sftp.0.sudo.lock().unwrap().insert(
+                id,
+                PendingSudo {
+                    session,
+                    user,
+                    login_user,
+                    pending,
+                },
+            );
+            // Unanswered for too long: the waiting sudo is closed.
+            let state = sftp.inner().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(SUDO_TTL).await;
+                let expired = state.0.sudo.lock().unwrap().remove(&id);
+                if let Some(p) = expired {
+                    p.pending.cancel().await;
+                }
+            });
             Ok(Opened::PasswordRequired {
                 pending: id,
                 retry,
@@ -428,22 +432,22 @@ pub async fn sftp_close(sftp: State<'_, SftpState>, id: u32) -> CmdResult<()> {
 
 #[tauri::command]
 pub async fn sftp_list(sftp: State<'_, SftpState>, id: u32, path: String) -> CmdResult<Listing> {
-    Ok(sftp.get(id)?.list(&path).await?)
+    Ok(sftp.browser(id)?.list(&path).await?)
 }
 
 #[tauri::command]
 pub async fn sftp_mkdir(sftp: State<'_, SftpState>, id: u32, dir: String, name: String) -> CmdResult<()> {
-    Ok(sftp.get(id)?.mkdir(&dir, &name).await?)
+    Ok(sftp.browser(id)?.mkdir(&dir, &name).await?)
 }
 
 #[tauri::command]
 pub async fn sftp_rename(sftp: State<'_, SftpState>, id: u32, dir: String, from: String, to: String) -> CmdResult<()> {
-    Ok(sftp.get(id)?.rename(&dir, &from, &to).await?)
+    Ok(sftp.browser(id)?.rename(&dir, &from, &to).await?)
 }
 
 #[tauri::command]
 pub async fn sftp_remove(sftp: State<'_, SftpState>, id: u32, dir: String, name: String) -> CmdResult<()> {
-    Ok(sftp.get(id)?.remove(&dir, &name).await?)
+    Ok(sftp.browser(id)?.remove(&dir, &name).await?)
 }
 
 #[tauri::command]
@@ -464,7 +468,8 @@ pub async fn sftp_download(
     name: String,
     on_progress: Channel<Progress>,
 ) -> CmdResult<Option<String>> {
-    let fs = sftp.get(id)?;
+    // Fails fast, before the dialog, if the connection is already gone.
+    sftp.browser(id)?;
     let mut dialog = dialog(&app).set_file_name(local_file_name(&name));
     if let Some(downloads) = directories::UserDirs::new().and_then(|d| d.download_dir().map(Path::to_path_buf)) {
         dialog = dialog.set_directory(downloads);
@@ -477,8 +482,9 @@ pub async fn sftp_download(
         return Ok(None);
     };
     let local: PathBuf = local.into_path().map_err(|e| CmdError::msg(e.to_string()))?;
-
-    let (transfer, cancel) = sftp.start_transfer(id, &on_progress);
+    // The dialog may have stayed open while the connection closed.
+    let fs = sftp.browser(id)?;
+    let (transfer, cancel) = sftp.start_transfer(id, &on_progress)?;
     let result = fs
         .download(&dir, &name, &local, &cancel, throttled(transfer, on_progress))
         .await;
@@ -510,13 +516,17 @@ impl SftpState {
         // Only absolute paths: anything else would be resolved against the
         // app's own working folder.
         let paths: Vec<&PathBuf> = paths.iter().filter(|p| p.is_absolute()).collect();
-        let mut picked = self.0.picked.lock().unwrap();
-        picked.retain(|_, p| p.at.elapsed() < PICK_TTL);
-        // Checked before opening anything, so nothing is left open on refusal.
-        if picked.len() + paths.len() > MAX_PICKED {
+        let room = |picked: &mut HashMap<Uuid, Picked>, more: usize| {
+            picked.retain(|_, p| p.at.elapsed() < PICK_TTL);
+            picked.len() + more <= MAX_PICKED
+        };
+        // Checked before opening anything, so nothing is opened on refusal.
+        if !room(&mut self.0.picked.lock().unwrap(), paths.len()) {
             return Err(CmdError::msg("too many files at once"));
         }
-        let mut out = Vec::new();
+        // Opened without holding the lock (a slow network share must not
+        // block other commands).
+        let mut opened = Vec::new();
         let mut folders = 0;
         for path in paths {
             if path.is_dir() {
@@ -526,9 +536,17 @@ impl SftpState {
             let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
                 continue;
             };
-            let Some((handle, size, mode)) = open_regular(path) else {
-                continue;
-            };
+            if let Some((handle, size, mode)) = open_regular(path) {
+                opened.push((name, handle, size, mode));
+            }
+        }
+        let mut picked = self.0.picked.lock().unwrap();
+        // Checked again: other picks may have arrived meanwhile.
+        if !room(&mut picked, opened.len()) {
+            return Err(CmdError::msg("too many files at once"));
+        }
+        let mut out = Vec::new();
+        for (name, handle, size, mode) in opened {
             let token = Uuid::new_v4();
             picked.insert(
                 token,
@@ -630,6 +648,8 @@ pub fn sftp_forget_picks(sftp: State<'_, SftpState>, tokens: Vec<Uuid>) {
     for token in tokens {
         picked.remove(&token);
     }
+    // Expired picks close their files now, not at the next pick.
+    picked.retain(|_, p| p.at.elapsed() < PICK_TTL);
 }
 
 /// Uploads a file picked with `sftp_pick_upload` into `dir`, under its own
@@ -643,7 +663,7 @@ pub async fn sftp_upload(
     overwrite: bool,
     on_progress: Channel<Progress>,
 ) -> CmdResult<()> {
-    let fs = sftp.get(id)?;
+    let fs = sftp.browser(id)?;
     let picked = sftp
         .0
         .picked
@@ -653,7 +673,7 @@ pub async fn sftp_upload(
         .filter(|p| p.at.elapsed() < PICK_TTL)
         .ok_or_else(|| CmdError::msg("pick the files again"))?;
 
-    let (transfer, cancel) = sftp.start_transfer(id, &on_progress);
+    let (transfer, cancel) = sftp.start_transfer(id, &on_progress)?;
     let result = fs
         .upload(
             picked.file,

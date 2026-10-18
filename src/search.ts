@@ -83,10 +83,6 @@ export class SearchBar {
     addon.onDidChangeResults(({ resultIndex, resultCount }) => this.showCount(resultIndex, resultCount));
   }
 
-  get isOpen(): boolean {
-    return !this.el.hidden;
-  }
-
   /** Opens (or refocuses) the bar, starting from the terminal's selection if any. */
   open(): void {
     const selection = this.term.getSelection();
