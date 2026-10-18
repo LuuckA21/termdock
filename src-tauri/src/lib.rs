@@ -4,6 +4,7 @@ mod editor;
 mod prompts;
 mod sftp;
 mod state;
+mod transfer;
 mod updates;
 
 use tauri::{Manager, RunEvent};
@@ -65,10 +66,13 @@ pub fn run() {
             sftp::sftp_rename,
             sftp::sftp_remove,
             sftp::sftp_cancel,
-            sftp::sftp_download,
             sftp::sftp_pick_upload,
-            sftp::sftp_upload,
+            sftp::sftp_pick_upload_folders,
             sftp::sftp_forget_picks,
+            transfer::sftp_plan_upload,
+            transfer::sftp_plan_download,
+            transfer::sftp_run_plan,
+            transfer::sftp_drop_plan,
             sftp::sftp_sudo_password,
             sftp::sftp_sudo_cancel,
             edit::sftp_edit,

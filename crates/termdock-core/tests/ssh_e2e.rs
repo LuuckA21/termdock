@@ -977,3 +977,76 @@ async fn sftp_streamed_upload() {
     fs.remove(&home, &work).await.unwrap();
     run_and_exit(h, out, "stream").await;
 }
+
+/// Walking a remote folder for a folder download: folders come before their
+/// content, links inside are left out (never followed), sizes are known.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn sftp_folder_walk() {
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let kh = Arc::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let vault = Arc::new(MemoryVault::default());
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Password,
+        &kh,
+        &vault,
+        None,
+        user(true, &[(&e.password, false)]),
+        out.sink.clone(),
+    )
+    .await
+    .unwrap();
+    let work = format!("td-walk-{}", Uuid::new_v4().simple());
+    // Built in the shell: SFTP here cannot make links.
+    h.write(
+        format!(
+            "mkdir -p {work}/a/b && printf hello > {work}/a/b/f.txt && printf x > {work}/.dot && ln -s /etc {work}/a/escape && echo BUILT-$((40+2))\n"
+        )
+        .into_bytes(),
+    )
+    .unwrap();
+    let built = async {
+        while !out.text.lock().unwrap().contains("BUILT-42") {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(10), built)
+        .await
+        .expect("folder not built");
+
+    let fs = Sftp::open(&h).await.unwrap();
+    let home = fs.canonicalize(".").await.unwrap();
+    let (root, tree) = fs.walk(&home, &work).await.unwrap();
+    assert_eq!(root, sftp::join(&home, &work));
+    let paths: Vec<String> = tree.items.iter().map(|i| i.path.join("/")).collect();
+    let pos = |p: &str| {
+        paths
+            .iter()
+            .position(|x| x == p)
+            .unwrap_or_else(|| panic!("{p} missing: {paths:?}"))
+    };
+    assert!(pos("a") < pos("a/b") && pos("a/b") < pos("a/b/f.txt"));
+    pos(".dot");
+    assert!(!paths.iter().any(|p| p.contains("escape")), "{paths:?}");
+    assert_eq!(tree.skipped, 1);
+    let f = &tree.items[pos("a/b/f.txt")];
+    assert_eq!((f.dir, f.size), (false, 5));
+
+    assert_eq!(fs.lookup(&home, &work).await.unwrap(), Some(EntryKind::Dir));
+    assert_eq!(fs.lookup(&root, "a").await.unwrap(), Some(EntryKind::Dir));
+    let a = sftp::join(&root, "a");
+    assert_eq!(fs.lookup(&a, "escape").await.unwrap(), Some(EntryKind::Link));
+    assert_eq!(fs.lookup(&a, "nothing-here").await.unwrap(), None);
+    // Chosen directly, a link is followed only under the rule of `resolve`:
+    // this one belongs to the user but points at root's /etc.
+    assert!(fs.walk(&a, "escape").await.is_err());
+
+    h.write(format!("rm -rf {work}; exit 0\n").into_bytes()).unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(10), out.exit).await;
+}

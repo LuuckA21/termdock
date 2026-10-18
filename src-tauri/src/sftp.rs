@@ -2,11 +2,12 @@
 //! terminal session (see `termdock_core::sftp`).
 //!
 //! Local paths never come from the UI: downloads are saved where the user
-//! picks in a native save dialog, and uploads only accept tokens for files
-//! the user picked in a native open dialog (opened right then, so the file
-//! cannot be swapped later). The dialogs use the system's own titles: a
-//! compromised UI cannot word them, and it can at most open them; it cannot
-//! read or write files on its own.
+//! picks in a native dialog, and uploads only accept tokens for files and
+//! folders the user picked in a native open dialog or dropped on the window
+//! (files are opened right then, so they cannot be swapped later). The
+//! dialogs use the system's own titles: a compromised UI cannot word them,
+//! and it can at most open them; it cannot read or write files on its own.
+//! Transfers themselves run as plans (see `crate::transfer`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,7 +16,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 use termdock_core::sftp::{CancellationToken, Listing, OpenAs, Sftp, SudoPending, is_format_char};
@@ -26,13 +26,12 @@ use zeroize::Zeroizing;
 use crate::commands::{CmdError, CmdResult};
 use crate::edit::EditState;
 use crate::state::AppState;
+use crate::transfer::Plan;
 
 /// Upload tokens are single use and expire.
 const PICK_TTL: Duration = Duration::from_secs(10 * 60);
 /// Open picked files at most (each holds a file handle until uploaded).
 const MAX_PICKED: usize = 200;
-/// Progress messages are sent at most this often per transfer.
-const PROGRESS_STEP: u64 = 256 * 1024;
 /// How long closing waits for running transfers to clean up after cancel.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -46,11 +45,18 @@ struct Transfer {
     cancel: CancellationToken,
 }
 
-struct Picked {
-    file: std::fs::File,
-    mode: Option<u32>,
-    name: String,
+/// Something the user picked or dropped, waiting to be uploaded.
+pub(crate) struct Picked {
+    pub(crate) source: Source,
+    pub(crate) name: String,
     at: Instant,
+}
+
+pub(crate) enum Source {
+    /// A regular file, already open, and its permission bits.
+    File(std::fs::File, Option<u32>),
+    /// A folder: read when the upload is planned.
+    Folder(PathBuf),
 }
 
 #[derive(Default)]
@@ -59,6 +65,8 @@ struct Inner {
     browsers: Mutex<HashMap<u32, Browser>>,
     transfers: Mutex<HashMap<u32, Transfer>>,
     picked: Mutex<HashMap<Uuid, Picked>>,
+    /// Transfers planned and waiting for the user's go (see `crate::transfer`).
+    plans: Mutex<HashMap<u32, Plan>>,
     /// sudo attempts waiting for a password, by id.
     sudo: Mutex<HashMap<u32, PendingSudo>>,
     /// Files open in a local editor.
@@ -89,6 +97,20 @@ impl SftpState {
         self.0.edits.clone()
     }
 
+    pub(crate) fn plans(&self) -> &Mutex<HashMap<u32, Plan>> {
+        &self.0.plans
+    }
+
+    /// Takes (once) what a token stands for.
+    pub(crate) fn take_picked(&self, token: Uuid) -> Option<Picked> {
+        self.0
+            .picked
+            .lock()
+            .unwrap()
+            .remove(&token)
+            .filter(|p| p.at.elapsed() < PICK_TTL)
+    }
+
     pub(crate) fn browser(&self, id: u32) -> CmdResult<Arc<Sftp>> {
         self.0
             .browsers
@@ -99,7 +121,7 @@ impl SftpState {
             .ok_or_else(closed)
     }
 
-    fn next_id(&self) -> u32 {
+    pub(crate) fn next_id(&self) -> u32 {
         self.0.next.fetch_add(1, Ordering::Relaxed) + 1
     }
 
@@ -120,10 +142,11 @@ impl SftpState {
             .map(|b| b.sftp)
             .collect();
         drop(browsers);
-        // Their edited files stop being watched.
+        // Their edited files stop being watched, their plans are dropped.
         for id in &ids {
             self.0.edits.forget_browser(*id);
         }
+        self.0.plans.lock().unwrap().retain(|_, p| !ids.contains(&p.browser));
         let transfers = self.0.transfers.lock().unwrap();
         let running = transfers
             .iter()
@@ -212,17 +235,6 @@ impl SftpState {
         Ok((id, cancel))
     }
 
-    fn start_transfer(&self, browser: u32, progress: &Channel<Progress>) -> CmdResult<(u32, CancellationToken)> {
-        let (id, cancel) = self.track(browser)?;
-        // The UI learns the id at once, so Cancel works from the start.
-        let _ = progress.send(Progress {
-            transfer: id,
-            done: 0,
-            total: None,
-        });
-        Ok((id, cancel))
-    }
-
     pub(crate) fn end_transfer(&self, id: u32) {
         self.0.transfers.lock().unwrap().remove(&id);
     }
@@ -253,28 +265,12 @@ pub enum Opened {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Progress {
-    transfer: u32,
-    done: u64,
-    total: Option<u64>,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PickedFile {
     token: Uuid,
     name: String,
+    /// Bytes for a file; 0 for a folder (counted when the upload is planned).
     size: u64,
-}
-
-fn throttled(transfer: u32, channel: Channel<Progress>) -> impl FnMut(u64, Option<u64>) {
-    let mut reported = 0u64;
-    move |done, total| {
-        if done - reported >= PROGRESS_STEP || Some(done) == total {
-            reported = done;
-            let _ = channel.send(Progress { transfer, done, total });
-        }
-    }
+    folder: bool,
 }
 
 /// Opens a file browser on a terminal's SSH connection, as the login user or,
@@ -457,42 +453,6 @@ pub fn sftp_cancel(sftp: State<'_, SftpState>, transfer: u32) {
     }
 }
 
-/// Asks where to save `dir/name`, then downloads it. Returns the local path,
-/// or `None` when the user cancelled the dialog.
-#[tauri::command]
-pub async fn sftp_download(
-    app: AppHandle,
-    sftp: State<'_, SftpState>,
-    id: u32,
-    dir: String,
-    name: String,
-    on_progress: Channel<Progress>,
-) -> CmdResult<Option<String>> {
-    // Fails fast, before the dialog, if the connection is already gone.
-    sftp.browser(id)?;
-    let mut dialog = dialog(&app).set_file_name(local_file_name(&name));
-    if let Some(downloads) = directories::UserDirs::new().and_then(|d| d.download_dir().map(Path::to_path_buf)) {
-        dialog = dialog.set_directory(downloads);
-    }
-    let (tx, rx) = oneshot::channel();
-    dialog.save_file(move |picked| {
-        let _ = tx.send(picked);
-    });
-    let Some(local) = rx.await.ok().flatten() else {
-        return Ok(None);
-    };
-    let local: PathBuf = local.into_path().map_err(|e| CmdError::msg(e.to_string()))?;
-    // The dialog may have stayed open while the connection closed.
-    let fs = sftp.browser(id)?;
-    let (transfer, cancel) = sftp.start_transfer(id, &on_progress)?;
-    let result = fs
-        .download(&dir, &name, &local, &cancel, throttled(transfer, on_progress))
-        .await;
-    sftp.end_transfer(transfer);
-    result?;
-    Ok(Some(local.display().to_string()))
-}
-
 /// Native multi-file picker for uploads. Each picked regular file is opened
 /// now and gets a single-use token; nothing is read yet.
 #[tauri::command]
@@ -505,14 +465,31 @@ pub async fn sftp_pick_upload(app: AppHandle, sftp: State<'_, SftpState>) -> Cmd
         return Ok(Vec::new());
     };
     let paths: Vec<PathBuf> = files.into_iter().filter_map(|f| f.into_path().ok()).collect();
-    Ok(sftp.take(&paths)?.0)
+    let state = sftp.inner().clone();
+    crate::commands::blocking(move || state.take(&paths)).await?
+}
+
+/// Native folder picker for uploads: a single-use token per folder; its
+/// content is read when the upload is planned.
+#[tauri::command]
+pub async fn sftp_pick_upload_folders(app: AppHandle, sftp: State<'_, SftpState>) -> CmdResult<Vec<PickedFile>> {
+    let (tx, rx) = oneshot::channel();
+    dialog(&app).pick_folders(move |picked| {
+        let _ = tx.send(picked);
+    });
+    let Some(folders) = rx.await.ok().flatten() else {
+        return Ok(Vec::new());
+    };
+    let paths: Vec<PathBuf> = folders.into_iter().filter_map(|f| f.into_path().ok()).collect();
+    let state = sftp.inner().clone();
+    crate::commands::blocking(move || state.take(&paths)).await?
 }
 
 impl SftpState {
-    /// Opens the regular files among `paths` (chosen by the user in a native
-    /// dialog or dropped from the system) and hands out a single-use token
-    /// for each. Also returns how many folders were left out.
-    fn take(&self, paths: &[PathBuf]) -> CmdResult<(Vec<PickedFile>, usize)> {
+    /// Hands out a single-use token for each regular file (opened now) or
+    /// folder among `paths`, which the user chose in a native dialog or
+    /// dropped from the system. Anything else is left out.
+    fn take(&self, paths: &[PathBuf]) -> CmdResult<Vec<PickedFile>> {
         // Only absolute paths: anything else would be resolved against the
         // app's own working folder.
         let paths: Vec<&PathBuf> = paths.iter().filter(|p| p.is_absolute()).collect();
@@ -527,17 +504,14 @@ impl SftpState {
         // Opened without holding the lock (a slow network share must not
         // block other commands).
         let mut opened = Vec::new();
-        let mut folders = 0;
         for path in paths {
-            if path.is_dir() {
-                folders += 1;
-                continue;
-            }
             let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
                 continue;
             };
-            if let Some((handle, size, mode)) = open_regular(path) {
-                opened.push((name, handle, size, mode));
+            if path.is_dir() {
+                opened.push((name, Source::Folder(path.clone()), 0));
+            } else if let Some((handle, size, mode)) = open_regular(path) {
+                opened.push((name, Source::File(handle, mode), size));
             }
         }
         let mut picked = self.0.picked.lock().unwrap();
@@ -546,20 +520,25 @@ impl SftpState {
             return Err(CmdError::msg("too many files at once"));
         }
         let mut out = Vec::new();
-        for (name, handle, size, mode) in opened {
+        for (name, source, size) in opened {
             let token = Uuid::new_v4();
+            let folder = matches!(source, Source::Folder(_));
             picked.insert(
                 token,
                 Picked {
-                    file: handle,
-                    mode,
+                    source,
                     name: name.clone(),
                     at: Instant::now(),
                 },
             );
-            out.push(PickedFile { token, name, size });
+            out.push(PickedFile {
+                token,
+                name,
+                size,
+                folder,
+            });
         }
-        Ok((out, folders))
+        Ok(out)
     }
 }
 
@@ -573,20 +552,21 @@ struct DragOver {
     active: bool,
 }
 
-/// Files dropped on the window: tokens (not paths) and where they landed.
+/// Files and folders dropped on the window: tokens (not paths) and where
+/// they landed.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Dropped {
     x: f64,
     y: f64,
     files: Vec<PickedFile>,
-    folders: usize,
 }
 
-/// Files dragged from the system onto the window. The paths come from the
-/// operating system, never from the UI: dropped regular files are opened at
-/// once and the UI only receives tokens, as with the open dialog. The UI
-/// releases the tokens of a drop that did not land on a file browser.
+/// Files and folders dragged from the system onto the window. The paths
+/// come from the operating system, never from the UI: dropped regular files
+/// are opened at once and the UI only receives tokens, as with the open
+/// dialogs. The UI releases the tokens of a drop that did not land on a file
+/// browser.
 pub fn on_drag_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
     use tauri::Emitter;
     // Only Windows reports physical pixels; WebKitGTK and WKWebView already
@@ -633,8 +613,8 @@ pub fn on_drag_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
             // Opening files (maybe on a slow share) off the event loop.
             tauri::async_runtime::spawn_blocking(move || {
                 let state = window.state::<SftpState>();
-                let (files, folders) = state.take(&paths).unwrap_or_default();
-                let _ = window.emit_to(label.as_str(), "termdock://drop", Dropped { x, y, files, folders });
+                let files = state.take(&paths).unwrap_or_default();
+                let _ = window.emit_to(label.as_str(), "termdock://drop", Dropped { x, y, files });
             });
         }
         _ => {}
@@ -652,46 +632,9 @@ pub fn sftp_forget_picks(sftp: State<'_, SftpState>, tokens: Vec<Uuid>) {
     picked.retain(|_, p| p.at.elapsed() < PICK_TTL);
 }
 
-/// Uploads a file picked with `sftp_pick_upload` into `dir`, under its own
-/// name. Refused if that name exists, unless `overwrite`.
-#[tauri::command]
-pub async fn sftp_upload(
-    sftp: State<'_, SftpState>,
-    id: u32,
-    dir: String,
-    token: Uuid,
-    overwrite: bool,
-    on_progress: Channel<Progress>,
-) -> CmdResult<()> {
-    let fs = sftp.browser(id)?;
-    let picked = sftp
-        .0
-        .picked
-        .lock()
-        .unwrap()
-        .remove(&token)
-        .filter(|p| p.at.elapsed() < PICK_TTL)
-        .ok_or_else(|| CmdError::msg("pick the files again"))?;
-
-    let (transfer, cancel) = sftp.start_transfer(id, &on_progress)?;
-    let result = fs
-        .upload(
-            picked.file,
-            picked.mode,
-            &dir,
-            &picked.name,
-            overwrite,
-            &cancel,
-            throttled(transfer, on_progress),
-        )
-        .await;
-    sftp.end_transfer(transfer);
-    Ok(result.map(|_| ())?)
-}
-
 /// Opens `path` if it is a regular file, without blocking on FIFOs or
 /// devices. Returns the open file, its size and its permission bits.
-fn open_regular(path: &Path) -> Option<(std::fs::File, u64, Option<u32>)> {
+pub(crate) fn open_regular(path: &Path) -> Option<(std::fs::File, u64, Option<u32>)> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -767,9 +710,20 @@ pub(crate) fn local_file_name(name: &str) -> String {
     }
 }
 
+/// The local name of an item inside a downloaded folder: like
+/// [`local_file_name`], but a hidden file keeps its leading dot.
+pub(crate) fn local_name_in_folder(name: &str) -> String {
+    let base = local_file_name(name);
+    if name.starts_with('.') && base != "download" {
+        format!(".{base}")
+    } else {
+        base
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::local_file_name;
+    use super::{local_file_name, local_name_in_folder};
 
     #[test]
     fn local_names() {
@@ -784,5 +738,14 @@ mod tests {
         assert_eq!(local_file_name("COM¹.log"), "_COM¹.log");
         assert_eq!(local_file_name("conout$"), "_conout$");
         assert_eq!(local_file_name("trailing. "), "trailing");
+    }
+
+    #[test]
+    fn names_in_folders_keep_the_dot() {
+        assert_eq!(local_name_in_folder(".bashrc"), ".bashrc");
+        assert_eq!(local_name_in_folder("..hidden"), ".hidden");
+        assert_eq!(local_name_in_folder("plain.txt"), "plain.txt");
+        assert_eq!(local_name_in_folder("..."), "download");
+        assert_eq!(local_name_in_folder(".con"), "._con");
     }
 }

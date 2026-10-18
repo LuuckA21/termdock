@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sftp-plan-download"
+description = "Enables the sftp_plan_download command without any pre-configured scope."
+commands.allow = ["sftp_plan_download"]
+
+[[permission]]
+identifier = "deny-sftp-plan-download"
+description = "Denies the sftp_plan_download command without any pre-configured scope."
+commands.deny = ["sftp_plan_download"]

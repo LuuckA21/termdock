@@ -78,6 +78,9 @@ pub enum Error {
 
     #[error("sftp-server was not found on the server, so files cannot be opened as another user")]
     NoSftpServer,
+
+    #[error("more than {0} files and folders: transfer smaller folders")]
+    TooManyItems(usize),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

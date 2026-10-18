@@ -7,6 +7,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-18
+
+### Added
+
+- Whole folders can be uploaded (Upload → Upload folders…, or dragged onto the file browser) and downloaded (right click → Download), with their subfolders.
+- A transfer queue under the files: uploads and downloads wait their turn, each with its progress, a Cancel button and how it ended (copied, kept, left out, failed); the browser stays usable meanwhile.
+- When files already exist at the destination, one question for all of them: replace existing or keep existing.
+
+### Security
+
+- Folder transfers never follow links or special files on either side and take at most 10,000 items and 32 levels; remote names are cleaned before becoming local names, local and remote folders are only merged into when they are real folders, and switching user waits for running transfers.
+
 ## [0.12.1] - 2026-10-18
 
 ### Fixed
@@ -205,7 +217,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/LuuckA21/termdock/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/LuuckA21/termdock/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/LuuckA21/termdock/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/LuuckA21/termdock/compare/v0.10.1...v0.11.0

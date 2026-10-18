@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sftp-run-plan"
+description = "Enables the sftp_run_plan command without any pre-configured scope."
+commands.allow = ["sftp_run_plan"]
+
+[[permission]]
+identifier = "deny-sftp-run-plan"
+description = "Denies the sftp_run_plan command without any pre-configured scope."
+commands.deny = ["sftp_run_plan"]

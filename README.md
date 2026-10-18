@@ -11,7 +11,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Favorites bar**, always visible: one click opens the connection in a new tab, drag to reorder, right click to edit or unpin, `Ctrl+Shift+1…9` opens the first nine.
 - **SSH** with a full terminal (xterm-256color, truecolor, Unicode, resizing).
 - **Jump hosts (ProxyJump)**: a connection can go through a bastion, even a chain of them; every hop verifies its own host key and authenticates separately.
-- **File browser (SFTP)**: `Ctrl+Shift+S` opens the files of the server next to its terminal, on the same authenticated connection (no second login): browse, download, upload, new folder, rename, delete. After `sudo -iu user` in the terminal it offers to open the files as that user too (through sudo on the server, with the sudo password asked only when needed and never saved), or pick any user from its user menu. Files can be dragged from the computer onto the browser to upload them; the browser can jump to (or follow) the terminal's current folder; and *Edit* (`F4`) opens a remote text file in the system text editor (or the one chosen in Settings) and uploads it back each time it is saved, asking first if the server's copy changed meanwhile.
+- **File browser (SFTP)**: `Ctrl+Shift+S` opens the files of the server next to its terminal, on the same authenticated connection (no second login): browse, download, upload, new folder, rename, delete. Whole folders can be uploaded and downloaded too; transfers wait in a queue under the files, each with its progress and a Cancel button, and existing files are replaced or kept with one choice for all. After `sudo -iu user` in the terminal it offers to open the files as that user too (through sudo on the server, with the sudo password asked only when needed and never saved), or pick any user from its user menu. Files and folders can be dragged from the computer onto the browser to upload them; the browser can jump to (or follow) the terminal's current folder; and *Edit* (`F4`) opens a remote text file in the system text editor (or the one chosen in Settings) and uploads it back each time it is saved, asking first if the server's copy changed meanwhile.
 - **Port forwarding** saved in the connection: local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`); the status of each tunnel is shown in the terminal.
 - **Import from `~/.ssh/config`**: preview with warnings, then imports Host, HostName, User, Port, IdentityFile, ProxyJump and the forwards.
 - **Local shells** in a real PTY: PowerShell 7, Windows PowerShell, cmd, WSL and Git Bash on Windows (ConPTY); bash, zsh, fish, pwsh… on macOS and Linux.
@@ -86,6 +86,7 @@ src-tauri/             Tauri 2 desktop app
   ├─ commands.rs        IPC commands for profiles and sessions
   ├─ prompts.rs         questions for the user (host key, password, OTP)
   ├─ sftp.rs            file browser commands, native dialogs, dropped files
+  ├─ transfer.rs        uploads and downloads of files and folders: plan, then run
   ├─ edit.rs            Edit: private copy, watching and upload on save
   ├─ editor.rs          which text editor opens it (system or chosen in Settings)
   └─ updates.rs         signed in-app updates

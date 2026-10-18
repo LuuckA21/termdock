@@ -345,12 +345,12 @@ export class App {
         hovered = pane;
       }
     });
-    void listen<{ x: number; y: number; files: PickedFile[]; folders: number }>("termdock://drop", ({ payload }) => {
+    void listen<{ x: number; y: number; files: PickedFile[] }>("termdock://drop", ({ payload }) => {
       hovered?.setDropHover(false);
       hovered = null;
       const pane = this.filesAt(payload.x, payload.y);
-      // Not on a file browser (or it is busy): the files are not uploaded.
-      if (!pane?.dropFiles(payload.files, payload.folders) && payload.files.length) {
+      // Not on a file browser (or it is busy): nothing is uploaded.
+      if (!pane?.dropFiles(payload.files) && payload.files.length) {
         void api.sftpForgetPicks(payload.files.map((f) => f.token)).catch(() => {});
       }
     });
