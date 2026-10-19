@@ -13,6 +13,7 @@ import type {
   EditEvent,
   EditorInfo,
   ImportPreview,
+  KeyInfo,
   PickedFile,
   PlanInfo,
   RunProgress,
@@ -54,6 +55,13 @@ export const api = {
   writeSession: (id: number, data: string, binary = false) => invoke<void>("write_session", { id, data, binary }),
   resizeSession: (id: number, size: TermSize) => invoke<void>("resize_session", { id, size }),
   closeSession: (id: number) => invoke<void>("close_session", { id }),
+  /** Generates an Ed25519 key pair saved where the user picks; null when cancelled. */
+  sshKeyGenerate: (comment: string, passphrase: string) =>
+    invoke<KeyInfo | null>("ssh_key_generate", { comment, passphrase }),
+  /** Reads a public key the user picks; null when cancelled. */
+  sshKeyPickPublic: () => invoke<KeyInfo | null>("ssh_key_pick_public"),
+  /** Adds a public key to ~/.ssh/authorized_keys on the server of session `id`; false if already there. */
+  sshKeyInstall: (id: number, publicKey: string) => invoke<boolean>("ssh_key_install", { id, publicKey }),
   /** One attempt to connect again a session whose connection dropped (same id). */
   reconnectSession: (id: number, size: TermSize) => invoke<Reconnected>("reconnect_session", { id, size }),
   answerPrompt: (promptId: Uuid, answer: PromptAnswer) =>

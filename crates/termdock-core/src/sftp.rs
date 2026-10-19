@@ -24,6 +24,7 @@ use russh::ChannelMsg;
 use zeroize::Zeroizing;
 
 use crate::error::{Error, Result};
+use crate::keygen::PublicKeyLine;
 use crate::session::SessionHandle;
 use crate::ssh::SshHandle;
 
@@ -39,6 +40,10 @@ const MAX_LISTING_BYTES: usize = 8 * 1024 * 1024;
 /// Longest file name accepted for new names (most file systems allow 255 bytes).
 const MAX_NAME_LEN: usize = 255;
 const CHUNK: usize = 256 * 1024;
+/// Where `sshd` looks for the keys a user may log in with.
+const AUTHORIZED_KEYS: &str = "authorized_keys";
+/// An `authorized_keys` larger than this is left alone.
+const MAX_AUTHORIZED_KEYS: u64 = 1024 * 1024;
 /// Server error messages are shown to the user: keep them short.
 const MAX_MESSAGE_LEN: usize = 300;
 const OPEN_TIMEOUT: Duration = Duration::from_secs(20);
@@ -988,6 +993,62 @@ impl Sftp {
                 Err(e.into())
             }
         }
+    }
+
+    /// Adds `key` to `~/.ssh/authorized_keys` of the login user, like
+    /// `ssh-copy-id`: `~/.ssh` is created `0700` and the file `0600` when
+    /// missing, an existing file is appended to (keeping its mode, owner and
+    /// links). Returns false when the key was already listed.
+    pub async fn authorize_key(&self, key: &PublicKeyLine) -> Result<bool> {
+        let home = self.canonicalize(".").await?;
+        let ssh_dir = join(&home, ".ssh");
+        match self.inner.metadata(ssh_dir.as_str()).await {
+            Ok(meta) if meta.file_type() == FileType::Dir => {}
+            Ok(_) => return Err(Error::Exists(".ssh".into())),
+            Err(SftpError::Status(s)) if s.status_code == StatusCode::NoSuchFile => {
+                self.inner.create_dir(ssh_dir.as_str()).await?;
+                let private = FileAttributes {
+                    permissions: Some(0o700),
+                    ..FileAttributes::default()
+                };
+                self.inner.set_metadata(ssh_dir.as_str(), private).await?;
+            }
+            Err(e) => return Err(e.into()),
+        }
+        let existing = match self.lookup(&ssh_dir, AUTHORIZED_KEYS).await? {
+            None => None,
+            Some(_) => Some(
+                self.read_at_most(&ssh_dir, AUTHORIZED_KEYS, MAX_AUTHORIZED_KEYS)
+                    .await?,
+            ),
+        };
+        let mut text = String::new();
+        if let Some(bytes) = &existing {
+            if key.listed_in(&String::from_utf8_lossy(bytes)) {
+                return Ok(false);
+            }
+            if bytes.last().is_some_and(|&b| b != b'\n') {
+                text.push('\n');
+            }
+        }
+        text.push_str(&key.line);
+        text.push('\n');
+        let path = join(&ssh_dir, AUTHORIZED_KEYS);
+        let mut file = self
+            .inner
+            .open_with_flags_and_attributes(
+                path.as_str(),
+                OpenFlags::CREATE | OpenFlags::APPEND | OpenFlags::WRITE,
+                FileAttributes {
+                    permissions: Some(0o600),
+                    ..FileAttributes::default()
+                },
+            )
+            .await?;
+        file.write_all(text.as_bytes()).await.map_err(remote_io)?;
+        let _ = file.sync_all().await;
+        file.shutdown().await.map_err(remote_io)?;
+        Ok(true)
     }
 
     pub async fn close(&self) {

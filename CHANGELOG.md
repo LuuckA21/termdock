@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-19
+
+### Added
+
+- SSH keys: *Generate…* next to a connection's key path creates an Ed25519 key with a passphrase, saved in `~/.ssh` or wherever you choose (an existing file is never replaced), shows the public key to copy and fills in the connection. *Install public key…* in the tab menu of a connected terminal adds a public key to `~/.ssh/authorized_keys` on that server, like `ssh-copy-id`.
+
 ## [0.16.0] - 2026-10-18
 
 ### Added
@@ -256,7 +262,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/LuuckA21/termdock/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/LuuckA21/termdock/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/LuuckA21/termdock/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/LuuckA21/termdock/compare/v0.13.0...v0.14.0

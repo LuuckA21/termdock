@@ -49,6 +49,13 @@ Riconnessione automatica (`src-tauri/src/commands.rs`, `src/terminal.ts`): una c
 - Una password o passphrase ricordata che viene rifiutata è eliminata subito, invece di essere riprovata a ogni accesso (cosa che potrebbe far scattare MaxAuthTries o fail2ban).
 - Le richieste all'utente scadono dopo 3 minuti; una richiesta senza risposta vale come "no". Una domanda da una sessione in una scheda in secondo piano aspetta che quella scheda venga mostrata (intanto la scheda mostra un lucchetto), e un campo password non prende il focus mentre l'utente sta scrivendo in un altro pannello, così i tasti destinati a un server non possono finire a rispondere a un altro.
 
+### Chiavi SSH (`keygen.rs`, `src-tauri/src/keys.rs`, `src/sshkeys.ts`)
+
+- Le nuove chiavi sono Ed25519, generate con il generatore casuale del sistema operativo e salvate in formato OpenSSH dove l'utente sceglie nella finestra di salvataggio del sistema (di default un `~/.ssh/id_ed25519…` libero). La chiave privata è cifrata con la passphrase (bcrypt-pbkdf + AES-256-CTR, come fa `ssh-keygen`); una passphrase deve avere almeno 5 caratteri, e creare una chiave senza richiede una conferma esplicita che spiega cosa comporta. La passphrase viaggia solo da interfaccia a backend e viene azzerata dopo l'uso; la chiave privata non arriva mai all'interfaccia.
+- Un file esistente non viene mai sostituito: se la chiave privata o il suo `.pub` esistono già (anche dopo che la finestra di salvataggio ha chiesto di sostituirli) non viene scritto nulla. La chiave privata è creata con permessi `0600` su Unix, con creazione esclusiva; se la scrittura del `.pub` fallisce, la nuova chiave privata viene rimossa.
+- *Installa chiave pubblica* legge un file `.pub` scelto dall'utente e accetta esattamente una chiave pubblica senza opzioni (`command=`, `from=`…), che viene ricodificata prima dell'uso, così al server non può arrivare altro. Dopo una conferma che mostra l'impronta e l'utente e il server a cui dà accesso, viene aggiunta in coda a `~/.ssh/authorized_keys` dell'utente di login sulla connessione stessa della sessione (SFTP): `~/.ssh` è creata `0700` e il file `0600` se mancano, un file esistente mantiene i suoi permessi, e una chiave già presente non viene aggiunta due volte.
+- Rimuovere chiavi da un server, e gli account amministratore sui server Windows OpenSSH (che usano `administrators_authorized_keys`), restano a carico dell'utente.
+
 ### Applicazione desktop (Tauri 2)
 
 - Content-Security-Policy restrittiva: script solo dal bundle dell'app, niente `eval`, nessuna origine remota, niente frame/object/worker.

@@ -3,6 +3,7 @@
 pub mod error;
 mod forward;
 pub mod hostkeys;
+pub mod keygen;
 pub mod local;
 pub mod profile;
 pub mod session;
