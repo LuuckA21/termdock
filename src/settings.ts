@@ -118,6 +118,8 @@ export async function openSettings(tab?: TabId): Promise<void> {
   autoReconnect.checked = p.autoReconnect;
   const confirmClose = h("input", { type: "checkbox" });
   confirmClose.checked = p.confirmClose;
+  const copyOnSelect = h("input", { type: "checkbox" });
+  copyOnSelect.checked = p.copyOnSelect;
   const clearHistory = h("button", { type: "button", class: "btn" }, t("quickHistoryClear"));
   clearHistory.disabled = !quickHistory().length;
   clearHistory.addEventListener("click", () => {
@@ -138,6 +140,7 @@ export async function openSettings(tab?: TabId): Promise<void> {
       scrollback: scrollback.value || p.scrollback,
       autoReconnect: autoReconnect.checked,
       confirmClose: confirmClose.checked,
+      copyOnSelect: copyOnSelect.checked,
     });
 
   // Live preview of colours and font, before saving.
@@ -286,6 +289,7 @@ export async function openSettings(tab?: TabId): Promise<void> {
         field(t("scrollback"), scrollback),
       ),
       h("label", { class: "check" }, cursorBlink, h("span", {}, t("cursorBlink"))),
+      h("label", { class: "check" }, copyOnSelect, h("span", {}, t("copyOnSelect"))),
       h("div", { class: "field" }, h("span", {}, t("preview")), preview),
       h("div", { class: "settings-row" }, h("span"), restore),
     ),

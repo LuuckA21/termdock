@@ -22,6 +22,8 @@ export interface Prefs {
   autoReconnect: boolean;
   /** Ask before closing a tab, pane or the window with live SSH connections. */
   confirmClose: boolean;
+  /** Selecting text with the mouse copies it (right click then pastes). */
+  copyOnSelect: boolean;
 }
 
 const DEFAULT_FONT_STACK =
@@ -45,6 +47,7 @@ export const DEFAULTS: Prefs = {
   scrollback: 10_000,
   autoReconnect: true,
   confirmClose: true,
+  copyOnSelect: false,
 };
 
 const STORAGE_KEY = "termdock.prefs";
@@ -82,6 +85,7 @@ export function normalize(raw: unknown): Prefs {
     scrollback: clamp(o.scrollback, LIMITS.scrollback.min, LIMITS.scrollback.max, DEFAULTS.scrollback),
     autoReconnect: typeof o.autoReconnect === "boolean" ? o.autoReconnect : DEFAULTS.autoReconnect,
     confirmClose: typeof o.confirmClose === "boolean" ? o.confirmClose : DEFAULTS.confirmClose,
+    copyOnSelect: typeof o.copyOnSelect === "boolean" ? o.copyOnSelect : DEFAULTS.copyOnSelect,
   };
 }
 

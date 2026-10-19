@@ -29,6 +29,8 @@ import type { AppInfo, DetectedShell, OpenTarget, PickedFile, Profile, Uuid } fr
 
 /** Longest name a tab can be given. */
 const MAX_TAB_TITLE = 64;
+/** Opening more connections of a group than this at once asks first. */
+const OPEN_GROUP_ASK = 5;
 
 export class App {
   info!: AppInfo;
@@ -522,6 +524,18 @@ export class App {
     if (await this.confirmClose(tab.panes)) this.discardTab(tab);
   }
 
+  /** Closes several tabs, after one question for all their connections. */
+  private async closeTabs(tabs: Tab[]): Promise<void> {
+    if (!tabs.length || !(await this.confirmClose(tabs.flatMap((x) => x.panes)))) return;
+    for (const tab of tabs) if (this.tabs.includes(tab)) this.discardTab(tab);
+  }
+
+  /** Opens every connection of a group, each in its own tab (asks first for many). */
+  async openGroup(profiles: Profile[]): Promise<void> {
+    if (profiles.length > OPEN_GROUP_ASK && !(await confirmBox(t("openGroupConfirm", { count: profiles.length }), t("connect")))) return;
+    for (const p of profiles) this.openProfile(p);
+  }
+
   /** Output or a bell in a hidden tab: shown on the tab until it is opened. */
   private markActivity(pane: TerminalPane, bell: boolean): void {
     const tab = this.tabs.find((x) => x.has(pane));
@@ -696,6 +710,7 @@ export class App {
                     ]
                   : []),
                 { label: t("find"), hint: keyHint("find"), action: () => active.find() },
+                { label: t("clearTerminal"), hint: keyHint("clearTerminal"), action: () => active.clearScreen() },
                 { label: t("copy"), hint: keyHint("copy"), action: () => void active.copy() },
                 { label: t("paste"), hint: keyHint("paste"), action: () => void active.paste() },
                 { label: t("snippets"), icon: icon("snippet"), hint: keyHint("snippets"), action: () => this.snippetsMenu() },
@@ -711,6 +726,12 @@ export class App {
           ...(active instanceof TerminalPane ? [{ label: t("tabDuplicate"), icon: icon("plus"), action: () => this.duplicate(active) }] : []),
           ...(count > 1 ? [{ label: t("closePane"), hint: keyHint("closePane"), action: () => void this.closePane() }] : []),
           { label: t("closeTab"), icon: icon("close"), action: () => void this.closeTab(tab) },
+          ...(this.tabs.length > 1
+            ? [{ label: t("closeOtherTabs"), action: () => void this.closeTabs(this.tabs.filter((x) => x !== tab)) }]
+            : []),
+          ...(this.tabs.indexOf(tab) < this.tabs.length - 1
+            ? [{ label: t("closeTabsRight"), action: () => void this.closeTabs(this.tabs.slice(this.tabs.indexOf(tab) + 1)) }]
+            : []),
         ]);
       });
       this.tabbar.append(el);
@@ -778,6 +799,10 @@ export class App {
         return () => void openSettings();
       case "snippets":
         return once(() => this.snippetsMenu());
+      case "clearTerminal": {
+        const pane = this.active?.active;
+        return pane instanceof TerminalPane ? once(() => pane.clearScreen()) : null;
+      }
       case "zoomIn":
         return () => this.zoom(1);
       case "zoomOut":

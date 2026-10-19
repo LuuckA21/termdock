@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-19
+
+### Added
+
+- Connection manager: *Duplicate* copies a connection (as "name (copy)") to start a similar one, and the bolt next to a group opens all of its connections, one tab each (asking first above five).
+- Tab menu: *Clear terminal* (a shortcut can be assigned in Settings → Keys; none by default, since `Ctrl+L` belongs to the shell), *Close other tabs* and *Close tabs to the right*, with one confirmation for all the SSH connections they close.
+- Pasting several lines shows them in a preview before sending, with invisible characters marked as `<U+XXXX>`.
+- *Copy on select* (Settings → Appearance, off by default): the selection is copied at once and right click always pastes.
+
 ## [0.18.0] - 2026-10-19
 
 ### Added
@@ -272,7 +281,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/LuuckA21/termdock/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/LuuckA21/termdock/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/LuuckA21/termdock/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/LuuckA21/termdock/compare/v0.15.0...v0.16.0
