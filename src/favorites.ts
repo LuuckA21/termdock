@@ -2,6 +2,7 @@ import { h, icon, clear } from "./dom";
 import { t } from "./i18n";
 import { digitHint, keyHint, withKey } from "./keys";
 import { showMenu, showMenuBelow } from "./menu";
+import { quickHistory } from "./quickhistory";
 import { openSettings } from "./settings";
 import type { App } from "./main";
 import type { Profile } from "./types";
@@ -60,14 +61,29 @@ export class FavoritesBar {
       autocapitalize: "off",
       autocomplete: "off",
       id: "quick-connect",
+      list: "quick-history",
+    });
+    // Recent addresses: suggested while typing, and Up / Down go through them.
+    const recent = h("datalist", { id: "quick-history" });
+    let history: string[] = [];
+    let at = -1;
+    quick.addEventListener("focus", () => {
+      history = quickHistory();
+      at = -1;
+      recent.replaceChildren(...history.map((a) => h("option", { value: a })));
     });
     quick.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && quick.value.trim()) {
         this.app.openQuick(quick.value.trim());
         quick.value = "";
+        at = -1;
       } else if (e.key === "Escape") {
         quick.value = "";
         this.app.focusActive();
+      } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && history.length && !e.altKey) {
+        e.preventDefault();
+        at = Math.max(-1, Math.min(history.length - 1, at + (e.key === "ArrowUp" ? 1 : -1)));
+        quick.value = at < 0 ? "" : history[at]!;
       }
     });
 
@@ -128,7 +144,7 @@ export class FavoritesBar {
       chips,
       addBtn,
       h("div", { class: "spacer" }),
-      h("label", { class: "quick" }, icon("bolt"), quick),
+      h("label", { class: "quick" }, icon("bolt"), quick, recent),
       shellBtn,
       layoutsBtn,
       snippetsBtn,

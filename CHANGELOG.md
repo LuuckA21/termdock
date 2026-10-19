@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-19
+
+### Added
+
+- Tabs can be renamed (double click or tab menu), reordered by dragging and duplicated (tab menu → *Duplicate tab*).
+- A hidden tab shows a dot when its terminal prints something, and a bell when the program rings one (for example at the end of a long command).
+- Closing a tab, a pane or Termdock with open SSH connections asks first; it can be turned off in Settings → General.
+- The window opens again with the size and position it had (only on a monitor that is still there).
+- Quick connect remembers the last 10 addresses that connected: `Up` / `Down` in its box, or the suggestions; the history can be cleared in Settings → General.
+
 ## [0.17.0] - 2026-10-19
 
 ### Added
@@ -262,7 +272,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/LuuckA21/termdock/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/LuuckA21/termdock/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/LuuckA21/termdock/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/LuuckA21/termdock/compare/v0.14.0...v0.15.0

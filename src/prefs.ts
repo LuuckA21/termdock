@@ -20,6 +20,8 @@ export interface Prefs {
   scrollback: number;
   /** Reconnect by itself when an SSH connection drops. */
   autoReconnect: boolean;
+  /** Ask before closing a tab, pane or the window with live SSH connections. */
+  confirmClose: boolean;
 }
 
 const DEFAULT_FONT_STACK =
@@ -42,6 +44,7 @@ export const DEFAULTS: Prefs = {
   cursorBlink: true,
   scrollback: 10_000,
   autoReconnect: true,
+  confirmClose: true,
 };
 
 const STORAGE_KEY = "termdock.prefs";
@@ -78,6 +81,7 @@ export function normalize(raw: unknown): Prefs {
     cursorBlink: typeof o.cursorBlink === "boolean" ? o.cursorBlink : DEFAULTS.cursorBlink,
     scrollback: clamp(o.scrollback, LIMITS.scrollback.min, LIMITS.scrollback.max, DEFAULTS.scrollback),
     autoReconnect: typeof o.autoReconnect === "boolean" ? o.autoReconnect : DEFAULTS.autoReconnect,
+    confirmClose: typeof o.confirmClose === "boolean" ? o.confirmClose : DEFAULTS.confirmClose,
   };
 }
 

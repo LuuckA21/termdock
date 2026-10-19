@@ -17,7 +17,8 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Local shells** in a real PTY: PowerShell 7, Windows PowerShell, cmd, WSL and Git Bash on Windows (ConPTY); bash, zsh, fish, pwsh… on macOS and Linux.
 - **Connection manager**: groups, colors, search, star to pin to the favorites bar.
 - **Quick connect**: type `user@host:port` in the bar and press Enter.
-- Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click).
+- Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click). Tabs can be renamed (double click), reordered by dragging and duplicated (tab menu); a hidden tab shows a dot when its terminal prints something and a bell when it rings one. Closing a tab, pane or Termdock with open SSH connections asks first (can be turned off in Settings → General), and the window opens again where and as large as it was left.
+- Quick connect remembers the last addresses that connected: `Up` / `Down` in its box, or pick one from the suggestions.
 - **Automatic reconnection**: when the network or the server drops an SSH connection (noticed through the keepalive set in the connection), the terminal tries again by itself a few times over about five minutes, with the usual host-key and password checks; `Enter` tries at once, `Esc` stops. Its session log and file browser carry on once it is back. Can be turned off in Settings → General.
 - **Split panes**, like Windows Terminal: divide a tab side by side or top/bottom as many times as needed and choose what opens in the new pane (the same connection, a local shell, any saved connection or a `user@host` address), e.g. server A on the left and server B on the right. Already open tabs can be put side by side without reconnecting (tab menu → *Move next to*), and favourites open directly on the right or below. Drag the dividers to resize, move between panes with `Alt+arrows`.
 - **Saved layouts**: save a tab's arrangement (which connection or shell is in each pane, and the sizes) with `Ctrl+Shift+L` and reopen it from the *Layouts* menu with one click; one layout can open automatically at startup (its connections then start right away, with the usual host-key and password prompts).
@@ -109,7 +110,7 @@ Data is stored in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain. Interface preferences such as language, appearance and keyboard shortcuts, saved layouts and snippets are kept in the web view's local storage. Backups and session logs are only written where you choose.)
+(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain. Interface preferences such as language, appearance and keyboard shortcuts, saved layouts, snippets and the quick-connect history are kept in the web view's local storage; the window's size and position in `.window-state.json`. Backups and session logs are only written where you choose.)
 
 ## Development
 

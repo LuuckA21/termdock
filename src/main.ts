@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { api, errorText } from "./api";
 import { PROFILES_CHANGED } from "./backup";
-import { alertBox } from "./dialogs";
+import { alertBox, confirmBox, modal } from "./dialogs";
 import { clear, h, icon } from "./dom";
 import { describe, FavoritesBar, setDotColor } from "./favorites";
 import { carriesFiles, FilesPane } from "./files";
@@ -22,9 +22,13 @@ import { Tab, type Direction, type Snapshot, type SplitDir } from "./tabs";
 import type { Pane } from "./pane";
 import { pickPane, type PaneChoice } from "./picker";
 import { TerminalPane } from "./terminal";
+import { rememberQuick } from "./quickhistory";
 import { installKey } from "./sshkeys";
 import { startUpdateChecks } from "./updates";
 import type { AppInfo, DetectedShell, OpenTarget, PickedFile, Profile, Uuid } from "./types";
+
+/** Longest name a tab can be given. */
+const MAX_TAB_TITLE = 64;
 
 export class App {
   info!: AppInfo;
@@ -33,6 +37,8 @@ export class App {
   shells: DetectedShell[] = [];
   private tabs: Tab[] = [];
   private active: Tab | null = null;
+  /** Set right after a tab was dragged, so its click does not count. */
+  private suppressTabClick = false;
   private readonly favbar: FavoritesBar;
   private readonly tabbar = document.getElementById("tabbar")!;
   private readonly terminals = document.getElementById("terminals")!;
@@ -61,6 +67,12 @@ export class App {
     // A backup was imported: connections and favorites changed.
     window.addEventListener(PROFILES_CHANGED, () => void this.reload().then(() => this.renderTabs()));
     window.addEventListener("beforeunload", () => this.tabs.forEach((tab) => tab.dispose()));
+    // Closing the window with live connections asks first.
+    void getCurrentWindow()
+      .onCloseRequested(async (e) => {
+        if (!(await this.confirmClose(this.tabs.flatMap((tab) => tab.panes), true))) e.preventDefault();
+      })
+      .catch(() => {});
     this.renderTabs();
     const startup = startupLayout();
     if (startup) this.openLayout(startup.id);
@@ -133,8 +145,12 @@ export class App {
             else p.sessionEnded(pane.state === "connecting");
           }
         }
+        // Quick connect remembers the addresses that worked.
+        if (pane.state === "open" && pane.opts.target.kind === "quick") rememberQuick(pane.opts.target.address);
         this.renderTabs();
       },
+      onOutput: (pane) => this.markActivity(pane, false),
+      onBell: (pane) => this.markActivity(pane, true),
       onFocus: (pane) => this.paneFocused(pane),
       isAppShortcut: (e) => this.shortcut(e) !== null,
     });
@@ -439,11 +455,13 @@ export class App {
   }
 
   /** Closes the active pane, and the tab with its last pane. */
-  private closePane(): void {
+  private async closePane(): Promise<void> {
     const tab = this.active;
     if (!tab) return;
-    this.endFileBrowsersOf(tab.active);
-    if (tab.remove(tab.active)) this.closeTab(tab);
+    const pane = tab.active;
+    if (!(await this.confirmClose([pane])) || !tab.has(pane)) return;
+    this.endFileBrowsersOf(pane);
+    if (tab.remove(pane)) this.discardTab(tab);
     else {
       tab.active.focus();
       this.renderTabs();
@@ -457,6 +475,12 @@ export class App {
   }
 
   private activate(tab: Tab, focus = true): void {
+    // The tab left behind reports its next output; the shown one is seen.
+    if (this.active && this.active !== tab) {
+      for (const p of this.active.panes) if (p instanceof TerminalPane) p.watchOutput = true;
+    }
+    for (const p of tab.panes) if (p instanceof TerminalPane) p.watchOutput = false;
+    tab.activity = tab.bell = false;
     this.active = tab;
     for (const x of this.tabs) x.el.classList.toggle("active", x === tab);
     this.renderTabs();
@@ -478,7 +502,108 @@ export class App {
     }
   }
 
-  private closeTab(tab: Tab): void {
+  /** Terminals among `panes` with a live SSH connection (or one reconnecting). */
+  private liveConnections(panes: Pane[]): number {
+    return panes.filter((p) => p instanceof TerminalPane && p.session !== null && this.isSsh(p)).length;
+  }
+
+  /** Asks before closing live connections, unless turned off in Settings. */
+  private async confirmClose(panes: Pane[], quitting = false): Promise<boolean> {
+    const count = this.liveConnections(panes);
+    if (!count || !getPrefs().confirmClose) return true;
+    return confirmBox(
+      t(quitting ? "closeQuitConfirm" : "closeConfirm", { count }),
+      t(quitting ? "closeQuit" : "close"),
+      true,
+    );
+  }
+
+  private async closeTab(tab: Tab): Promise<void> {
+    if (await this.confirmClose(tab.panes)) this.discardTab(tab);
+  }
+
+  /** Output or a bell in a hidden tab: shown on the tab until it is opened. */
+  private markActivity(pane: TerminalPane, bell: boolean): void {
+    const tab = this.tabs.find((x) => x.has(pane));
+    if (!tab || tab === this.active || (bell ? tab.bell : tab.activity)) return;
+    if (bell) tab.bell = true;
+    else tab.activity = true;
+    this.renderTabs();
+  }
+
+  /** Gives the tab a name of the user's (empty: back to the pane's title). */
+  private async renameTab(tab: Tab): Promise<void> {
+    const input = h("input", { class: "input", maxlength: MAX_TAB_TITLE, spellcheck: "false", autocomplete: "off", placeholder: tab.active.title });
+    input.value = tab.customTitle ?? "";
+    const name = await modal<string | null>({
+      title: t("tabRename"),
+      body: [h("label", { class: "field" }, h("span", {}, t("name")), input), h("p", { class: "muted" }, t("tabRenameHelp"))],
+      buttons: [
+        { label: t("cancel"), value: null },
+        { label: t("save"), value: null, kind: "primary" },
+      ],
+      cancelValue: null,
+      initialFocus: input,
+      onSubmit: () => input.value,
+    });
+    if (name === null || !this.tabs.includes(tab)) return;
+    tab.customTitle = name.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, MAX_TAB_TITLE) || null;
+    this.renderTabs();
+    this.updateWindowTitle();
+  }
+
+  /** Opens the connection or shell of `pane` again, in a new tab. */
+  private duplicate(pane: TerminalPane): void {
+    const o = pane.opts;
+    this.openTab(o.title, o.subtitle, o.target, o.color);
+  }
+
+  /** Reorders the tabs by dragging one along the bar (pointer events, like the favorites). */
+  private dragTab(el: HTMLElement, tab: Tab, start: PointerEvent): void {
+    if (start.button !== 0 || (start.target instanceof Element && start.target.closest(".tab-close"))) return;
+    el.setPointerCapture(start.pointerId);
+    let dragging = false;
+    let target: { tab: Tab; after: boolean } | null = null;
+    const unmark = () =>
+      this.tabbar.querySelectorAll(".drop-before,.drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
+    const move = (e: PointerEvent) => {
+      if (!(e.buttons & 1)) return end();
+      if (!dragging && Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) < 6) return;
+      if (!dragging) {
+        dragging = true;
+        el.classList.add("dragging");
+      }
+      unmark();
+      target = null;
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>(".tab");
+      const other = over ? this.tabs[Number(over.dataset.index)] : undefined;
+      if (!over || !other || other === tab) return;
+      const r = over.getBoundingClientRect();
+      const after = e.clientX > r.left + r.width / 2;
+      over.classList.add(after ? "drop-after" : "drop-before");
+      target = { tab: other, after };
+    };
+    const end = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", end);
+      el.removeEventListener("pointercancel", end);
+      el.classList.remove("dragging");
+      unmark();
+      if (!dragging) return;
+      // The click that ends a drag must not count as one.
+      this.suppressTabClick = true;
+      setTimeout(() => (this.suppressTabClick = false), 0);
+      if (!target || !this.tabs.includes(target.tab)) return;
+      this.tabs.splice(this.tabs.indexOf(tab), 1);
+      this.tabs.splice(this.tabs.indexOf(target.tab) + (target.after ? 1 : 0), 0, tab);
+      this.renderTabs();
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+
+  private discardTab(tab: Tab): void {
     const i = this.tabs.indexOf(tab);
     if (i < 0) return;
     for (const pane of tab.panes) this.endFileBrowsersOf(pane);
@@ -501,7 +626,7 @@ export class App {
 
   private renderTabs(): void {
     clear(this.tabbar);
-    for (const tab of this.tabs) {
+    for (const [index, tab] of this.tabs.entries()) {
       const closeBtn = h(
         "button",
         { class: "tab-close", type: "button", title: t("closeTab"), "aria-label": t("closeTab") },
@@ -509,7 +634,7 @@ export class App {
       );
       closeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.closeTab(tab);
+        void this.closeTab(tab);
       });
       const dot = h("span", { class: "dot" });
       setDotColor(dot, tab.active.opts.color);
@@ -523,17 +648,27 @@ export class App {
           role: "tab",
           "aria-selected": String(tab === this.active),
           title: tab.active.opts.subtitle,
+          "data-index": String(index),
         },
         dot,
         h("span", { class: "tab-title" }, tab.title),
+        tab.bell
+          ? h("span", { class: "tab-bell", title: t("tabBell"), "aria-label": t("tabBell") }, icon("bell"))
+          : tab.activity && h("span", { class: "tab-activity", title: t("tabActivity"), "aria-label": t("tabActivity") }),
         waiting && h("span", { class: "tab-waiting", title: t("tabWaiting"), "aria-label": t("tabWaiting") }, icon("lock")),
         logging && h("span", { class: "tab-rec", title: t("tabLogging"), "aria-label": t("tabLogging") }),
         count > 1 && h("span", { class: "tab-panes", title: t("panesCount", { count }) }, String(count)),
         closeBtn,
       );
-      el.addEventListener("click", () => this.activate(tab));
+      el.addEventListener("click", () => {
+        if (!this.suppressTabClick) this.activate(tab);
+      });
+      el.addEventListener("dblclick", (e) => {
+        if (!(e.target instanceof Element && e.target.closest(".tab-close"))) void this.renameTab(tab);
+      });
+      el.addEventListener("pointerdown", (e) => this.dragTab(el, tab, e));
       el.addEventListener("auxclick", (e) => {
-        if (e.button === 1) this.closeTab(tab);
+        if (e.button === 1) void this.closeTab(tab);
       });
       el.addEventListener("contextmenu", (e) => {
         e.preventDefault();
@@ -572,8 +707,10 @@ export class App {
               ]
             : []),
           { label: t("layoutSave"), icon: icon("plus"), hint: keyHint("saveLayout"), action: () => void this.saveLayout(tab) },
-          ...(count > 1 ? [{ label: t("closePane"), hint: keyHint("closePane"), action: () => this.closePane() }] : []),
-          { label: t("closeTab"), icon: icon("close"), action: () => this.closeTab(tab) },
+          { label: t("tabRenameMenu"), icon: icon("edit"), action: () => void this.renameTab(tab) },
+          ...(active instanceof TerminalPane ? [{ label: t("tabDuplicate"), icon: icon("plus"), action: () => this.duplicate(active) }] : []),
+          ...(count > 1 ? [{ label: t("closePane"), hint: keyHint("closePane"), action: () => void this.closePane() }] : []),
+          { label: t("closeTab"), icon: icon("close"), action: () => void this.closeTab(tab) },
         ]);
       });
       this.tabbar.append(el);
@@ -620,7 +757,7 @@ export class App {
       case "newShell":
         return once(() => this.openDefaultShell());
       case "closePane":
-        return once(() => this.closePane());
+        return once(() => void this.closePane());
       case "quickConnect":
         return () => document.getElementById("quick-connect")?.focus();
       case "connections":

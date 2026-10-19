@@ -7,6 +7,16 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-19
+
+### Aggiunto
+
+- Le schede si possono rinominare (doppio clic o menu della scheda), riordinare trascinandole e duplicare (menu della scheda → *Duplica scheda*).
+- Una scheda nascosta mostra un punto quando il suo terminale stampa qualcosa, e una campanella quando il programma la fa suonare (per esempio alla fine di un comando lungo).
+- Chiudere una scheda, un pannello o Termdock con connessioni SSH aperte chiede conferma; si può disattivare in Impostazioni → Generale.
+- La finestra si riapre con la dimensione e la posizione che aveva (solo su un monitor ancora presente).
+- La connessione rapida ricorda gli ultimi 10 indirizzi che si sono collegati: `Su` / `Giù` nel suo campo, oppure i suggerimenti; la cronologia si può cancellare in Impostazioni → Generale.
+
 ## [0.17.0] - 2026-10-19
 
 ### Aggiunto
@@ -262,7 +272,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/LuuckA21/termdock/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/LuuckA21/termdock/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/LuuckA21/termdock/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/LuuckA21/termdock/compare/v0.14.0...v0.15.0

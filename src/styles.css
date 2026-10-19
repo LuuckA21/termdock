@@ -281,15 +281,18 @@ textarea.input {
   text-overflow: ellipsis;
 }
 
-.fav-chip.dragging {
+.fav-chip.dragging,
+.tab.dragging {
   opacity: 0.4;
 }
 
-.fav-chip.drop-before {
+.fav-chip.drop-before,
+.tab.drop-before {
   box-shadow: -3px 0 0 var(--accent-2);
 }
 
-.fav-chip.drop-after {
+.fav-chip.drop-after,
+.tab.drop-after {
   box-shadow: 3px 0 0 var(--accent-2);
 }
 
@@ -379,6 +382,24 @@ textarea.input {
 }
 
 .tab-waiting .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* A hidden tab printed something, or rang the bell. */
+.tab-activity {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-2);
+}
+
+.tab-bell {
+  color: var(--accent-2);
+}
+
+.tab-bell .icon {
   width: 13px;
   height: 13px;
 }

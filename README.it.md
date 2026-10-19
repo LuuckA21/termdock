@@ -17,7 +17,8 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 - **Shell locali** in PTY reale: PowerShell 7, Windows PowerShell, cmd, WSL e Git Bash su Windows (ConPTY); bash, zsh, fish, pwsh… su macOS e Linux.
 - **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti.
 - **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.
-- Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro).
+- Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro). Le schede si possono rinominare (doppio clic), riordinare trascinandole e duplicare (menu della scheda); una scheda nascosta mostra un punto quando il suo terminale stampa qualcosa e una campanella quando suona. Chiudere una scheda, un pannello o Termdock con connessioni SSH aperte chiede conferma (disattivabile in Impostazioni → Generale), e la finestra si riapre dov'era e grande com'era.
+- La connessione rapida ricorda gli ultimi indirizzi che si sono collegati: `Su` / `Giù` nel suo campo, oppure scegline uno dai suggerimenti.
 - **Riconnessione automatica**: quando la rete o il server fanno cadere una connessione SSH (rilevato tramite il keepalive impostato nella connessione), il terminale riprova da solo alcune volte nell'arco di circa cinque minuti, con i soliti controlli di host key e password; `Invio` riprova subito, `Esc` smette. Registrazione della sessione e browser dei file riprendono quando torna. Si può disattivare in Impostazioni → Generale.
 - **Pannelli divisi**, come Windows Terminal: dividi una scheda affiancando o sovrapponendo i pannelli quante volte serve e scegli cosa aprire nel nuovo pannello (la stessa connessione, una shell locale, qualsiasi connessione salvata o un indirizzo `utente@host`), per esempio server A a sinistra e server B a destra. Le schede già aperte si possono affiancare senza riconnettersi (menu della scheda → *Affianca a*) e i preferiti si aprono direttamente a destra o sotto. Trascina i divisori per ridimensionarli, spostati tra i pannelli con `Alt+frecce`.
 - **Layout salvati**: salva la disposizione di una scheda (quale connessione o shell c'è in ogni pannello e le dimensioni) con `Ctrl+Shift+L` e riaprila dal menu *Layout* con un clic; un layout può aprirsi automaticamente all'avvio (le sue connessioni partono subito, con le solite richieste di host key e password).
@@ -109,7 +110,7 @@ I dati sono salvati in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json`, `known_hosts` e `editor.json`; le password stanno solo nel portachiavi. Le preferenze dell'interfaccia, come lingua, aspetto e scorciatoie da tastiera, i layout salvati e gli snippet sono nel local storage della web view. Backup e log di sessione vengono scritti solo dove scegli tu.)
+(`profiles.json`, `known_hosts` e `editor.json`; le password stanno solo nel portachiavi. Le preferenze dell'interfaccia, come lingua, aspetto e scorciatoie da tastiera, i layout salvati, gli snippet e la cronologia della connessione rapida sono nel local storage della web view; dimensione e posizione della finestra in `.window-state.json`. Backup e log di sessione vengono scritti solo dove scegli tu.)
 
 ## Sviluppo
 

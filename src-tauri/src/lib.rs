@@ -11,6 +11,7 @@ mod transfer;
 mod updates;
 
 use tauri::{Manager, RunEvent};
+use tauri_plugin_window_state::StateFlags;
 use tracing_subscriber::EnvFilter;
 
 use crate::state::AppState;
@@ -26,6 +27,14 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Native file dialogs, driven by the backend only (see sftp.rs).
         .plugin(tauri_plugin_dialog::init())
+        // Window size, position and maximized state, kept across runs (only
+        // restored onto a monitor that still exists). None of its commands is
+        // allowed: the UI cannot read or set it.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+                .build(),
+        )
         // Files dragged from the system onto the window (see sftp::on_drag_drop).
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::DragDrop(drag) = event {
