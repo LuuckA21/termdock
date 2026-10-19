@@ -469,6 +469,60 @@ async fn dropped_connection_is_reported_as_lost() {
     assert_eq!(*out.lost.lock().unwrap(), Some(false));
 }
 
+/// A key generated here, installed through SFTP like `ssh-copy-id`, then
+/// used to log in: what OpenSSH reads is what Termdock writes.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn generated_key_is_installed_and_logs_in() {
+    use termdock_core::keygen;
+
+    let Some(e) = env() else {
+        eprintln!("TERMDOCK_E2E_SSH not set, skipping");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let kh = Arc::new(KnownHosts::new(dir.path().join("known_hosts")));
+    let vault = Arc::new(MemoryVault::default());
+    let pair = keygen::generate("termdock-e2e", Some("pass phrase")).unwrap();
+    let key_path = dir.path().join("id_ed25519");
+    keygen::save(&pair, &key_path).unwrap();
+    let public = keygen::parse_public(&std::fs::read_to_string(keygen::public_path(&key_path)).unwrap()).unwrap();
+
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Password,
+        &kh,
+        &vault,
+        None,
+        user(true, &[(&e.password, false)]),
+        out.sink,
+    )
+    .await
+    .unwrap();
+    let fs = Sftp::open(&h).await.unwrap();
+    assert!(fs.authorize_key(&public).await.unwrap(), "added");
+    assert!(!fs.authorize_key(&public).await.unwrap(), "not twice");
+    fs.close().await;
+    h.close();
+
+    let ui = user(true, &[("pass phrase", false)]);
+    let out = output();
+    let h = connect(
+        &e,
+        SshAuth::Key { path: key_path },
+        &kh,
+        &vault,
+        None,
+        ui.clone(),
+        out.sink.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(*ui.asked.lock().unwrap(), ["passphrase"]);
+    run_and_exit(h, out, "generated").await;
+}
+
 async fn echo_server() -> u16 {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

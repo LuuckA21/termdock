@@ -1658,6 +1658,19 @@ dialog.modal.snippet-edit {
   resize: vertical;
 }
 
+.key-path {
+  display: flex;
+  gap: 8px;
+}
+.key-path .input {
+  flex: 1;
+  min-width: 0;
+}
+.key-public {
+  width: 100%;
+  font-size: 12px;
+  word-break: break-all;
+}
 .backup-row {
   justify-content: flex-start;
   gap: 8px;

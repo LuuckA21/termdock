@@ -22,6 +22,7 @@ import { Tab, type Direction, type Snapshot, type SplitDir } from "./tabs";
 import type { Pane } from "./pane";
 import { pickPane, type PaneChoice } from "./picker";
 import { TerminalPane } from "./terminal";
+import { installKey } from "./sshkeys";
 import { startUpdateChecks } from "./updates";
 import type { AppInfo, DetectedShell, OpenTarget, PickedFile, Profile, Uuid } from "./types";
 
@@ -153,6 +154,18 @@ export class App {
     const target = pane.opts.target;
     if (target.kind === "quick") return true;
     return target.kind === "profile" && this.profiles.find((p) => p.id === target.id)?.type === "ssh";
+  }
+
+  /** Adds a public key the user picks to the server of `pane` (like ssh-copy-id). */
+  private async installKey(pane: TerminalPane): Promise<void> {
+    const id = pane.session;
+    if (id === null) return;
+    try {
+      const line = await installKey(id, pane.opts.subtitle);
+      if (line) pane.notify(line);
+    } catch (e) {
+      pane.notify(errorText(e), true);
+    }
   }
 
   /** Opens a file browser on the SSH connection of the active terminal. */
@@ -542,7 +555,10 @@ export class App {
           ...(active instanceof TerminalPane
             ? [
                 ...(this.isSsh(active) && active.session !== null
-                  ? [{ label: t("openFiles"), icon: icon("folder"), hint: keyHint("files"), action: () => this.openFiles() }]
+                  ? [
+                      { label: t("openFiles"), icon: icon("folder"), hint: keyHint("files"), action: () => this.openFiles() },
+                      { label: t("keyInstallMenu"), icon: icon("upload"), action: () => void this.installKey(active) },
+                    ]
                   : []),
                 { label: t("find"), hint: keyHint("find"), action: () => active.find() },
                 { label: t("copy"), hint: keyHint("copy"), action: () => void active.copy() },

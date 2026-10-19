@@ -263,6 +263,11 @@ export class TerminalPane implements Pane {
     }
   }
 
+  /** Shows a line of Termdock's own in the terminal (not sent to the session). */
+  notify(text: string, error = false): void {
+    this.term.write(`\r\n${error ? RED : CYAN}» ${plain(text)}${RESET}\r\n`);
+  }
+
   async stopLog(): Promise<void> {
     const path = this.logPath;
     if (!path) return;

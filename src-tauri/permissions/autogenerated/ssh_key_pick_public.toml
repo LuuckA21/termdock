@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ssh-key-pick-public"
+description = "Enables the ssh_key_pick_public command without any pre-configured scope."
+commands.allow = ["ssh_key_pick_public"]
+
+[[permission]]
+identifier = "deny-ssh-key-pick-public"
+description = "Denies the ssh_key_pick_public command without any pre-configured scope."
+commands.deny = ["ssh_key_pick_public"]

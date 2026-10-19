@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ssh-key-install"
+description = "Enables the ssh_key_install command without any pre-configured scope."
+commands.allow = ["ssh_key_install"]
+
+[[permission]]
+identifier = "deny-ssh-key-install"
+description = "Denies the ssh_key_install command without any pre-configured scope."
+commands.deny = ["ssh_key_install"]

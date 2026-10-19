@@ -4,6 +4,7 @@ import { clear, h, icon } from "./dom";
 import { describe, setDotColor } from "./favorites";
 import { forwardsEditor } from "./forwards";
 import { openImport } from "./importer";
+import { generateKey } from "./sshkeys";
 import { t } from "./i18n";
 import { shortcutSummary } from "./keys";
 import type { App } from "./main";
@@ -208,6 +209,16 @@ function profileForm(app: App, existing: Profile | null, onSaved: (p: Profile | 
   );
   auth.value = ssh?.auth.method ?? "auto";
   const keyPath = input(ssh?.auth.method === "key" ? ssh.auth.path : "", { placeholder: "~/.ssh/id_ed25519" });
+  keyPath.setAttribute("aria-label", t("keyPath"));
+  const keyGenerate = h("button", { type: "button", class: "btn" }, icon("key"), h("span", {}, t("keyGenerate")));
+  keyGenerate.addEventListener("click", async () => {
+    const path = await generateKey();
+    if (!path) return;
+    keyPath.value = path;
+    auth.value = "key";
+    sync();
+    keyPath.focus();
+  });
   const keepalive = input(ssh?.keepaliveSecs ?? 30, { type: "number", min: "0", max: "3600" });
   const jump = h("select", { class: "input" }, h("option", { value: "" }, t("noJump")));
   for (const p of [...app.profiles].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -249,7 +260,7 @@ function profileForm(app: App, existing: Profile | null, onSaved: (p: Profile | 
     field(t("port"), port),
     field(t("username"), user),
     field(t("auth"), auth, "span2"),
-    field(t("keyPath"), keyPath, "span2 key-row"),
+    h("div", { class: "field span2 key-row" }, h("span", {}, t("keyPath")), h("div", { class: "key-path" }, keyPath, keyGenerate)),
     field(t("keepalive"), keepalive),
     field(t("jumpHost"), jump, "span2"),
     h("div", { class: "field span2" }, h("span", {}, t("portForwards")), forwards.el),

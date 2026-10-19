@@ -5600,7 +5600,7 @@ dependencies = [
 
 [[package]]
 name = "termdock"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "directories",
  "serde",
@@ -5622,7 +5622,7 @@ dependencies = [
 
 [[package]]
 name = "termdock-core"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "data-encoding",
  "directories",
@@ -5631,6 +5631,8 @@ dependencies = [
  "objc2",
  "objc2-foundation",
  "portable-pty",
+ "rand",
+ "rand_core",
  "russh",
  "russh-sftp",
  "serde",

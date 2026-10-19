@@ -49,6 +49,13 @@ Automatic reconnection (`src-tauri/src/commands.rs`, `src/terminal.ts`): a conne
 - A remembered password or passphrase that is rejected is deleted at once instead of being replayed on every login (which could trip MaxAuthTries or fail2ban).
 - Prompts expire after 3 minutes; an unanswered prompt is treated as "no". A question from a session in a background tab waits until that tab is shown (the tab shows a lock mark meanwhile), and a password field does not take the focus while the user is typing in another pane, so keys meant for one server cannot end up answering another.
 
+### SSH keys (`keygen.rs`, `src-tauri/src/keys.rs`, `src/sshkeys.ts`)
+
+- New keys are Ed25519, made from the operating system's random generator, and saved in OpenSSH format where the user picks in the system's save dialog (by default a free `~/.ssh/id_ed25519…`). The private key is encrypted with the passphrase (bcrypt-pbkdf + AES-256-CTR, as `ssh-keygen` does); a passphrase must have at least 5 characters, and creating a key without one needs an explicit confirmation that says what it means. The passphrase only travels UI → backend and is wiped after use; the private key never reaches the UI.
+- An existing file is never replaced: if the private key or its `.pub` already exists (even after the save dialog asked to replace it) nothing is written. The private key is created `0600` on Unix, with an exclusive create; if writing the `.pub` fails, the new private key is removed again.
+- *Install public key* reads a `.pub` file the user picks, and accepts exactly one public key with no options (`command=`, `from=`…), which is re-encoded before use, so nothing else can reach the server. After a confirmation showing its fingerprint and the user and server it gives access to, it is appended to `~/.ssh/authorized_keys` of the login user over the session's own connection (SFTP): `~/.ssh` is created `0700` and the file `0600` when missing, an existing file keeps its mode, and a key already listed is not added twice.
+- Removing keys from a server, and administrator accounts on Windows OpenSSH servers (which use `administrators_authorized_keys`), are left to the user.
+
 ### Desktop shell (Tauri 2)
 
 - Strict Content-Security-Policy: scripts only from the app bundle, no `eval`, no remote origins, no frames/objects/workers.

@@ -2,6 +2,7 @@ mod backup;
 mod commands;
 mod edit;
 mod editor;
+mod keys;
 mod prompts;
 mod sessionlog;
 mod sftp;
@@ -56,6 +57,9 @@ pub fn run() {
             commands::list_shells,
             commands::open_session,
             commands::reconnect_session,
+            keys::ssh_key_generate,
+            keys::ssh_key_pick_public,
+            keys::ssh_key_install,
             commands::write_session,
             commands::resize_session,
             commands::close_session,
