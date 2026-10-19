@@ -51,12 +51,15 @@ fn ssh_dir(create: bool) -> Option<PathBuf> {
         if !create {
             return None;
         }
-        let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
-        {
+        let builder = {
             use std::os::unix::fs::DirBuilderExt;
+            let mut builder = std::fs::DirBuilder::new();
             builder.mode(0o700);
-        }
+            builder
+        };
+        #[cfg(not(unix))]
+        let builder = std::fs::DirBuilder::new();
         builder.create(&dir).ok()?;
     }
     Some(dir)
