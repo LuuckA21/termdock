@@ -86,6 +86,7 @@ const ICONS = {
   refresh: ["M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7"],
   splitDown: ["M4 5h16v14H4z", "M4 12h16"],
   lock: ["M6 11h12v9H6z", "M8 11V8a4 4 0 0 1 8 0v3"],
+  bell: ["M6 16V11a6 6 0 0 1 12 0v5l2 2H4z", "M10 20a2 2 0 0 0 4 0"],
   key: ["M8 15a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M12 11h9", "M18 11v3", "M21 11v2"],
   snippet: ["M8 7l-5 5 5 5", "M16 7l5 5-5 5", "M13.5 5l-3 14"],
   palette: [

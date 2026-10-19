@@ -58,6 +58,10 @@ const MAX_ATTEMPTS = 12;
 
 interface TerminalOptions extends PaneOptions {
   vaultAvailable: boolean;
+  /** Output arrived while `watchOutput` was set (it is then cleared). */
+  onOutput?: (pane: TerminalPane) => void;
+  /** The program rang the bell. */
+  onBell?: (pane: TerminalPane) => void;
 }
 
 /** One terminal session with its xterm.js view. */
@@ -74,6 +78,8 @@ export class TerminalPane implements Pane {
   private prompts = new AbortController();
   /** Bumped on every (re)connect so late events of an old session are ignored. */
   private generation = 0;
+  /** Set while the pane's tab is hidden: the next output is reported once. */
+  watchOutput = false;
   /** Bumped when a dropped connection starts (or stops) being reconnected. */
   private reconnectRun = 0;
   /** While waiting before a reconnection attempt: Enter tries now, Esc stops. */
@@ -115,6 +121,7 @@ export class TerminalPane implements Pane {
     this.term.attachCustomKeyEventHandler((e) => this.handleKey(e));
     this.term.onData((d) => this.input(d, false));
     this.term.onBinary((d) => this.input(d, true));
+    this.term.onBell(() => this.opts.onBell?.(this));
     this.term.onTitleChange((title) => {
       this.remoteTitle = title;
       this.cwdIsNewer = false;
@@ -199,7 +206,12 @@ export class TerminalPane implements Pane {
         this.opts.target,
         { cols: this.term.cols, rows: this.term.rows },
         (bytes) => {
-          if (gen === this.generation) this.term.write(bytes);
+          if (gen !== this.generation) return;
+          this.term.write(bytes);
+          if (this.watchOutput) {
+            this.watchOutput = false;
+            this.opts.onOutput?.(this);
+          }
         },
         (notice) => {
           if (gen === this.generation) void this.onNotice(notice);

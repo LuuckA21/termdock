@@ -38,6 +38,11 @@ export class Tab {
   readonly el = h("div", { class: "tab-panel", role: "tabpanel" });
   private readonly nodes = new Map<Pane, PaneNode>();
   private current: Pane;
+  /** A name the user gave the tab; null: the active pane's title. */
+  customTitle: string | null = null;
+  /** A terminal printed something (or rang the bell) while the tab was hidden. */
+  activity = false;
+  bell = false;
 
   constructor(first: Pane) {
     this.leaf(first, null);
@@ -52,7 +57,7 @@ export class Tab {
   }
 
   get title(): string {
-    return this.current.title;
+    return this.customTitle ?? this.current.title;
   }
 
   get state(): PaneState {

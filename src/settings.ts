@@ -17,6 +17,7 @@ import {
   type Prefs,
   type ThemeSetting,
 } from "./prefs";
+import { clearQuickHistory, quickHistory } from "./quickhistory";
 import { SCHEMES, type SchemeId } from "./schemes";
 import { copySnippets, setSnippets } from "./snippets";
 import { snippetsPanel } from "./snippetsui";
@@ -115,6 +116,14 @@ export async function openSettings(tab?: TabId): Promise<void> {
   const scrollback = number(p.scrollback, LIMITS.scrollback.min, LIMITS.scrollback.max, 1);
   const autoReconnect = h("input", { type: "checkbox" });
   autoReconnect.checked = p.autoReconnect;
+  const confirmClose = h("input", { type: "checkbox" });
+  confirmClose.checked = p.confirmClose;
+  const clearHistory = h("button", { type: "button", class: "btn" }, t("quickHistoryClear"));
+  clearHistory.disabled = !quickHistory().length;
+  clearHistory.addEventListener("click", () => {
+    clearQuickHistory();
+    clearHistory.disabled = true;
+  });
 
   const formPrefs = (): Prefs =>
     normalize({
@@ -128,6 +137,7 @@ export async function openSettings(tab?: TabId): Promise<void> {
       cursorBlink: cursorBlink.checked,
       scrollback: scrollback.value || p.scrollback,
       autoReconnect: autoReconnect.checked,
+      confirmClose: confirmClose.checked,
     });
 
   // Live preview of colours and font, before saving.
@@ -255,6 +265,8 @@ export async function openSettings(tab?: TabId): Promise<void> {
       h("h4", {}, t("connectionsGroup")),
       h("label", { class: "check" }, autoReconnect, h("span", {}, t("autoReconnect"))),
       h("p", { class: "muted" }, t("autoReconnectHelp")),
+      h("label", { class: "check" }, confirmClose, h("span", {}, t("confirmCloseSetting"))),
+      h("div", { class: "settings-row" }, h("span", { class: "muted" }, t("quickHistoryHelp")), clearHistory),
       h("h4", {}, t("backup")),
       h("p", { class: "muted" }, t("backupHelp")),
       h("div", { class: "settings-row backup-row" }, exportBtn, importBtn),
