@@ -17,9 +17,9 @@ A short list in order of importance is in [FEATURES.md](FEATURES.md).
 - **Port forwarding** saved in the connection: local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`); the status of each tunnel is shown in the terminal.
 - **Import from `~/.ssh/config`**: preview with warnings, then imports Host, HostName, User, Port, IdentityFile, ProxyJump and the forwards.
 - **Local shells** in a real PTY: PowerShell 7, Windows PowerShell, cmd, WSL and Git Bash on Windows (ConPTY); bash, zsh, fish, pwsh… on macOS and Linux.
-- **Connection manager**: groups, colors, search, star to pin to the favorites bar. *Duplicate* copies a connection as a starting point for a similar one, and the bolt next to a group opens all of its connections, one tab each.
+- **Connection manager**: groups, colors, search, star to pin to the favorites bar. *Duplicate* copies a connection as a starting point for a similar one, and the bolt next to a group opens all of its connections, one tab each. A connection can have a **startup command** (one line typed into the shell once connected, e.g. `cd /var/www`) and can be marked as a **production server**: its tabs get a red *PROD* badge and its terminals a red border, so it is not mistaken for a test machine.
 - **Quick connect**: type `user@host:port` in the bar and press Enter.
-- Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click; with *Copy on select* in Settings → Appearance the selection is copied at once and right click always pastes). Pasting several lines shows them first, invisible characters marked, unless the program uses bracketed paste. Tabs can be renamed (double click), reordered by dragging and duplicated (tab menu), which also has *Clear terminal* (shortcut assignable in Settings → Keys), *Close other tabs* and *Close tabs to the right*; a hidden tab shows a dot when its terminal prints something and a bell when it rings one. Closing a tab, pane or Termdock with open SSH connections asks first (can be turned off in Settings → General), and the window opens again where and as large as it was left.
+- Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click; with *Copy on select* in Settings → Appearance the selection is copied at once and right click always pastes). Pasting several lines shows them first, invisible characters marked, unless the program uses bracketed paste. Tabs can be renamed (double click), reordered by dragging and duplicated (tab menu), which also has *Clear terminal* (shortcut assignable in Settings → Keys), *Close other tabs* and *Close tabs to the right*; a hidden tab shows a dot when its terminal prints something and a bell when it rings one, and a system notification can tell you about that bell while you are elsewhere (Settings → General, off by default). Web links in the output open in the browser with `Ctrl`+click (`Cmd`+click on macOS), after a confirmation that shows where they really go. Closing a tab, pane or Termdock with open SSH connections asks first (can be turned off in Settings → General), and the window opens again where and as large as it was left.
 - Quick connect remembers the last addresses that connected: `Up` / `Down` in its box, or pick one from the suggestions.
 - **Automatic reconnection**: when the network or the server drops an SSH connection (noticed through the keepalive set in the connection), the terminal tries again by itself a few times over about five minutes, with the usual host-key and password checks; `Enter` tries at once, `Esc` stops. Its session log and file browser carry on once it is back. Can be turned off in Settings → General.
 - **Split panes**, like Windows Terminal: divide a tab side by side or top/bottom as many times as needed and choose what opens in the new pane (the same connection, a local shell, any saved connection or a `user@host` address), e.g. server A on the left and server B on the right. Already open tabs can be put side by side without reconnecting (tab menu → *Move next to*), and favourites open directly on the right or below. Drag the dividers to resize, move between panes with `Alt+arrows`.
@@ -28,6 +28,7 @@ A short list in order of importance is in [FEATURES.md](FEATURES.md).
 - **Backup of the configuration**: Settings → General → *Export…* saves connections, favorites, layouts, snippets and settings (appearance, language, keys) in one JSON file; *Import…* shows what a backup holds and then either adds only what is new or replaces the current configuration, e.g. to move to another computer. Passwords, keys and host keys are never included.
 - **Session log**: tab menu → *Log to file…* writes what a terminal shows from then on to a text file of your choice (colours and other escape sequences removed), until *Stop logging* or the end of the session; a red dot on the tab shows it is on. Off unless started, since a log keeps everything printed on screen.
 - **SSH keys**: *Generate…* next to the key path of a connection creates an Ed25519 key with a passphrase (saved in `~/.ssh` or wherever you choose, never over an existing file) and shows the public key to copy; *Install public key…* in the tab menu of a connected terminal adds a `.pub` to `~/.ssh/authorized_keys` on that server, like `ssh-copy-id`.
+- **Command palette**: `Ctrl+Shift+A` searches everything Termdock can do right now (actions with their shortcuts, open tabs, connections, local shells, layouts and the active terminal's snippets) and runs the one you pick; typing an address offers a quick connect.
 - **Find in terminal**: `Ctrl+Shift+F` searches the scrollback with highlighted matches, next/previous (`Enter` / `Shift+Enter`), match case and regular expressions.
 - **Themes and fonts**: dark, light or system theme; terminal colour schemes (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); font, size, line height, cursor style and scrollback, with a live preview in Settings; `Ctrl` + `+` / `-` / `0` changes the font size.
 - **Automatic updates**: a new version is announced at start (and once a day), installed only after you confirm, and verified against the signing key built into the app; it can be turned off in Settings.
@@ -50,10 +51,12 @@ A short list in order of importance is in [FEATURES.md](FEATURES.md).
 | `Ctrl+Shift+1…9` | open favorite N |
 | `Ctrl+Shift+K` | quick connect |
 | `Ctrl+Shift+M` | connection manager |
+| `Ctrl+Shift+A` | command palette |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
 | `Ctrl` + `+` / `-` / `0` | larger / smaller / default font size |
 | `Ctrl+,` | settings (language, appearance, keys, snippets, files, updates) |
 | right click in the terminal | copy the selection, otherwise paste (with *Copy on select*: always paste) |
+| `Ctrl`+click on a link (macOS: `Cmd`+click) | open it in the browser, after a confirmation |
 
 These are the defaults (`Cmd` works in place of `Ctrl` on macOS). Every shortcut can be changed or turned off in **Settings → Keys**: click it and press the new keys; a combination already in use is moved only after confirmation, and keys that terminal programs or AltGr typing need get a warning first.
 
@@ -98,6 +101,7 @@ src-tauri/             Tauri 2 desktop app
   ├─ transfer.rs        uploads and downloads of files and folders: plan, then run
   ├─ edit.rs            Edit: private copy, watching and upload on save
   ├─ editor.rs          which text editor opens it (system or chosen in Settings)
+  ├─ desktop.rs         web links to the browser, system notifications
   └─ updates.rs         signed in-app updates
 src/                   TypeScript + xterm.js UI (no framework)
 ```
@@ -112,7 +116,7 @@ Data is stored in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain. Interface preferences such as language, appearance and keyboard shortcuts, saved layouts, snippets and the quick-connect history are kept in the web view's local storage; the window's size and position in `.window-state.json`. Backups and session logs are only written where you choose.)
+(`profiles.json`, `known_hosts` and `editor.json`; passwords live only in the keychain, and a connection's startup command is plain text in `profiles.json`. Interface preferences such as language, appearance and keyboard shortcuts, saved layouts, snippets and the quick-connect history are kept in the web view's local storage; the window's size and position in `.window-state.json`. Backups and session logs are only written where you choose.)
 
 ## Development
 

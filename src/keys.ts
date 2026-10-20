@@ -27,6 +27,7 @@ export type Action =
   | "zoomIn"
   | "zoomOut"
   | "zoomReset"
+  | "palette"
   | "settings";
 
 /** Shortcut families over the digits 1…9. */
@@ -89,7 +90,10 @@ export const ACTION_GROUPS: { label: MsgKey; actions: { id: Action; label: MsgKe
   },
   {
     label: "keysGroupApp",
-    actions: [{ id: "settings", label: "settings" }],
+    actions: [
+      { id: "palette", label: "palette" },
+      { id: "settings", label: "settings" },
+    ],
   },
 ];
 
@@ -127,10 +131,11 @@ const DEFAULTS: Record<Action, Chord[]> = {
   zoomIn: [c("mod+key:+"), c("mod+key:=")],
   zoomOut: [c("mod+key:-")],
   zoomReset: [c("mod+key:0")],
+  palette: [c("mod+shift+KeyA")],
   settings: [c("mod+Comma")],
 };
 
-const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+export const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 // On macOS Option+digit types characters (e.g. [ ] { } on German layouts): Cmd+1…9 there.
 const DIGIT_DEFAULTS: Record<DigitAction, DigitMods> = {

@@ -37,6 +37,10 @@ export type Profile = {
   name: string;
   color?: string;
   group?: string;
+  /** A production server: its tabs and terminals are marked in red. */
+  production?: boolean;
+  /** One line typed into the shell once the session starts. */
+  startup?: string;
 } & (SshFields | LocalFields);
 
 export interface ProfileList {

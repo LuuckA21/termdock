@@ -14,6 +14,7 @@ Tutto ciò che Termdock sa fare, in ordine di importanza. I dettagli sono nel [R
 - **Autenticazione**: SSH agent (ssh-agent, agent OpenSSH di Windows, Pageant), chiavi private anche cifrate, password, keyboard-interactive / 2FA.
 - **Password nel portachiavi del sistema** (Windows Credential Manager, macOS Keychain, Secret Service), solo se lo chiedi; mai su disco.
 - **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti; *Duplica* per partire da una connessione simile; un clic apre tutte le connessioni di un gruppo, una scheda ciascuna.
+- **Server di produzione evidenziati in rosso** (etichetta sulla scheda e bordo del terminale), e un **comando iniziale** per connessione (per esempio `cd /var/www`).
 - **Barra dei preferiti**: un clic per connettersi, riordino trascinando, `Ctrl+Shift+1…9`.
 - **Connessione rapida** `utente@host:porta`, con la cronologia degli ultimi 10 indirizzi (Su/Giù e suggerimenti).
 - **Shell locali** in un vero terminale: PowerShell 7, Windows PowerShell, cmd, WSL, Git Bash; bash, zsh, fish, pwsh su macOS e Linux.
@@ -24,7 +25,8 @@ Tutto ciò che Termdock sa fare, in ordine di importanza. I dettagli sono nel [R
   - rinomina con doppio clic, riordino trascinandole, duplica;
   - chiudi le altre schede o quelle a destra, con un'unica conferma;
   - pulisci terminale, dal menu o con una scorciatoia a scelta;
-  - un punto se una scheda nascosta stampa qualcosa, una campanella se suona il campanello del terminale.
+  - un punto se una scheda nascosta stampa qualcosa, una campanella se suona il campanello del terminale;
+  - notifica di sistema opzionale per un campanello che non stai guardando.
 - **Pannelli divisi** come Windows Terminal: affiancati o sovrapposti, schede già aperte affiancabili senza riconnettersi, `Alt+frecce` per spostarsi.
 - **Layout salvati**: disposizione e connessioni di una scheda; uno può aprirsi all'avvio.
 - **Riconnessione automatica** quando la rete o il server cadono:
@@ -48,6 +50,8 @@ Tutto ciò che Termdock sa fare, in ordine di importanza. I dettagli sono nel [R
 
 ## 4. Produttività
 
+- **Tavolozza comandi** (`Ctrl+Shift+A`): azioni, schede, connessioni, layout e snippet in un'unica ricerca.
+- **Link web cliccabili** nel terminale (`Ctrl`+clic), con una conferma che mostra dove portano.
 - **Snippet**: comandi salvati, inviati con o senza Invio, limitabili a un gruppo di connessioni, scorciatoie `1…9`.
 - **Ricerca nel terminale** (`Ctrl+Shift+F`): evidenziazione, maiuscole/minuscole, espressioni regolari.
 - **Scorciatoie personalizzabili** in Impostazioni → Tasti, con avviso per i tasti che usano i programmi nel terminale.

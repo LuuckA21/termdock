@@ -404,6 +404,22 @@ textarea.input {
   height: 13px;
 }
 
+/* A production server (marked in its connection): red, so it is not mistaken. */
+.tab.production {
+  border-top-color: var(--danger);
+}
+
+.tab-production {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 /* This tab's output is being logged to a file. */
 .tab-rec {
   flex: none;
@@ -543,6 +559,16 @@ textarea.input {
 /* With several panes, the one with the keyboard focus is outlined. */
 .pane.focused {
   box-shadow: inset 0 0 0 1px var(--accent-2);
+}
+
+.pane.production {
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+
+.pane.production.focused {
+  box-shadow:
+    inset 0 0 0 2px var(--danger),
+    inset 0 0 0 3px var(--accent-2);
 }
 
 /* ---------- file browser (SFTP) ---------- */
@@ -1516,6 +1542,24 @@ dialog.picker {
 
 .picker-detail {
   font-size: 12px;
+}
+
+.picker-empty {
+  margin: 0;
+  padding: 6px 12px;
+}
+
+dialog.palette {
+  width: min(640px, 92vw);
+}
+
+/* A link about to be opened, in full. */
+.link-preview {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  overflow-wrap: anywhere;
 }
 
 /* ---------- find bar (terminal search) ---------- */

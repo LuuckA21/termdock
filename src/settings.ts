@@ -120,6 +120,8 @@ export async function openSettings(tab?: TabId): Promise<void> {
   confirmClose.checked = p.confirmClose;
   const copyOnSelect = h("input", { type: "checkbox" });
   copyOnSelect.checked = p.copyOnSelect;
+  const bellNotify = h("input", { type: "checkbox" });
+  bellNotify.checked = p.bellNotify;
   const clearHistory = h("button", { type: "button", class: "btn" }, t("quickHistoryClear"));
   clearHistory.disabled = !quickHistory().length;
   clearHistory.addEventListener("click", () => {
@@ -141,6 +143,7 @@ export async function openSettings(tab?: TabId): Promise<void> {
       autoReconnect: autoReconnect.checked,
       confirmClose: confirmClose.checked,
       copyOnSelect: copyOnSelect.checked,
+      bellNotify: bellNotify.checked,
     });
 
   // Live preview of colours and font, before saving.
@@ -269,6 +272,7 @@ export async function openSettings(tab?: TabId): Promise<void> {
       h("label", { class: "check" }, autoReconnect, h("span", {}, t("autoReconnect"))),
       h("p", { class: "muted" }, t("autoReconnectHelp")),
       h("label", { class: "check" }, confirmClose, h("span", {}, t("confirmCloseSetting"))),
+      h("label", { class: "check" }, bellNotify, h("span", {}, t("bellNotifySetting"))),
       h("div", { class: "settings-row" }, h("span", { class: "muted" }, t("quickHistoryHelp")), clearHistory),
       h("h4", {}, t("backup")),
       h("p", { class: "muted" }, t("backupHelp")),

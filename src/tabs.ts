@@ -43,6 +43,8 @@ export class Tab {
   /** A terminal printed something (or rang the bell) while the tab was hidden. */
   activity = false;
   bell = false;
+  /** A system notification was shown for its bell; not again until it is looked at. */
+  bellNotified = false;
 
   constructor(first: Pane) {
     this.leaf(first, null);

@@ -2,13 +2,14 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 
 import { api, errorText } from "./api";
-import { askSecret, confirmBox, confirmHostKey, modal } from "./dialogs";
+import { alertBox, askSecret, confirmBox, confirmHostKey, modal } from "./dialogs";
 import { h } from "./dom";
 import { t } from "./i18n";
-import { actionFor, keyHint } from "./keys";
+import { actionFor, isMac, keyHint } from "./keys";
 import { fontStack, getPrefs, onPrefsChange, terminalScheme } from "./prefs";
 import type { Pane, PaneOptions, PaneState } from "./pane";
 import { HIGHLIGHT_LIMIT, SearchBar } from "./search";
@@ -77,6 +78,47 @@ function confirmPaste(text: string, count: number): Promise<boolean> {
   });
 }
 
+/**
+ * A web link clicked in a terminal: shown in full (its host apart, so a
+ * look-alike stands out) and opened in the browser only once confirmed. The
+ * text on screen comes from the server, so it is never opened blindly.
+ */
+async function openLink(uri: string): Promise<void> {
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch {
+    return;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return;
+  // "https://bank.example@evil.example" goes to evil.example: never opened.
+  if (url.username || url.password) {
+    await alertBox(t("openLinkTitle"), t("openLinkCredentials", { host: url.host }));
+    return;
+  }
+  const ok = await modal<boolean>({
+    title: t("openLinkTitle"),
+    body: [
+      h("p", {}, t("openLinkHost", { host: url.host })),
+      h("p", { class: "mono link-preview" }, url.href),
+      h("p", { class: "muted" }, t("openLinkHelp")),
+    ],
+    buttons: [
+      { label: t("cancel"), value: false },
+      { label: t("openLink"), value: true, kind: "primary" },
+    ],
+    cancelValue: false,
+    // Enter alone does not open it.
+    focusButton: 0,
+  });
+  if (!ok) return;
+  try {
+    await api.openUrl(url.href);
+  } catch (e) {
+    await alertBox(t("openLinkTitle"), errorText(e));
+  }
+}
+
 const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
 const CYAN = "\x1b[36m";
@@ -142,6 +184,18 @@ export class TerminalPane implements Pane {
     });
     this.term.loadAddon(this.fit);
     this.term.loadAddon(this.searchAddon);
+    // Web links in the output: Ctrl+click (Cmd on macOS) asks to open them.
+    this.term.loadAddon(
+      new WebLinksAddon(
+        (e, uri) => {
+          if (isMac ? e.metaKey : e.ctrlKey) void openLink(uri);
+        },
+        {
+          hover: () => (this.el.title = t("linkHint", { key: isMac ? "Cmd" : "Ctrl" })),
+          leave: () => this.el.removeAttribute("title"),
+        },
+      ),
+    );
     const unicode = new Unicode11Addon();
     this.term.loadAddon(unicode);
     this.term.unicode.activeVersion = "11";

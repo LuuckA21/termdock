@@ -110,6 +110,11 @@ export const api = {
   editorPick: () => invoke<EditorInfo | null>("editor_pick"),
   editorReset: () => invoke<void>("editor_reset"),
 
+  /** Opens a web link in the default browser (the backend checks it again). */
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
+  /** Shows a system notification. */
+  notify: (title: string, body: string) => invoke<void>("notify", { title, body }),
+
   /** Shows a save dialog and logs the session there; resolves with the path, or null if cancelled. */
   sessionLogStart: (id: number, title: string) => invoke<string | null>("session_log_start", { id, title }),
   sessionLogStop: (id: number) => invoke<boolean>("session_log_stop", { id }),

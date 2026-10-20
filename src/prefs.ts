@@ -24,6 +24,8 @@ export interface Prefs {
   confirmClose: boolean;
   /** Selecting text with the mouse copies it (right click then pastes). */
   copyOnSelect: boolean;
+  /** A system notification when a terminal rings the bell out of sight. */
+  bellNotify: boolean;
 }
 
 const DEFAULT_FONT_STACK =
@@ -48,6 +50,7 @@ export const DEFAULTS: Prefs = {
   autoReconnect: true,
   confirmClose: true,
   copyOnSelect: false,
+  bellNotify: false,
 };
 
 const STORAGE_KEY = "termdock.prefs";
@@ -86,6 +89,7 @@ export function normalize(raw: unknown): Prefs {
     autoReconnect: typeof o.autoReconnect === "boolean" ? o.autoReconnect : DEFAULTS.autoReconnect,
     confirmClose: typeof o.confirmClose === "boolean" ? o.confirmClose : DEFAULTS.confirmClose,
     copyOnSelect: typeof o.copyOnSelect === "boolean" ? o.copyOnSelect : DEFAULTS.copyOnSelect,
+    bellNotify: typeof o.bellNotify === "boolean" ? o.bellNotify : DEFAULTS.bellNotify,
   };
 }
 

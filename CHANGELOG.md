@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-20
+
+### Added
+
+- Web links in a terminal open in the browser with `Ctrl`+click (`Cmd`+click on macOS), after a confirmation that shows the whole address and the host it really goes to. Only `http`/`https` links are opened, never ones hiding a user name or password.
+- Connections can be marked as production servers: their tabs get a red *PROD* badge and their terminals a red border.
+- Startup command per connection: one line typed into the shell once connected (again after a reconnection), e.g. `cd /var/www`.
+- Optional system notification when a terminal you are not looking at rings the bell (Settings → General, off by default).
+- Command palette (`Ctrl+Shift+A`): one search over actions, open tabs, connections, shells, layouts and snippets; typing an address offers a quick connect.
+
 ## [0.19.0] - 2026-10-19
 
 ### Added
@@ -281,7 +291,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/LuuckA21/termdock/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/LuuckA21/termdock/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/LuuckA21/termdock/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/LuuckA21/termdock/compare/v0.16.0...v0.17.0
