@@ -8,6 +8,8 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 
 ## Features
 
+A short list in order of importance is in [FEATURES.md](FEATURES.md).
+
 - **Favorites bar**, always visible: one click opens the connection in a new tab, drag to reorder, right click to edit or unpin, `Ctrl+Shift+1…9` opens the first nine.
 - **SSH** with a full terminal (xterm-256color, truecolor, Unicode, resizing).
 - **Jump hosts (ProxyJump)**: a connection can go through a bastion, even a chain of them; every hop verifies its own host key and authenticates separately.
