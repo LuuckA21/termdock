@@ -145,6 +145,9 @@ export interface ImportPreview {
   profiles: number;
   newProfiles: number;
   newNames: string[];
+  /** Startup commands that are new or changed, a few of them in full. */
+  startupCount: number;
+  startups: { name: string; command: string }[];
   favorites: number;
   /** The interface's settings, validated before use. */
   ui: unknown;

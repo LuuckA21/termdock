@@ -1553,6 +1553,15 @@ dialog.palette {
   width: min(640px, 92vw);
 }
 
+/* Startup commands a backup would bring, in full. */
+.backup-startups {
+  max-height: 160px;
+  margin: 0;
+  padding-left: 18px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
 /* A link about to be opened, in full. */
 .link-preview {
   padding: 8px 10px;

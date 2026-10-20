@@ -315,9 +315,11 @@ async fn start(state: &AppState, wiring: &Wiring, size: TermSize, sink: EventSin
         }
     };
     // Validated as one line without control characters when it was saved;
-    // the shell reads it once it is ready, like keys typed ahead.
+    // the shell reads it once it is ready, like keys typed ahead. A shell
+    // that already exited is reported by the session itself, not as a
+    // failure to start.
     if let Some(command) = startup {
-        handle.write(format!("{command}\r").into_bytes())?;
+        let _ = handle.write(format!("{command}\r").into_bytes());
     }
     Ok(handle)
 }

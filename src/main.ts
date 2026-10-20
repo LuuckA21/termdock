@@ -32,6 +32,8 @@ import type { AppInfo, DetectedShell, OpenTarget, PickedFile, Profile, Uuid } fr
 const MAX_TAB_TITLE = 64;
 /** Opening more connections of a group than this at once asks first. */
 const OPEN_GROUP_ASK = 5;
+/** Palette entries that need an open tab. */
+const TAB_ACTIONS = new Set<Action>(["closePane", "splitRight", "splitDown", "nextTab", "prevTab", "saveLayout", "files"]);
 /** At most one bell notification in this time. */
 const BELL_NOTE_GAP_MS = 5_000;
 
@@ -96,6 +98,8 @@ export class App {
     this.profiles = list.profiles;
     this.favorites = list.favorites;
     this.favbar.render();
+    // The production marker of open tabs follows the saved connections.
+    this.renderTabs();
   }
 
   favoriteProfiles(): Profile[] {
@@ -381,7 +385,8 @@ export class App {
     const items: PaletteItem[] = [];
     for (const group of ACTION_GROUPS) {
       for (const a of group.actions) {
-        const run = a.id === "palette" ? null : this.handlerFor(a.id);
+        if (a.id === "palette" || (!this.active && TAB_ACTIONS.has(a.id))) continue;
+        const run = this.handlerFor(a.id);
         if (run) items.push({ label: t(a.label), detail: kind(t("paletteAction"), keyHint(a.id)), icon: "bolt", run });
       }
     }

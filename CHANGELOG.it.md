@@ -13,7 +13,7 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 - I link web in un terminale si aprono nel browser con `Ctrl`+clic (`Cmd`+clic su macOS), dopo una conferma che mostra l'indirizzo intero e l'host a cui porta davvero. Si aprono solo link `http`/`https`, mai quelli che nascondono un nome utente o una password.
 - Le connessioni si possono segnare come server di produzione: le loro schede hanno l'etichetta rossa *PROD* e i loro terminali un bordo rosso.
-- Comando iniziale per connessione: una riga scritta nella shell appena connessi (di nuovo dopo una riconnessione), per esempio `cd /var/www`.
+- Comando iniziale per connessione: una riga scritta nella shell appena connessi (di nuovo dopo una riconnessione), per esempio `cd /var/www`. Importando un backup, i comandi iniziali che aggiungerebbe o cambierebbe sono mostrati per intero.
 - Notifica di sistema opzionale quando un terminale che non stai guardando suona il campanello (Impostazioni → Generale, spenta di default).
 - Tavolozza comandi (`Ctrl+Shift+A`): un'unica ricerca su azioni, schede aperte, connessioni, shell, layout e snippet; scrivendo un indirizzo propone una connessione rapida.
 

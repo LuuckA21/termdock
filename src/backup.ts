@@ -80,6 +80,16 @@ export async function importBackup(settings: HTMLDialogElement | null): Promise<
         }),
       ),
       h("p", { class: "muted", hidden: !names }, t("backupNewNames", { names })),
+      ...(preview.startupCount
+        ? [
+            h("p", { class: "warn" }, t("backupStartups", { count: preview.startupCount })),
+            h(
+              "ul",
+              { class: "mono backup-startups" },
+              ...preview.startups.map((s) => h("li", {}, `${s.name}: ${s.command}`)),
+            ),
+          ]
+        : []),
       h("p", {}, t("backupChoice")),
       h("p", { class: "warn" }, t("backupTrust")),
     ],

