@@ -5,7 +5,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 
 import { api, errorText } from "./api";
-import { askSecret, confirmBox, confirmHostKey } from "./dialogs";
+import { askSecret, confirmBox, confirmHostKey, modal } from "./dialogs";
 import { h } from "./dom";
 import { t } from "./i18n";
 import { actionFor, keyHint } from "./keys";
@@ -44,6 +44,37 @@ function osc7Path(data: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Lines of a multi-line paste shown before it is sent, and their width. */
+const PREVIEW_LINES = 12;
+const PREVIEW_WIDTH = 160;
+
+/**
+ * Asks before pasting several lines (each would run at once), showing them:
+ * text copied from a web page can hold commands that were not visible there.
+ * Invisible and bidi characters are shown as codes.
+ */
+function confirmPaste(text: string, count: number): Promise<boolean> {
+  const lines = text.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/);
+  const visible = (line: string) => {
+    const shown = line.replace(/[\p{Cf}\u2028\u2029]/gu, (c) => `<U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}>`);
+    return shown.length > PREVIEW_WIDTH ? `${shown.slice(0, PREVIEW_WIDTH)}…` : shown;
+  };
+  const preview = lines.slice(0, PREVIEW_LINES).map(visible).join("\n");
+  return modal<boolean>({
+    title: t("confirmTitle"),
+    body: [
+      h("p", {}, t("pasteLines", { count })),
+      h("pre", { class: "paste-preview" }, preview),
+      lines.length > PREVIEW_LINES ? h("p", { class: "muted" }, t("pasteMore", { count: lines.length - PREVIEW_LINES })) : h("span"),
+    ],
+    buttons: [
+      { label: t("cancel"), value: false },
+      { label: t("paste"), value: true, kind: "primary" },
+    ],
+    cancelValue: false,
+  });
 }
 
 const RED = "\x1b[31m";
@@ -145,10 +176,18 @@ export class TerminalPane implements Pane {
       // The find bar keeps the normal text-field menu: nothing is pasted
       // into the session from there.
       if (e.target instanceof Node && this.searchBar.el.contains(e.target)) return;
-      // Right click: copy the selection if any, otherwise paste (PuTTY style).
+      // Right click: copy the selection if any, otherwise paste (PuTTY style);
+      // with copy on select the selection is already copied, so it pastes.
       e.preventDefault();
-      if (this.term.hasSelection()) void this.copy();
+      if (this.term.hasSelection() && !getPrefs().copyOnSelect) void this.copy();
       else void this.paste();
+    });
+
+    // Copy on select (Settings): what the mouse selected goes to the clipboard.
+    this.el.addEventListener("mouseup", (e) => {
+      if (e.button !== 0 || !getPrefs().copyOnSelect || !this.term.hasSelection()) return;
+      if (e.target instanceof Node && this.searchBar.el.contains(e.target)) return;
+      void this.copy();
     });
 
     // Every paste (keys, menu, the system's own Ctrl/Cmd+V) goes through paste().
@@ -275,6 +314,12 @@ export class TerminalPane implements Pane {
     }
   }
 
+  /** Empties the screen and the scrollback, keeping the line the cursor is on. */
+  clearScreen(): void {
+    this.term.clear();
+    this.term.focus();
+  }
+
   /** Shows a line of Termdock's own in the terminal (not sent to the session). */
   notify(text: string, error = false): void {
     this.term.write(`\r\n${error ? RED : CYAN}» ${plain(text)}${RESET}\r\n`);
@@ -340,7 +385,7 @@ export class TerminalPane implements Pane {
     if (!clean || this.disposed) return false;
     const lines = clean.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/).length;
     if (lines > 1 && !this.term.modes.bracketedPasteMode) {
-      const ok = await confirmBox(t("pasteLines", { count: lines }), t("paste"));
+      const ok = await confirmPaste(clean, lines);
       if (!ok || this.disposed) return false;
     }
     this.term.paste(clean);

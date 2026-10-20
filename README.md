@@ -15,9 +15,9 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 - **Port forwarding** saved in the connection: local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`); the status of each tunnel is shown in the terminal.
 - **Import from `~/.ssh/config`**: preview with warnings, then imports Host, HostName, User, Port, IdentityFile, ProxyJump and the forwards.
 - **Local shells** in a real PTY: PowerShell 7, Windows PowerShell, cmd, WSL and Git Bash on Windows (ConPTY); bash, zsh, fish, pwsh… on macOS and Linux.
-- **Connection manager**: groups, colors, search, star to pin to the favorites bar.
+- **Connection manager**: groups, colors, search, star to pin to the favorites bar. *Duplicate* copies a connection as a starting point for a similar one, and the bolt next to a group opens all of its connections, one tab each.
 - **Quick connect**: type `user@host:port` in the bar and press Enter.
-- Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click). Tabs can be renamed (double click), reordered by dragging and duplicated (tab menu); a hidden tab shows a dot when its terminal prints something and a bell when it rings one. Closing a tab, pane or Termdock with open SSH connections asks first (can be turned off in Settings → General), and the window opens again where and as large as it was left.
+- Multiple tabs, reconnect with Enter after a session ends, PuTTY-style copy/paste (select + right click; with *Copy on select* in Settings → Appearance the selection is copied at once and right click always pastes). Pasting several lines shows them first, invisible characters marked, unless the program uses bracketed paste. Tabs can be renamed (double click), reordered by dragging and duplicated (tab menu), which also has *Clear terminal* (shortcut assignable in Settings → Keys), *Close other tabs* and *Close tabs to the right*; a hidden tab shows a dot when its terminal prints something and a bell when it rings one. Closing a tab, pane or Termdock with open SSH connections asks first (can be turned off in Settings → General), and the window opens again where and as large as it was left.
 - Quick connect remembers the last addresses that connected: `Up` / `Down` in its box, or pick one from the suggestions.
 - **Automatic reconnection**: when the network or the server drops an SSH connection (noticed through the keepalive set in the connection), the terminal tries again by itself a few times over about five minutes, with the usual host-key and password checks; `Enter` tries at once, `Esc` stops. Its session log and file browser carry on once it is back. Can be turned off in Settings → General.
 - **Split panes**, like Windows Terminal: divide a tab side by side or top/bottom as many times as needed and choose what opens in the new pane (the same connection, a local shell, any saved connection or a `user@host` address), e.g. server A on the left and server B on the right. Already open tabs can be put side by side without reconnecting (tab menu → *Move next to*), and favourites open directly on the right or below. Drag the dividers to resize, move between panes with `Alt+arrows`.
@@ -51,7 +51,7 @@ Cross-platform terminal and connection manager (Windows, macOS, Linux), in the s
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste |
 | `Ctrl` + `+` / `-` / `0` | larger / smaller / default font size |
 | `Ctrl+,` | settings (language, appearance, keys, snippets, files, updates) |
-| right click in the terminal | copy the selection, otherwise paste |
+| right click in the terminal | copy the selection, otherwise paste (with *Copy on select*: always paste) |
 
 These are the defaults (`Cmd` works in place of `Ctrl` on macOS). Every shortcut can be changed or turned off in **Settings → Keys**: click it and press the new keys; a combination already in use is moved only after confirmation, and keys that terminal programs or AltGr typing need get a warning first.
 

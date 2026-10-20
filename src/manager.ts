@@ -49,8 +49,19 @@ export function openManager(app: App, opts: ManagerOptions): void {
       groups.set(g, [...(groups.get(g) ?? []), p]);
     }
     for (const g of [...groups.keys()].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)))) {
-      list.append(h("div", { class: "mgr-group" }, g || t("ungrouped")));
-      for (const p of groups.get(g)!) list.append(row(p));
+      const members = groups.get(g)!;
+      const label = g || t("ungrouped");
+      const openAll = h(
+        "button",
+        { class: "icon-btn", type: "button", title: t("openGroup", { count: members.length }), "aria-label": `${t("openGroup", { count: members.length })}: ${label}` },
+        icon("bolt"),
+      );
+      openAll.addEventListener("click", async () => {
+        close();
+        await app.openGroup(members);
+      });
+      list.append(h("div", { class: "mgr-group" }, h("span", {}, label), openAll));
+      for (const p of members) list.append(row(p));
     }
   };
 
@@ -111,13 +122,25 @@ export function openManager(app: App, opts: ManagerOptions): void {
     return r;
   };
 
-  const renderEditor = (p: Profile | null) => {
+  const renderEditor = (p: Profile | null, copyOf?: Profile) => {
     clear(editor);
-    editor.append(profileForm(app, p, async (saved) => {
-      selected = saved?.id ?? null;
-      renderList();
-      renderEditor(saved);
-    }));
+    editor.append(
+      profileForm(
+        app,
+        p,
+        async (saved) => {
+          selected = saved?.id ?? null;
+          renderList();
+          renderEditor(saved);
+        },
+        (source) => {
+          selected = null;
+          renderList();
+          renderEditor(null, source);
+        },
+        copyOf,
+      ),
+    );
   };
 
   search.addEventListener("input", renderList);
@@ -174,10 +197,22 @@ function input(value: string | number | undefined, attrs: Record<string, string>
   return el;
 }
 
-function profileForm(app: App, existing: Profile | null, onSaved: (p: Profile | null) => void): HTMLElement {
+/**
+ * The editor of `existing`, or of a new connection: empty, or a copy of
+ * `copyOf` (new id, so its saved passwords and favorite star are not copied).
+ * `onDuplicate` opens a copy of the connection being edited.
+ */
+function profileForm(
+  app: App,
+  existing: Profile | null,
+  onSaved: (p: Profile | null) => void,
+  onDuplicate: (p: Profile) => void,
+  copyOf?: Profile,
+): HTMLElement {
   const isNew = existing === null;
   const base: Profile =
     existing ??
+    (copyOf && { ...structuredClone(copyOf), id: crypto.randomUUID(), name: t("profileCopyName", { name: copyOf.name }).slice(0, 64) }) ??
     ({
       id: crypto.randomUUID(),
       name: "",
@@ -235,7 +270,7 @@ function profileForm(app: App, existing: Profile | null, onSaved: (p: Profile | 
   for (const g of new Set(app.profiles.map((p) => p.group).filter(Boolean))) groups.append(h("option", { value: g! }));
   const favorite = h("input", { type: "checkbox" });
   const wasFavorite = !isNew && app.favorites.includes(base.id);
-  favorite.checked = isNew || wasFavorite;
+  favorite.checked = (isNew && !copyOf) || wasFavorite;
 
   let color = base.color ?? COLORS[0]!;
   const swatches = h("div", { class: "swatches", role: "radiogroup" });
@@ -360,6 +395,9 @@ function profileForm(app: App, existing: Profile | null, onSaved: (p: Profile | 
       });
       actions.append(forget, forgetKey);
     }
+    const duplicate = h("button", { type: "button", class: "btn" }, t("duplicateProfile"));
+    duplicate.addEventListener("click", () => onDuplicate(base));
+    actions.append(duplicate);
   }
   actions.append(h("div", { class: "spacer" }));
   if (!isNew) {

@@ -23,6 +23,7 @@ export type Action =
   | "copy"
   | "paste"
   | "snippets"
+  | "clearTerminal"
   | "zoomIn"
   | "zoomOut"
   | "zoomReset"
@@ -80,6 +81,7 @@ export const ACTION_GROUPS: { label: MsgKey; actions: { id: Action; label: MsgKe
       { id: "copy", label: "copy" },
       { id: "paste", label: "paste" },
       { id: "snippets", label: "keySnippets" },
+      { id: "clearTerminal", label: "clearTerminal" },
       { id: "zoomIn", label: "keyZoomIn" },
       { id: "zoomOut", label: "keyZoomOut" },
       { id: "zoomReset", label: "keyZoomReset" },
@@ -120,6 +122,8 @@ const DEFAULTS: Record<Action, Chord[]> = {
   copy: [c("mod+shift+KeyC")],
   paste: [c("mod+shift+KeyV")],
   snippets: [c("mod+shift+KeyP")],
+  // None by default: Ctrl+L belongs to the shell (it clears the screen too).
+  clearTerminal: [],
   zoomIn: [c("mod+key:+"), c("mod+key:=")],
   zoomOut: [c("mod+key:-")],
   zoomReset: [c("mod+key:0")],

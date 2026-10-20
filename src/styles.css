@@ -1251,11 +1251,32 @@ dialog.manager[open] {
 }
 
 .mgr-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 10px 6px 4px;
   color: var(--fg-dim);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.mgr-group .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.paste-preview {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre;
 }
 
 .mgr-row {

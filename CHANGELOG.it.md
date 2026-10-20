@@ -7,6 +7,15 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-19
+
+### Aggiunto
+
+- Gestore connessioni: *Duplica* copia una connessione (come "nome (copia)") per crearne una simile, e il fulmine accanto a un gruppo apre tutte le sue connessioni, una scheda ciascuna (chiedendo prima oltre le cinque).
+- Menu della scheda: *Pulisci terminale* (si può assegnare una scorciatoia in Impostazioni → Tasti; nessuna di default, perché `Ctrl+L` è della shell), *Chiudi le altre schede* e *Chiudi le schede a destra*, con un'unica conferma per tutte le connessioni SSH che chiudono.
+- Incollare più righe le mostra in un'anteprima prima dell'invio, con i caratteri invisibili segnalati come `<U+XXXX>`.
+- *Copia subito il testo selezionato* (Impostazioni → Aspetto, spenta di default): la selezione è copiata subito e il tasto destro incolla sempre.
+
 ## [0.18.0] - 2026-10-19
 
 ### Aggiunto
@@ -272,7 +281,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/LuuckA21/termdock/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/LuuckA21/termdock/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/LuuckA21/termdock/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/LuuckA21/termdock/compare/v0.15.0...v0.16.0
