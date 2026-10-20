@@ -65,6 +65,11 @@ export function setSnippets(next: Snippet[]): void {
   listeners.forEach((fn) => fn());
 }
 
+/** Snippets in stored form (from a backup), validated like saved ones. */
+export function parseSnippets(raw: unknown): Snippet[] {
+  return normalize(raw);
+}
+
 /**
  * Snippets from a backup, validated like saved ones: `replace` swaps the
  * whole list; otherwise snippets not present yet (by id) are added. Returns

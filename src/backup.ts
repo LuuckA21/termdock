@@ -4,12 +4,12 @@
 // a backup goes through the same validation as the saved settings.
 import { api, errorText } from "./api";
 import { alertBox, modal } from "./dialogs";
-import { h } from "./dom";
+import { displayName, h } from "./dom";
 import { currentLanguage, LANGUAGES, languageSetting, setLanguage, t, type LanguageSetting } from "./i18n";
-import { importKeyMap, storedKeyMap } from "./keys";
-import { importLayouts, storedLayouts } from "./layouts";
+import { importedSnippetKeys, importKeyMap, storedKeyMap } from "./keys";
+import { importedStartup, importLayouts, paneCount, storedLayouts } from "./layouts";
 import { getPrefs, normalize as normalizePrefs, setPrefs } from "./prefs";
-import { getSnippets, importSnippets } from "./snippets";
+import { getSnippets, importSnippets, parseSnippets } from "./snippets";
 import { autoCheckEnabled, setAutoCheck } from "./updates";
 
 /** Fired after an import changed the connections, so the app reloads them. */
@@ -65,6 +65,19 @@ export async function importBackup(settings: HTMLDialogElement | null): Promise<
   if (!preview) return "";
   const ui = record(preview.ui);
   const names = preview.newNames.join(", ");
+  const list = (items: string[], mono = true) =>
+    h("ul", { class: mono ? "mono backup-startups" : "backup-startups" }, ...items.map((s) => h("li", {}, displayName(s))));
+  // What "replace" changes beyond the connections, read as importUi would.
+  const startup = importedStartup(ui.layouts ?? {});
+  const snippetKeys = importedSnippetKeys("keys" in ui ? ui.keys : storedKeyMap());
+  const typed = snippetKeys ? parseSnippets(ui.snippets ?? []).slice(0, 9) : [];
+  const replaceNotes = [
+    preview.changedCount ? t("backupReplaceChanged", { count: preview.changedCount, names: preview.changedNames.join(", ") }) : "",
+    startup ? t("backupReplaceStartup", { name: startup.name, count: paneCount(startup.root) }) : "",
+    typed.length
+      ? t("backupReplaceSnippetKeys", { keys: snippetKeys, names: typed.map((s) => (s.run ? `${s.name} ↵` : s.name)).join(", ") })
+      : "",
+  ].filter(Boolean);
   const choice = await modal<"cancel" | "add" | "replace">({
     title: t("backupImportTitle"),
     body: [
@@ -83,13 +96,16 @@ export async function importBackup(settings: HTMLDialogElement | null): Promise<
       ...(preview.startupCount
         ? [
             h("p", { class: "warn" }, t("backupStartups", { count: preview.startupCount })),
-            h(
-              "ul",
-              { class: "mono backup-startups" },
-              ...preview.startups.map((s) => h("li", {}, `${s.name}: ${s.command}`)),
-            ),
+            list(preview.startups.map((s) => `${s.name}: ${s.command}`)),
           ]
         : []),
+      ...(preview.localCount
+        ? [
+            h("p", { class: "warn" }, t("backupLocals", { count: preview.localCount })),
+            list(preview.locals.map((l) => `${l.name}: ${l.command}${l.cwd ? ` (${t("backupInFolder", { path: l.cwd })})` : ""}`)),
+          ]
+        : []),
+      ...(replaceNotes.length ? [h("p", { class: "warn" }, t("backupReplaceNotes")), list(replaceNotes, false)] : []),
       h("p", {}, t("backupChoice")),
       h("p", { class: "warn" }, t("backupTrust")),
     ],

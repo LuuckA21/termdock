@@ -14,7 +14,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
-use termdock_core::profile::{Profile, ProfileKind};
+use termdock_core::profile::{LocalShell, Profile, ProfileKind};
 use termdock_core::store::validate_backup;
 use tokio::sync::oneshot;
 use uuid::Uuid;
@@ -66,6 +66,14 @@ pub struct ImportPreview {
     /// on the server when the connection opens), a few of them in full.
     startup_count: usize,
     startups: Vec<StartupCommand>,
+    /// Local shells that are new or run another program than the saved ones
+    /// (they start a program on this computer when opened), a few in full.
+    local_count: usize,
+    locals: Vec<LocalProgram>,
+    /// Connections already saved here that the backup changes (only taken
+    /// with "replace"), and a few of their names.
+    changed_count: usize,
+    changed_names: Vec<String>,
     favorites: usize,
     /// The interface's settings; the UI validates them before using them.
     ui: serde_json::Value,
@@ -75,6 +83,54 @@ pub struct ImportPreview {
 pub struct StartupCommand {
     name: String,
     command: String,
+}
+
+#[derive(Serialize)]
+pub struct LocalProgram {
+    name: String,
+    /// The program and its arguments, as one line to show.
+    command: String,
+    cwd: Option<String>,
+}
+
+/// The backup's local shells whose program, arguments or folder this
+/// Termdock does not already have for the same connection.
+fn changed_locals<'a>(backup: &'a [Profile], saved: &[Profile]) -> Vec<(&'a Profile, &'a LocalShell)> {
+    backup
+        .iter()
+        .filter_map(|p| match &p.kind {
+            ProfileKind::Local(shell) => Some((p, shell)),
+            ProfileKind::Ssh(_) => None,
+        })
+        .filter(|(p, shell)| {
+            saved
+                .iter()
+                .find(|s| s.id == p.id)
+                .is_none_or(|s| !matches!(&s.kind, ProfileKind::Local(old) if old == *shell))
+        })
+        .collect()
+}
+
+/// `program arg…` on one line; arguments with spaces (or empty) in quotes.
+fn command_line(shell: &LocalShell) -> String {
+    std::iter::once(shell.program.clone())
+        .chain(shell.args.iter().map(|a| {
+            if a.is_empty() || a.chars().any(char::is_whitespace) {
+                format!("\"{a}\"")
+            } else {
+                a.clone()
+            }
+        }))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Connections saved here under the same id that the backup changes.
+fn changed_saved<'a>(backup: &'a [Profile], saved: &[Profile]) -> Vec<&'a Profile> {
+    backup
+        .iter()
+        .filter(|p| saved.iter().any(|s| s.id == p.id && s != *p))
+        .collect()
 }
 
 /// The backup's startup commands that this Termdock does not already have
@@ -187,6 +243,8 @@ pub async fn config_import_pick(
         .filter(|p| !saved.iter().any(|s| s.id == p.id))
         .collect();
     let startups = changed_startups(&backup.profiles, &saved);
+    let locals = changed_locals(&backup.profiles, &saved);
+    let changed = changed_saved(&backup.profiles, &saved);
     let token = Uuid::new_v4();
     let preview = ImportPreview {
         token,
@@ -204,6 +262,18 @@ pub async fn config_import_pick(
                 command: p.startup.clone().unwrap_or_default(),
             })
             .collect(),
+        local_count: locals.len(),
+        locals: locals
+            .iter()
+            .take(MAX_NAMES)
+            .map(|(p, shell)| LocalProgram {
+                name: p.name.clone(),
+                command: command_line(shell),
+                cwd: shell.cwd.as_ref().map(|c| c.display().to_string()),
+            })
+            .collect(),
+        changed_count: changed.len(),
+        changed_names: changed.iter().take(MAX_NAMES).map(|p| p.name.clone()).collect(),
         favorites: backup.favorites.len(),
         ui: backup.ui.clone(),
     };
@@ -309,5 +379,42 @@ mod tests {
             .map(|p| p.id.as_u128())
             .collect();
         assert_eq!(ids, [2, 3, 4]);
+    }
+
+    fn local(id: u128, program: &str, args: &[&str]) -> Profile {
+        serde_json::from_value(serde_json::json!({
+            "id": Uuid::from_u128(id),
+            "name": format!("l{id}"),
+            "type": "local",
+            "program": program,
+            "args": args,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn new_or_changed_local_programs_are_listed() {
+        let saved = [local(1, "/bin/bash", &[]), local(2, "/bin/bash", &[]), profile(3, None)];
+        let backup = [
+            local(1, "/bin/bash", &[]),            // unchanged
+            local(2, "/bin/bash", &["-c", "x y"]), // other arguments
+            local(3, "/bin/sh", &[]),              // was an SSH connection
+            local(4, "pwsh", &["-NoLogo"]),        // new connection
+            profile(5, None),                      // SSH: not a local program
+        ];
+        let found: Vec<(u128, String)> = changed_locals(&backup, &saved)
+            .iter()
+            .map(|(p, shell)| (p.id.as_u128(), command_line(shell)))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (2, r#"/bin/bash -c "x y""#.to_owned()),
+                (3, "/bin/sh".to_owned()),
+                (4, "pwsh -NoLogo".to_owned()),
+            ]
+        );
+        let changed: Vec<u128> = changed_saved(&backup, &saved).iter().map(|p| p.id.as_u128()).collect();
+        assert_eq!(changed, [2, 3]);
     }
 }

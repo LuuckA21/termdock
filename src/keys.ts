@@ -255,6 +255,11 @@ export function storedKeyMap(map: KeyMap = keymap): unknown {
   };
 }
 
+/** The keys a key map in stored form (from a backup) gives to typing snippets ("" if none). */
+export function importedSnippetKeys(raw: unknown): string {
+  return digitRangeLabel(normalize(raw).digits.sendSnippet);
+}
+
 /** Applies a key map in stored form (from a backup), validated like a saved one. */
 export function importKeyMap(raw: unknown): void {
   setKeyMap(normalize(raw));

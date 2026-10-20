@@ -148,6 +148,12 @@ export interface ImportPreview {
   /** Startup commands that are new or changed, a few of them in full. */
   startupCount: number;
   startups: { name: string; command: string }[];
+  /** Local shells that are new or run another program, a few of them in full. */
+  localCount: number;
+  locals: { name: string; command: string; cwd: string | null }[];
+  /** Connections saved here that "replace" would change, a few of their names. */
+  changedCount: number;
+  changedNames: string[];
   favorites: number;
   /** The interface's settings, validated before use. */
   ui: unknown;

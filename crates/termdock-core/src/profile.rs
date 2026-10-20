@@ -350,8 +350,14 @@ impl LocalShell {
         if self.args.len() > MAX_ARGS {
             return Err(Error::InvalidProfile("too many arguments".into()));
         }
+        // Shown wherever the connection is (manager, terminal): no control
+        // or invisible characters that could hide or rewrite what runs.
+        let hidden = |c: char| c.is_control() || crate::sftp::is_format_char(c);
+        if self.program.chars().any(hidden) {
+            return Err(Error::InvalidProfile("program contains invisible characters".into()));
+        }
         for arg in &self.args {
-            if arg.len() > MAX_ARG_LEN || arg.contains('\0') {
+            if arg.len() > MAX_ARG_LEN || arg.chars().any(hidden) {
                 return Err(Error::InvalidProfile("invalid argument".into()));
             }
         }
@@ -576,6 +582,31 @@ mod tests {
         ] {
             p.startup = Some(bad.into());
             assert!(p.validate().is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn local_shell_arguments_are_visible_text() {
+        let local = |program: &str, args: &[&str]| {
+            Profile::new(
+                "sh",
+                ProfileKind::Local(LocalShell {
+                    program: program.into(),
+                    args: args.iter().map(|a| (*a).to_owned()).collect(),
+                    cwd: None,
+                }),
+            )
+        };
+        assert!(local("/bin/bash", &["--login", "-c", "echo 'a b'"]).validate().is_ok());
+        for (program, arg) in [
+            ("/bin/sh", "\u{1b}]0;x\u{7}"),
+            ("/bin/sh", "a\nb"),
+            ("/bin/sh", "tab\there"),
+            ("/bin/sh", "ls \u{202e}x"),
+            ("/bin/sh", "nul\0"),
+            ("/bin/s\u{200b}h", "-l"),
+        ] {
+            assert!(local(program, &[arg]).validate().is_err(), "{program:?} {arg:?}");
         }
     }
 
