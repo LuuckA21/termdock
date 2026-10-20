@@ -8,6 +8,8 @@ Terminale e gestore di connessioni multipiattaforma (Windows, macOS, Linux), nel
 
 ## Funzionalità
 
+Un elenco breve in ordine di importanza è in [FEATURES.it.md](FEATURES.it.md).
+
 - **Barra preferiti** sempre visibile: un clic apre la connessione in una nuova scheda, trascina per riordinare, tasto destro per modificare o togliere dai preferiti, `Ctrl+Shift+1…9` apre i primi nove.
 - **SSH** con terminale completo (xterm-256color, truecolor, Unicode, ridimensionamento).
 - **Jump host (ProxyJump)**: una connessione può passare da un bastion, anche a catena; ogni salto verifica la propria host key e si autentica separatamente.

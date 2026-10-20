@@ -31,7 +31,8 @@ UI changes are checked in the running app, not only by the type checker
 - Branch from the latest `origin/main`, never commit to `main`.
 - English for code, commits and the PR body. User-visible changes get lines
   under `## [Unreleased]` in both CHANGELOG.md and CHANGELOG.it.md; README and
-  SECURITY pairs change together.
+  SECURITY pairs change together, and a new or changed feature also goes in
+  FEATURES.md / FEATURES.it.md.
 - A PR meant to ship runs `npm run version:set -- X.Y.Z` (features -> minor,
   fixes only -> patch before 1.0). Never edit versions by hand.
 - For non-trivial changes, ask an independent reviewer agent for a read-only
