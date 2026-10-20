@@ -264,9 +264,11 @@ fn sink(
     })
 }
 
-/// Opens the shell or connection of `wiring`, its output going to `sink`.
+/// Opens the shell or connection of `wiring`, its output going to `sink`,
+/// and types the startup command of its saved connection, if any.
 async fn start(state: &AppState, wiring: &Wiring, size: TermSize, sink: EventSink) -> CmdResult<SessionHandle> {
     let mut jumps = Vec::new();
+    let mut startup = None;
     let (profile_id, kind) = match &wiring.target {
         OpenTarget::Profile { id } => {
             let store = state.store.lock().unwrap();
@@ -274,6 +276,7 @@ async fn start(state: &AppState, wiring: &Wiring, size: TermSize, sink: EventSin
             if let ProfileKind::Ssh(t) = &p.kind {
                 jumps = profile::resolve_jumps(store.profiles(), t)?;
             }
+            startup = p.startup;
             (Some(p.id), p.kind)
         }
         OpenTarget::Quick { address } => (
@@ -289,7 +292,7 @@ async fn start(state: &AppState, wiring: &Wiring, size: TermSize, sink: EventSin
         }
     };
 
-    Ok(match kind {
+    let handle = match kind {
         ProfileKind::Local(shell) => local::spawn(&shell, size, sink)?,
         ProfileKind::Ssh(target) => {
             let ui = Arc::new(UiInteraction {
@@ -310,7 +313,15 @@ async fn start(state: &AppState, wiring: &Wiring, size: TermSize, sink: EventSin
             )
             .await?
         }
-    })
+    };
+    // Validated as one line without control characters when it was saved;
+    // the shell reads it once it is ready, like keys typed ahead. A shell
+    // that already exited is reported by the session itself, not as a
+    // failure to start.
+    if let Some(command) = startup {
+        let _ = handle.write(format!("{command}\r").into_bytes());
+    }
+    Ok(handle)
 }
 
 #[tauri::command]

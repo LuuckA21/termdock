@@ -13,8 +13,9 @@ import { onLanguageChange, t } from "./i18n";
 import { openManager, type ManagerOptions } from "./manager";
 import { firstLeaf, getLayouts, MAX_PANES, paneCount, saveLayout as saveLayoutAs, startupLayout, type LayoutLeaf, type LayoutNode } from "./layouts";
 import { askLayoutName, manageLayouts } from "./layoutsui";
-import { actionFor, digitFor, digitHint, keyHint, onKeysChange, withKey } from "./keys";
+import { ACTION_GROUPS, actionFor, digitFor, digitHint, keyHint, onKeysChange, withKey, type Action } from "./keys";
 import { showMenu, showMenuBelow } from "./menu";
+import { openPalette, type PaletteItem } from "./palette";
 import { DEFAULTS, getPrefs, setPrefs } from "./prefs";
 import { openSettings } from "./settings";
 import { fitsGroup, getSnippets, type Snippet } from "./snippets";
@@ -31,6 +32,10 @@ import type { AppInfo, DetectedShell, OpenTarget, PickedFile, Profile, Uuid } fr
 const MAX_TAB_TITLE = 64;
 /** Opening more connections of a group than this at once asks first. */
 const OPEN_GROUP_ASK = 5;
+/** Palette entries that need an open tab. */
+const TAB_ACTIONS = new Set<Action>(["closePane", "splitRight", "splitDown", "nextTab", "prevTab", "saveLayout", "files"]);
+/** At most one bell notification in this time. */
+const BELL_NOTE_GAP_MS = 5_000;
 
 export class App {
   info!: AppInfo;
@@ -41,6 +46,8 @@ export class App {
   private active: Tab | null = null;
   /** Set right after a tab was dragged, so its click does not count. */
   private suppressTabClick = false;
+  /** When the last bell notification was shown. */
+  private lastBellNote = 0;
   private readonly favbar: FavoritesBar;
   private readonly tabbar = document.getElementById("tabbar")!;
   private readonly terminals = document.getElementById("terminals")!;
@@ -69,6 +76,10 @@ export class App {
     // A backup was imported: connections and favorites changed.
     window.addEventListener(PROFILES_CHANGED, () => void this.reload().then(() => this.renderTabs()));
     window.addEventListener("beforeunload", () => this.tabs.forEach((tab) => tab.dispose()));
+    // Back in Termdock: the active tab has been seen, its next bell notifies again.
+    window.addEventListener("focus", () => {
+      if (this.active) this.active.bellNotified = false;
+    });
     // Closing the window with live connections asks first.
     void getCurrentWindow()
       .onCloseRequested(async (e) => {
@@ -87,6 +98,8 @@ export class App {
     this.profiles = list.profiles;
     this.favorites = list.favorites;
     this.favbar.render();
+    // The production marker of open tabs follows the saved connections.
+    this.renderTabs();
   }
 
   favoriteProfiles(): Profile[] {
@@ -363,6 +376,64 @@ export class App {
     ]);
   }
 
+  /**
+   * The command palette: the actions that apply now, then the open tabs,
+   * connections, shells, layouts and the active terminal's snippets.
+   */
+  private async palette(): Promise<void> {
+    const kind = (what: string, hint = "") => (hint ? `${what} · ${hint}` : what);
+    const items: PaletteItem[] = [];
+    for (const group of ACTION_GROUPS) {
+      for (const a of group.actions) {
+        if (a.id === "palette" || (!this.active && TAB_ACTIONS.has(a.id))) continue;
+        const run = this.handlerFor(a.id);
+        if (run) items.push({ label: t(a.label), detail: kind(t("paletteAction"), keyHint(a.id)), icon: "bolt", run });
+      }
+    }
+    for (const tab of this.tabs) {
+      if (tab === this.active) continue;
+      items.push({ label: tab.title, detail: kind(t("paletteTab"), tab.active.opts.subtitle), icon: "list", run: () => this.activate(tab) });
+    }
+    const rank = (p: Profile) => {
+      const i = this.favorites.indexOf(p.id);
+      return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    for (const p of [...this.profiles].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))) {
+      items.push({
+        label: p.name,
+        detail: kind(t("paletteConnection"), describe(p)),
+        icon: p.type === "ssh" ? "server" : "terminal",
+        run: () => this.openProfile(p),
+      });
+    }
+    for (const sh of this.shells) {
+      items.push({ label: sh.name, detail: kind(t("local"), sh.shell.program), icon: "terminal", run: () => this.openShell(sh) });
+    }
+    for (const l of getLayouts()) {
+      items.push({ label: l.name, detail: kind(t("paletteLayout")), icon: "splitRight", run: () => this.openLayout(l.id) });
+    }
+    const pane = this.activeTerminal();
+    if (pane) {
+      const group = this.groupOf(pane);
+      for (const sn of getSnippets()) {
+        if (!fitsGroup(sn, group)) continue;
+        items.push({ label: sn.name, detail: kind(t("paletteSnippet")), icon: "snippet", run: () => this.sendSnippet(pane, sn) });
+      }
+    }
+    // Typed text that looks like an address (user@host, host.domain, host:port).
+    await openPalette(items, (address) =>
+      /[@.:]/.test(address)
+        ? { label: t("pickQuick", { address }), detail: t("pickQuickDetail"), icon: "bolt", run: () => this.openQuick(address) }
+        : null,
+    );
+  }
+
+  /** Whether `pane` shows a saved connection marked as a production server. */
+  private isProduction(pane: Pane): boolean {
+    const target = pane.opts.target;
+    return target.kind === "profile" && this.profiles.some((p) => p.id === target.id && p.production);
+  }
+
   /** The group of the saved connection in `pane`; null for shells and quick connect. */
   private groupOf(pane: TerminalPane): string | null {
     const target = pane.opts.target;
@@ -482,7 +553,7 @@ export class App {
       for (const p of this.active.panes) if (p instanceof TerminalPane) p.watchOutput = true;
     }
     for (const p of tab.panes) if (p instanceof TerminalPane) p.watchOutput = false;
-    tab.activity = tab.bell = false;
+    tab.activity = tab.bell = tab.bellNotified = false;
     this.active = tab;
     for (const x of this.tabs) x.el.classList.toggle("active", x === tab);
     this.renderTabs();
@@ -539,10 +610,26 @@ export class App {
   /** Output or a bell in a hidden tab: shown on the tab until it is opened. */
   private markActivity(pane: TerminalPane, bell: boolean): void {
     const tab = this.tabs.find((x) => x.has(pane));
+    if (tab && bell) this.notifyBell(tab);
     if (!tab || tab === this.active || (bell ? tab.bell : tab.activity)) return;
     if (bell) tab.bell = true;
     else tab.activity = true;
     this.renderTabs();
+  }
+
+  /**
+   * A bell out of sight (hidden tab, or Termdock in the background) shows a
+   * system notification, if chosen in Settings: once per tab until it is
+   * looked at, and never more than one every few seconds.
+   */
+  private notifyBell(tab: Tab): void {
+    if (!getPrefs().bellNotify || tab.bellNotified) return;
+    if (tab === this.active && document.hasFocus()) return;
+    const now = Date.now();
+    if (now - this.lastBellNote < BELL_NOTE_GAP_MS) return;
+    this.lastBellNote = now;
+    tab.bellNotified = true;
+    void api.notify("Termdock", t("bellNotifyBody", { tab: tab.title })).catch(() => {});
   }
 
   /** Gives the tab a name of the user's (empty: back to the pane's title). */
@@ -652,19 +739,22 @@ export class App {
       });
       const dot = h("span", { class: "dot" });
       setDotColor(dot, tab.active.opts.color);
+      const production = tab.panes.some((p) => this.isProduction(p));
+      for (const p of tab.panes) p.el.classList.toggle("production", this.isProduction(p));
       const count = tab.count;
       const waiting = tab.waiting;
       const logging = tab.panes.some((p) => p instanceof TerminalPane && p.logPath !== null);
       const el = h(
         "div",
         {
-          class: `tab ${tab.state}${tab === this.active ? " active" : ""}${waiting ? " waiting" : ""}`,
+          class: `tab ${tab.state}${tab === this.active ? " active" : ""}${waiting ? " waiting" : ""}${production ? " production" : ""}`,
           role: "tab",
           "aria-selected": String(tab === this.active),
           title: tab.active.opts.subtitle,
           "data-index": String(index),
         },
         dot,
+        production && h("span", { class: "tab-production", title: t("productionHint") }, t("productionBadge")),
         h("span", { class: "tab-title" }, tab.title),
         tab.bell
           ? h("span", { class: "tab-bell", title: t("tabBell"), "aria-label": t("tabBell") }, icon("bell"))
@@ -774,6 +864,16 @@ export class App {
       return tab ? () => this.activate(tab) : null;
     }
     const action = actionFor(e);
+    return action ? this.handlerFor(action, e) : null;
+  }
+
+  /**
+   * What `action` does now, or null when it does not apply (no terminal for
+   * Find…). `e`: the key press, when it comes from a shortcut.
+   */
+  private handlerFor(action: Action, e?: KeyboardEvent): (() => void) | null {
+    // Key repeats are swallowed but do nothing (see `shortcut`).
+    const once = (run: () => void) => (e?.repeat ? () => {} : run);
     switch (action) {
       case "newShell":
         return once(() => this.openDefaultShell());
@@ -799,6 +899,8 @@ export class App {
         return () => void openSettings();
       case "snippets":
         return once(() => this.snippetsMenu());
+      case "palette":
+        return once(() => void this.palette());
       case "clearTerminal": {
         const pane = this.active?.active;
         return pane instanceof TerminalPane ? once(() => pane.clearScreen()) : null;
@@ -820,7 +922,7 @@ export class App {
         // Only inside a terminal and with several panes: otherwise the shell
         // or the text field (the file browser's path) keeps the key.
         const inTerminal =
-          e.target instanceof Element && this.terminals.contains(e.target) && !e.target.closest("input");
+          !e || (e.target instanceof Element && this.terminals.contains(e.target) && !e.target.closest("input"));
         if (!inTerminal || !this.active || this.active.count < 2) return null;
         const dir = ({ movePaneLeft: "left", movePaneRight: "right", movePaneUp: "up", movePaneDown: "down" } as const)[action];
         return () => this.moveFocus(dir);

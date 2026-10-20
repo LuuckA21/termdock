@@ -14,6 +14,7 @@ const MAX_NAME_LEN: usize = 64;
 const MAX_HOST_LEN: usize = 253;
 const MAX_USER_LEN: usize = 128;
 const MAX_GROUP_LEN: usize = 64;
+const MAX_STARTUP_LEN: usize = 1024;
 const MAX_ARGS: usize = 64;
 const MAX_ARG_LEN: usize = 4096;
 const MAX_FORWARDS: usize = 32;
@@ -33,6 +34,13 @@ pub struct Profile {
     /// Free-form folder name used to group profiles in the manager.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// A production server: its tabs and terminals are marked in red.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub production: bool,
+    /// One line typed into the shell (with Enter) once the session starts,
+    /// e.g. `cd /var/www`; again after a reconnection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -222,6 +230,8 @@ impl Profile {
             kind,
             color: None,
             group: None,
+            production: false,
+            startup: None,
         }
     }
 
@@ -243,6 +253,20 @@ impl Profile {
                 self.group = None;
             } else {
                 check_text("group", group, 1, MAX_GROUP_LEN)?;
+            }
+        }
+
+        if let Some(startup) = &mut self.startup {
+            *startup = startup.trim().to_owned();
+            if startup.is_empty() {
+                self.startup = None;
+            } else {
+                check_text("startup command", startup, 1, MAX_STARTUP_LEN)?;
+                if startup.chars().any(crate::sftp::is_format_char) {
+                    return Err(Error::InvalidProfile(
+                        "startup command contains invisible characters".into(),
+                    ));
+                }
             }
         }
 
@@ -532,6 +556,39 @@ mod tests {
         let mut p = ssh("h", "u");
         p.name = "  ".into();
         assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn startup_command_is_one_visible_line() {
+        let mut p = ssh("h", "u");
+        p.startup = Some("  cd /var/www && ls  ".into());
+        p.validate().unwrap();
+        assert_eq!(p.startup.as_deref(), Some("cd /var/www && ls"));
+        p.startup = Some("   ".into());
+        p.validate().unwrap();
+        assert_eq!(p.startup, None);
+        for bad in [
+            "cd /\nrm -rf ~",
+            "cd /\rrm -rf ~",
+            "echo \u{1b}[2J",
+            "ls \u{202e}x",
+            &"x".repeat(MAX_STARTUP_LEN + 1),
+        ] {
+            p.startup = Some(bad.into());
+            assert!(p.validate().is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn new_fields_are_optional_in_stored_data() {
+        let json =
+            r#"{"id":"6f1c2b9e-8a7d-4c3b-9e2f-1a2b3c4d5e6f","name":"srv","type":"ssh","host":"h","username":"u"}"#;
+        let p: Profile = serde_json::from_str(json).unwrap();
+        assert!(!p.production);
+        assert_eq!(p.startup, None);
+        // Not written when unset, so older versions read the file unchanged.
+        let out = serde_json::to_string(&p).unwrap();
+        assert!(!out.contains("production") && !out.contains("startup"), "{out}");
     }
 
     #[test]

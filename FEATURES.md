@@ -14,6 +14,7 @@ Everything Termdock can do, in order of importance. The details are in the [READ
 - **Authentication**: SSH agent (ssh-agent, Windows OpenSSH agent, Pageant), private keys (encrypted too), password, keyboard-interactive / 2FA.
 - **Passwords in the system keychain** (Windows Credential Manager, macOS Keychain, Secret Service), only if you ask; never on disk.
 - **Connection manager**: groups, colors, search, star for favorites; *Duplicate* to start from a similar connection; one click opens every connection of a group, one tab each.
+- **Production servers marked in red** (tab badge and terminal border), and a **startup command** per connection (e.g. `cd /var/www`).
 - **Favorites bar**: one click to connect, reorder by dragging, `Ctrl+Shift+1…9`.
 - **Quick connect** `user@host:port`, with the history of the last 10 addresses (Up/Down and suggestions).
 - **Local shells** in a real terminal: PowerShell 7, Windows PowerShell, cmd, WSL, Git Bash; bash, zsh, fish, pwsh on macOS and Linux.
@@ -24,7 +25,8 @@ Everything Termdock can do, in order of importance. The details are in the [READ
   - rename with a double click, reorder by dragging, duplicate;
   - close the other tabs or those to the right, with a single confirmation;
   - clear the terminal, from the menu or with a shortcut of your choice;
-  - a dot when a hidden tab prints something, a bell when the terminal rings.
+  - a dot when a hidden tab prints something, a bell when the terminal rings;
+  - optional system notification for a bell you are not looking at.
 - **Split panes** like Windows Terminal: side by side or stacked, already open tabs can be put side by side without reconnecting, `Alt+arrows` to move between them.
 - **Saved layouts**: the arrangement and connections of a tab; one can open at startup.
 - **Automatic reconnection** when the network or the server drops:
@@ -48,6 +50,8 @@ Everything Termdock can do, in order of importance. The details are in the [READ
 
 ## 4. Productivity
 
+- **Command palette** (`Ctrl+Shift+A`): actions, tabs, connections, layouts and snippets in one search.
+- **Clickable web links** in the terminal (`Ctrl`+click), with a confirmation that shows where they go.
 - **Snippets**: saved commands, sent with or without Enter, can be limited to a group of connections, `1…9` shortcuts.
 - **Search in the terminal** (`Ctrl+Shift+F`): highlighting, match case, regular expressions.
 - **Customizable shortcuts** in Settings → Keys, with a warning for keys that programs in the terminal use.

@@ -268,6 +268,9 @@ function profileForm(
   const group = input(base.group ?? "", { maxlength: "64", list: "mgr-groups" });
   const groups = h("datalist", { id: "mgr-groups" });
   for (const g of new Set(app.profiles.map((p) => p.group).filter(Boolean))) groups.append(h("option", { value: g! }));
+  const startup = input(base.startup ?? "", { maxlength: "1024", placeholder: "cd /var/www" });
+  const production = h("input", { type: "checkbox" });
+  production.checked = !!base.production;
   const favorite = h("input", { type: "checkbox" });
   const wasFavorite = !isNew && app.favorites.includes(base.id);
   favorite.checked = (isNew && !copyOf) || wasFavorite;
@@ -326,6 +329,8 @@ function profileForm(
       name: name.value.trim(),
       color,
       group: group.value.trim() || undefined,
+      production: production.checked || undefined,
+      startup: startup.value.trim() || undefined,
     };
     if (type.value === "local") {
       return {
@@ -416,7 +421,15 @@ function profileForm(
     h("div", { class: "grid" }, field(t("name"), name, "span2"), field(t("type"), type), field(t("group"), group), groups),
     sshBox,
     localBox,
-    h("div", { class: "grid" }, field(t("color"), swatches, "span2"), h("label", { class: "check span2" }, favorite, h("span", {}, t("favorite")))),
+    h(
+      "div",
+      { class: "grid" },
+      field(t("startupCommand"), startup, "span2"),
+      h("p", { class: "muted span2" }, t("startupCommandHelp")),
+      field(t("color"), swatches, "span2"),
+      h("label", { class: "check span2" }, production, h("span", {}, t("productionSetting"))),
+      h("label", { class: "check span2" }, favorite, h("span", {}, t("favorite"))),
+    ),
     error,
     actions,
   );

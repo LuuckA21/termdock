@@ -1,5 +1,6 @@
 mod backup;
 mod commands;
+mod desktop;
 mod edit;
 mod editor;
 mod keys;
@@ -27,6 +28,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Native file dialogs, driven by the backend only (see sftp.rs).
         .plugin(tauri_plugin_dialog::init())
+        // Web links and system notifications, through the backend only (see
+        // desktop.rs): none of their own commands is allowed.
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         // Window size, position and maximized state, kept across runs (only
         // restored onto a monitor that still exists). None of its commands is
         // allowed: the UI cannot read or set it.
@@ -104,6 +109,8 @@ pub fn run() {
             editor::editor_get,
             editor::editor_pick,
             editor::editor_reset,
+            desktop::open_url,
+            desktop::notify,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Termdock");

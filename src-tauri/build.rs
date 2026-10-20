@@ -48,6 +48,8 @@ const COMMANDS: &[&str] = &[
     "editor_get",
     "editor_pick",
     "editor_reset",
+    "open_url",
+    "notify",
 ];
 
 fn main() {

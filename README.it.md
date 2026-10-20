@@ -17,9 +17,9 @@ Un elenco breve in ordine di importanza è in [FEATURES.it.md](FEATURES.it.md).
 - **Port forwarding** salvato nella connessione: locale (`-L`), remoto (`-R`) e dinamico SOCKS5 (`-D`); lo stato di ogni tunnel compare nel terminale.
 - **Import da `~/.ssh/config`**: anteprima con avvisi, poi importa Host, HostName, User, Port, IdentityFile, ProxyJump e i forwarding.
 - **Shell locali** in PTY reale: PowerShell 7, Windows PowerShell, cmd, WSL e Git Bash su Windows (ConPTY); bash, zsh, fish, pwsh… su macOS e Linux.
-- **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti. *Duplica* copia una connessione come punto di partenza per una simile, e il fulmine accanto a un gruppo apre tutte le sue connessioni, una scheda ciascuna.
+- **Gestore connessioni**: gruppi, colori, ricerca, stella per i preferiti. *Duplica* copia una connessione come punto di partenza per una simile, e il fulmine accanto a un gruppo apre tutte le sue connessioni, una scheda ciascuna. Una connessione può avere un **comando iniziale** (una riga scritta nella shell appena connessi, per esempio `cd /var/www`) e può essere segnata come **server di produzione**: le sue schede hanno l'etichetta rossa *PROD* e i suoi terminali un bordo rosso, così non la si scambia per una macchina di prova.
 - **Connessione rapida**: scrivi `utente@host:porta` nella barra e premi Invio.
-- Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro; con *Copia subito il testo selezionato* in Impostazioni → Aspetto la selezione è copiata subito e il tasto destro incolla sempre). Incollare più righe le mostra prima, con i caratteri invisibili segnalati, se il programma non usa il bracketed paste. Le schede si possono rinominare (doppio clic), riordinare trascinandole e duplicare (menu della scheda), che offre anche *Pulisci terminale* (scorciatoia assegnabile in Impostazioni → Tasti), *Chiudi le altre schede* e *Chiudi le schede a destra*; una scheda nascosta mostra un punto quando il suo terminale stampa qualcosa e una campanella quando suona. Chiudere una scheda, un pannello o Termdock con connessioni SSH aperte chiede conferma (disattivabile in Impostazioni → Generale), e la finestra si riapre dov'era e grande com'era.
+- Schede multiple, riconnessione con Invio a sessione terminata, copia/incolla stile PuTTY (selezione + tasto destro; con *Copia subito il testo selezionato* in Impostazioni → Aspetto la selezione è copiata subito e il tasto destro incolla sempre). Incollare più righe le mostra prima, con i caratteri invisibili segnalati, se il programma non usa il bracketed paste. Le schede si possono rinominare (doppio clic), riordinare trascinandole e duplicare (menu della scheda), che offre anche *Pulisci terminale* (scorciatoia assegnabile in Impostazioni → Tasti), *Chiudi le altre schede* e *Chiudi le schede a destra*; una scheda nascosta mostra un punto quando il suo terminale stampa qualcosa e una campanella quando suona, e una notifica di sistema può avvisarti di quella campanella mentre sei altrove (Impostazioni → Generale, spenta di default). I link web nell'output si aprono nel browser con `Ctrl`+clic (`Cmd`+clic su macOS), dopo una conferma che mostra dove portano davvero. Chiudere una scheda, un pannello o Termdock con connessioni SSH aperte chiede conferma (disattivabile in Impostazioni → Generale), e la finestra si riapre dov'era e grande com'era.
 - La connessione rapida ricorda gli ultimi indirizzi che si sono collegati: `Su` / `Giù` nel suo campo, oppure scegline uno dai suggerimenti.
 - **Riconnessione automatica**: quando la rete o il server fanno cadere una connessione SSH (rilevato tramite il keepalive impostato nella connessione), il terminale riprova da solo alcune volte nell'arco di circa cinque minuti, con i soliti controlli di host key e password; `Invio` riprova subito, `Esc` smette. Registrazione della sessione e browser dei file riprendono quando torna. Si può disattivare in Impostazioni → Generale.
 - **Pannelli divisi**, come Windows Terminal: dividi una scheda affiancando o sovrapponendo i pannelli quante volte serve e scegli cosa aprire nel nuovo pannello (la stessa connessione, una shell locale, qualsiasi connessione salvata o un indirizzo `utente@host`), per esempio server A a sinistra e server B a destra. Le schede già aperte si possono affiancare senza riconnettersi (menu della scheda → *Affianca a*) e i preferiti si aprono direttamente a destra o sotto. Trascina i divisori per ridimensionarli, spostati tra i pannelli con `Alt+frecce`.
@@ -28,6 +28,7 @@ Un elenco breve in ordine di importanza è in [FEATURES.it.md](FEATURES.it.md).
 - **Backup della configurazione**: Impostazioni → Generale → *Esporta…* salva connessioni, preferiti, layout, snippet e impostazioni (aspetto, lingua, tasti) in un unico file JSON; *Importa…* mostra cosa contiene un backup e poi aggiunge solo ciò che è nuovo oppure sostituisce la configurazione attuale, per esempio per passare a un altro computer. Password, chiavi e host key non vengono mai inclusi.
 - **Registrazione della sessione**: menu della scheda → *Registra su file…* scrive ciò che un terminale mostra da quel momento in un file di testo a scelta (colori e altre sequenze di escape rimossi), fino a *Ferma registrazione* o alla fine della sessione; un punto rosso sulla scheda indica che è attiva. È spenta finché non la si avvia, perché un log conserva tutto ciò che compare a schermo.
 - **Chiavi SSH**: *Genera…* accanto al percorso della chiave di una connessione crea una chiave Ed25519 con passphrase (salvata in `~/.ssh` o dove scegli, mai sopra un file esistente) e mostra la chiave pubblica da copiare; *Installa chiave pubblica…* nel menu della scheda di un terminale connesso aggiunge un `.pub` a `~/.ssh/authorized_keys` su quel server, come `ssh-copy-id`.
+- **Tavolozza comandi**: `Ctrl+Shift+A` cerca tutto ciò che Termdock può fare in quel momento (azioni con le loro scorciatoie, schede aperte, connessioni, shell locali, layout e gli snippet del terminale attivo) ed esegue quello che scegli; scrivendo un indirizzo propone una connessione rapida.
 - **Ricerca nel terminale**: `Ctrl+Shift+F` cerca nello storico con i risultati evidenziati, successivo/precedente (`Invio` / `Maiusc+Invio`), maiuscole/minuscole ed espressioni regolari.
 - **Temi e caratteri**: tema scuro, chiaro o di sistema; schemi di colori del terminale (Termdock Dark/Light, Solarized, Dracula, Nord, Gruvbox); carattere, dimensione, interlinea, stile del cursore e scrollback, con anteprima dal vivo nelle Impostazioni; `Ctrl` + `+` / `-` / `0` cambia la dimensione del carattere.
 - **Aggiornamenti automatici**: una nuova versione viene segnalata all'avvio (e una volta al giorno), installata solo dopo la tua conferma e verificata con la chiave di firma inclusa nell'app; si può disattivare nelle Impostazioni.
@@ -50,10 +51,12 @@ Un elenco breve in ordine di importanza è in [FEATURES.it.md](FEATURES.it.md).
 | `Ctrl+Shift+1…9` | apri il preferito N |
 | `Ctrl+Shift+K` | connessione rapida |
 | `Ctrl+Shift+M` | gestore connessioni |
+| `Ctrl+Shift+A` | tavolozza comandi |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copia / incolla |
 | `Ctrl` + `+` / `-` / `0` | carattere più grande / più piccolo / predefinito |
 | `Ctrl+,` | impostazioni (lingua, aspetto, tasti, snippet, file, aggiornamenti) |
 | tasto destro nel terminale | copia la selezione, altrimenti incolla (con la copia della selezione attiva: incolla sempre) |
+| `Ctrl`+clic su un link (macOS: `Cmd`+clic) | lo apre nel browser, dopo una conferma |
 
 Questi sono i tasti predefiniti (su macOS `Cmd` funziona al posto di `Ctrl`). Ogni scorciatoia si può cambiare o disattivare in **Impostazioni → Tasti**: fai clic e premi i nuovi tasti; una combinazione già usata viene spostata solo dopo conferma, e per i tasti che servono ai programmi nel terminale o alla digitazione con AltGr compare prima un avviso.
 
@@ -98,6 +101,7 @@ src-tauri/             app desktop Tauri 2
   ├─ transfer.rs        upload e download di file e cartelle: piano, poi esecuzione
   ├─ edit.rs            Modifica: copia privata, sorveglianza e caricamento al salvataggio
   ├─ editor.rs          quale editor di testo la apre (di sistema o scelto nelle Impostazioni)
+  ├─ desktop.rs         link web verso il browser, notifiche di sistema
   └─ updates.rs         aggiornamenti firmati dall'app
 src/                   interfaccia TypeScript + xterm.js (nessun framework)
 ```
@@ -112,7 +116,7 @@ I dati sono salvati in:
 | macOS | `~/Library/Application Support/dev.termdock.app/` |
 | Linux | `~/.config/dev.termdock.app/` |
 
-(`profiles.json`, `known_hosts` e `editor.json`; le password stanno solo nel portachiavi. Le preferenze dell'interfaccia, come lingua, aspetto e scorciatoie da tastiera, i layout salvati, gli snippet e la cronologia della connessione rapida sono nel local storage della web view; dimensione e posizione della finestra in `.window-state.json`. Backup e log di sessione vengono scritti solo dove scegli tu.)
+(`profiles.json`, `known_hosts` e `editor.json`; le password stanno solo nel portachiavi, e il comando iniziale di una connessione è testo in chiaro in `profiles.json`. Le preferenze dell'interfaccia, come lingua, aspetto e scorciatoie da tastiera, i layout salvati, gli snippet e la cronologia della connessione rapida sono nel local storage della web view; dimensione e posizione della finestra in `.window-state.json`. Backup e log di sessione vengono scritti solo dove scegli tu.)
 
 ## Sviluppo
 

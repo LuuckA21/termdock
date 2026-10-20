@@ -58,6 +58,8 @@
     "allow-sftp-edit-resolve",
     "allow-editor-get",
     "allow-editor-pick",
-    "allow-editor-reset"
+    "allow-editor-reset",
+    "allow-open-url",
+    "allow-notify"
   ]
 }
