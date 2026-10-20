@@ -230,6 +230,7 @@ fn runs_files(program: &Path) -> bool {
         "powershell",
         "wish",
         "tclsh",
+        "autohotkey",
     ];
     const NAMES: &[&str] = &[
         "sh",
@@ -273,6 +274,42 @@ fn runs_files(program: &Path) -> bool {
         "iterm2",
         "script editor",
         "automator",
+        // Script and program runners that take the file as what to run
+        // (`py` is the Python launcher of Windows; on Windows the copy keeps
+        // the server's extension).
+        "py",
+        "pyw",
+        "deno",
+        "bun",
+        "java",
+        "javaw",
+        "jshell",
+        "rscript",
+        "julia",
+        "groovy",
+        "kotlin",
+        "scala",
+        "swift",
+        "elixir",
+        "escript",
+        "erl",
+        "expect",
+        "guile",
+        "racket",
+        "runghc",
+        "runhaskell",
+        "ocaml",
+        "dotnet",
+        "mono",
+        "wine",
+        "wine64",
+        "msbuild",
+        "installutil",
+        "regasm",
+        "regsvcs",
+        "cmstp",
+        "hh",
+        "autoit3",
     ];
     let real = std::fs::canonicalize(program).ok();
     [Some(program), real.as_deref()].into_iter().flatten().any(|path| {
@@ -427,6 +464,17 @@ mod tests {
         std::fs::write(&shell, b"").unwrap();
         std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(check_program(&shell).is_err());
+        for runner in ["py", "pyw.exe", "deno", "AutoHotkey64.exe", "msbuild.exe"] {
+            let path = dir.path().join(runner);
+            std::fs::write(&path, b"").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(check_program(&path).is_err(), "{runner}");
+        }
+        // Editors whose names merely start like a runner stay usable.
+        let pycharm = dir.path().join("pycharm");
+        std::fs::write(&pycharm, b"").unwrap();
+        std::fs::set_permissions(&pycharm, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(check_program(&pycharm).is_ok());
         let disguised = dir.path().join("myeditor");
         std::os::unix::fs::symlink(&shell, &disguised).unwrap();
         assert!(check_program(&disguised).is_err(), "a link to an interpreter");

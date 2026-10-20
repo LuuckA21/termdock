@@ -7,6 +7,14 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it-IT/1.1.0/) e i
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-20
+
+### Sicurezza
+
+- Importando un backup ora sono mostrate per intero tutte le shell locali che aggiungerebbe o cambierebbe (programma, argomenti, cartella), perché aprirne una avvia quel programma su questo computer, ed è detto cosa cambia *Sostituisci* oltre ad aggiungere connessioni: le connessioni salvate che modifica, il layout che apre a ogni avvio e gli snippet che le sue scorciatoie scrivono nel terminale attivo.
+- Programma e argomenti di una shell locale non possono più contenere caratteri di controllo o invisibili, e la riga "connessione a…" nel terminale ne viene ripulita, così una connessione non può nascondere cosa esegue.
+- Più esecutori di script e programmi sono rifiutati come editor per *Modifica*, tra cui il lanciatore Python di Windows `py`, `deno`, `java` e `msbuild`.
+
 ## [0.20.0] - 2026-10-20
 
 ### Aggiunto
@@ -291,7 +299,8 @@ Non pubblicata: la build della release ha messo i pacchetti macOS in una seconda
 - Password e passphrase salvate solo nel portachiavi del sistema, su richiesta.
 - Installer per Windows (MSI, NSIS), macOS (DMG universale) e Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/LuuckA21/termdock/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/LuuckA21/termdock/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/LuuckA21/termdock/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/LuuckA21/termdock/compare/v0.17.0...v0.18.0

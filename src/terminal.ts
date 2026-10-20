@@ -292,7 +292,7 @@ export class TerminalPane implements Pane {
     this.setState("connecting");
     this.refit();
     if (this.opts.target.kind !== "shell") {
-      this.term.write(`${DIM}${t("connecting", { target: this.opts.subtitle })}${RESET}\r\n`);
+      this.term.write(`${DIM}${plain(t("connecting", { target: this.opts.subtitle }))}${RESET}\r\n`);
     }
     try {
       const id = await api.openSession(
@@ -547,7 +547,7 @@ export class TerminalPane implements Pane {
       const go = await this.waitRetry(auto ? delay : null);
       if (stale()) return;
       if (!go) return this.giveUp(id, t("reconnectStopped"));
-      this.term.write(`${DIM}${t("connecting", { target: this.opts.subtitle })}${RESET}\r\n`);
+      this.term.write(`${DIM}${plain(t("connecting", { target: this.opts.subtitle }))}${RESET}\r\n`);
       let res: Reconnected;
       try {
         res = await api.reconnectSession(id, { cols: this.term.cols, rows: this.term.rows });

@@ -56,7 +56,8 @@ function target(v: unknown): OpenTarget | null {
   }
   if (o.kind === "quick") {
     const address = text(o.address, MAX_TEXT);
-    return address && !/\s/.test(address) ? { kind: "quick", address } : null;
+    // Like the quick-connect history: no spaces, control or invisible characters.
+    return address && !/[\p{Cc}\p{Cf}\s]/u.test(address) ? { kind: "quick", address } : null;
   }
   return null;
 }
@@ -138,6 +139,12 @@ export function importLayouts(raw: unknown, replace: boolean): number {
   const added = incoming.layouts.filter((l) => !stored.layouts.some((x) => x.id === l.id));
   write({ ...stored, layouts: [...stored.layouts, ...added] });
   return added.length;
+}
+
+/** The layout a backup would open at startup (validated like saved ones), or null. */
+export function importedStartup(raw: unknown): Layout | null {
+  const incoming = normalize(raw);
+  return incoming.layouts.find((l) => l.id === incoming.startup) ?? null;
 }
 
 export function startupLayout(): Layout | null {

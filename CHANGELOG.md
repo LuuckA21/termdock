@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-20
+
+### Security
+
+- Importing a backup now lists in full every local shell it would add or change (program, arguments, folder), since opening one runs that program on this computer, and says what *Replace* changes beyond adding connections: the saved connections it changes, the layout it opens at every start and the snippets its shortcuts type into the active terminal.
+- A local shell's program and arguments can no longer hold control or invisible characters, and the "connecting to…" line in the terminal is cleaned of them, so a connection cannot hide what it runs.
+- More script and program runners are refused as editor for *Edit*, among them the Windows Python launcher `py`, `deno`, `java` and `msbuild`.
+
 ## [0.20.0] - 2026-10-20
 
 ### Added
@@ -291,7 +299,8 @@ Not published: the release build put the macOS packages in a second draft. Its c
 - Passwords and passphrases stored only in the OS keychain, on request.
 - Installers for Windows (MSI, NSIS), macOS (universal DMG) and Linux (AppImage, deb, rpm).
 
-[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/LuuckA21/termdock/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/LuuckA21/termdock/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/LuuckA21/termdock/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/LuuckA21/termdock/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/LuuckA21/termdock/compare/v0.17.0...v0.18.0
